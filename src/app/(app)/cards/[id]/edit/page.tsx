@@ -179,7 +179,7 @@ export default function EditCardPage({
           ID in URL: <span className="font-mono">{String(id)}</span>
         </div>
         <Link href="/cards" className="text-zinc-300 underline">
-          Back to collection
+          Back to binder
         </Link>
       </div>
     );

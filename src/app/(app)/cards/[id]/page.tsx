@@ -437,7 +437,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           ID in URL: <span className="font-mono">{String(id)}</span>
         </div>
         <Link href="/cards" className="text-zinc-300 underline">
-          Back to collection
+          Back to binder
         </Link>
       </div>
     );
@@ -1024,7 +1024,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           >
             <div className="text-lg font-semibold">Crop your card photo</div>
             <div className="mt-1 text-xs text-zinc-500">
-              The image starts fill-to-frame to match your collection preview. Drag to crop or zoom in.
+              The image starts fill-to-frame to match your binder preview. Drag to crop or zoom in.
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-[320px_1fr]">

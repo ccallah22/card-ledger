@@ -500,7 +500,7 @@ export default function CardsPage() {
     return setSportMap.get(key) ?? "Unknown";
   }
 
-  // ✅ Hide SOLD cards in collection view
+  // ✅ Hide SOLD cards in binder view
   const baseList = useMemo(() => {
     return cards.filter((c) => (c.status ?? "HAVE") !== "SOLD");
   }, [cards]);
@@ -894,7 +894,7 @@ export default function CardsPage() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Collection</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Binder</h1>
           <p className="text-sm text-zinc-600">Sports cards (local MVP).</p>
         </div>
 
@@ -903,7 +903,7 @@ export default function CardsPage() {
             href="/cards/new"
             className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
           >
-            Add Card
+            Add to Binder
           </Link>
         </div>
       </div>
@@ -1166,7 +1166,9 @@ export default function CardsPage() {
       {/* Binder */}
       <div className="rounded-xl border border-black bg-zinc-50 overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-600">No cards found.</div>
+          <div className="px-4 py-10 text-center text-sm text-zinc-600">
+            Your Binder is empty. Add your first card.
+          </div>
         ) : (
           <div className="space-y-3">
             {groupedBySet.map((group, index) => {

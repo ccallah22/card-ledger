@@ -54,7 +54,7 @@ export default function ForSalePage() {
             href="/cards/new?forSale=1"
             className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
           >
-            Add Card
+            Add to Binder
           </Link>
         </div>
       </div>

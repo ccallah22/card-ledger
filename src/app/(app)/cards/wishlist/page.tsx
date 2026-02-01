@@ -33,14 +33,14 @@ export default function WishlistPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Wishlist</h1>
-          <p className="text-sm text-zinc-600">Cards you want to add to the collection.</p>
+          <p className="text-sm text-zinc-600">Cards you want to add to the binder.</p>
         </div>
         <div className="flex gap-2">
           <Link
             href="/cards/new?wishlist=1"
             className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
           >
-            Add Card
+            Add to Binder
           </Link>
         </div>
       </div>
@@ -56,7 +56,7 @@ export default function WishlistPage() {
         <div className="border-b px-4 py-3 text-sm font-semibold text-zinc-900">Wanted cards</div>
         {wishCards.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-zinc-600">
-            No wishlist cards yet. Mark a card as Want from the collection.
+            No wishlist cards yet. Mark a card as Want from the binder.
           </div>
         ) : (
           <div className="divide-y">

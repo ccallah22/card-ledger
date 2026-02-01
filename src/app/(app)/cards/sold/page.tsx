@@ -246,7 +246,7 @@ export default function SoldHistoryPage() {
         </div>
 
         <Link href="/cards" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50">
-          Back to collection
+          Back to binder
         </Link>
       </div>
 

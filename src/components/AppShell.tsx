@@ -98,8 +98,8 @@ function IconChevronRight() {
 }
 
 const NAV: NavItem[] = [
-  { href: "/cards", label: "Collection", icon: <IconGrid /> },
-  { href: "/cards/new", label: "Add Card", icon: <IconPlus /> },
+  { href: "/cards", label: "Binder", icon: <IconGrid /> },
+  { href: "/cards/new", label: "Add to Binder", icon: <IconPlus /> },
   { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
   { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
   { href: "/cards/backup", label: "Backup", icon: <IconDatabase /> },
@@ -304,7 +304,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 p-2">
           {!collapsed ? (
             <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-              Library
+              Binder
             </div>
           ) : null}
 
@@ -385,7 +385,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               href="/cards/new"
               className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
             >
-              Add
+              Add to Binder
             </Link>
           </div>
 

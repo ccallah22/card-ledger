@@ -125,14 +125,14 @@ export default function LocationsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Manage Locations</h1>
-          <p className="text-sm text-zinc-600">Rename locations across your collection.</p>
+          <p className="text-sm text-zinc-600">Rename locations across your binder.</p>
         </div>
 
         <Link
           href="/cards"
           className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
         >
-          Back to collection
+          Back to binder
         </Link>
       </div>
 

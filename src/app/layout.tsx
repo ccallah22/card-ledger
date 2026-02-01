@@ -4,7 +4,7 @@ import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "TheBindr",
-  description: "Track and manage your collection.",
+  description: "Track and manage your binder.",
 };
 
 export default function RootLayout({

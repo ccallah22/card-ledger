@@ -62,7 +62,7 @@ export default function MarkSoldPage({
           href="/cards"
           className="inline-block rounded-md border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
         >
-          Back to collection
+          Back to binder
         </Link>
       </div>
     );
@@ -114,7 +114,7 @@ export default function MarkSoldPage({
             href="/cards"
             className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
           >
-            Collection
+            Binder
           </Link>
         </div>
       </div>

@@ -2240,7 +2240,7 @@ function NewCardPageInner() {
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Add Card</h1>
-          <p className="text-sm text-zinc-600">Add a new card to your collection.</p>
+          <p className="text-sm text-zinc-600">Add a new card to your binder.</p>
         </div>
         <Link href="/cards" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50">
           Back
@@ -2748,7 +2748,7 @@ function NewCardPageInner() {
           >
             <div className="text-lg font-semibold">Crop your card photo</div>
             <div className="mt-1 text-xs text-zinc-500">
-              The image starts fill-to-frame to match your collection preview. Drag to crop or zoom in.
+              The image starts fill-to-frame to match your binder preview. Drag to crop or zoom in.
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-[320px_1fr]">
