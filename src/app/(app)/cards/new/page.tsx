@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
@@ -971,7 +971,9 @@ function expandChecklistVariants<T extends { section: string }>(items: T[]) {
   return out;
 }
 
-function expandScoreChecklist<T extends { section: string }>(items: T[]) {
+function expandScoreChecklist<T extends { section: string; number: string | number }>(
+  items: T[]
+) {
   const out: T[] = [];
   for (const item of items) {
     const exclusion = SCORE_EXCLUSIONS[`${item.section}#${item.number}`];
@@ -985,7 +987,9 @@ function expandScoreChecklist<T extends { section: string }>(items: T[]) {
   return out;
 }
 
-function expandPrizmChecklist<T extends { section: string }>(items: T[]) {
+function expandPrizmChecklist<T extends { section: string; number: string | number }>(
+  items: T[]
+) {
   const out: T[] = [];
   for (const item of items) {
     const exclusion = PRIZM_EXCLUSIONS[`${item.section}#${item.number}`];
@@ -1005,7 +1009,9 @@ function expandPrizmChecklist<T extends { section: string }>(items: T[]) {
   return out;
 }
 
-function expandDonrussChecklist<T extends { section: string }>(items: T[]) {
+function expandDonrussChecklist<T extends { section: string; number: string | number }>(
+  items: T[]
+) {
   const out: T[] = [];
   for (const item of items) {
     if (DONRUSS_EXCLUDED_SECTION_PREFIXES.some((prefix) => item.section.startsWith(prefix))) {
@@ -1585,7 +1591,7 @@ function migrateLegacyCardsOnce() {
   }
 }
 
-export default function NewCardPage() {
+function NewCardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isWishlist = searchParams.get("wishlist") === "1";
@@ -1984,7 +1990,7 @@ export default function NewCardPage() {
   }
 
   function buildCard(): SportsCard | null {
-    if (!canSave) return;
+    if (!canSave) return null;
 
     const now = new Date().toISOString();
 
@@ -2769,6 +2775,23 @@ export default function NewCardPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function NewCardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-10 pt-6">
+          <div className="h-6 w-48 animate-pulse rounded bg-zinc-200" />
+          <div className="h-9 w-full animate-pulse rounded bg-zinc-200" />
+          <div className="h-9 w-full animate-pulse rounded bg-zinc-200" />
+          <div className="h-9 w-full animate-pulse rounded bg-zinc-200" />
+        </div>
+      }
+    >
+      <NewCardPageInner />
+    </Suspense>
   );
 }
 

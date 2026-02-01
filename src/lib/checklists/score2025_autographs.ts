@@ -2,24 +2,7 @@ export type AutographEntry = {
   number: string;
   name: string;
   team?: string;
-  section:
-    | "Base Signatures"
-    | "Base Signatures Green"
-    | "Base Signatures Gold Zone"
-    | "Base Signatures Red Zone"
-    | "Base Signatures End Zone"
-    | "Base Signatures Gem Masters"
-    | "Base Rookie Signatures"
-    | "Base Rookie Signatures Green"
-    | "Base Rookie Signatures Gold Zone"
-    | "Base Rookie Signatures Artist's Proof"
-    | "Base Rookie Signatures Red Zone"
-    | "Base Rookie Signatures First Down"
-    | "Base Rookie Signatures End Zone"
-    | "Base Rookie Signatures Gem Masters"
-    | "Double Trouble"
-    | "It's Good! Graphs"
-    | "Next Era NIL Autographs";
+  section: string;
 };
 
 export const SCORE_2025_AUTOGRAPHS: AutographEntry[] = [
