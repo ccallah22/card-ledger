@@ -1,5 +1,6 @@
 import type { SportsCard } from "./types";
-import { saveImageForCard } from "./imageStore";
+import { saveImageForCard, clearImageStore } from "./imageStore";
+import { clearSharedImages } from "./sharedImages";
 
 const KEY = "card-ledger:sports-cards:v1";
 const LEGACY_KEY = "cards";
@@ -85,7 +86,22 @@ export function saveCards(cards: SportsCard[]) {
     };
   });
 
-  localStorage.setItem(KEY, JSON.stringify(normalized));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(normalized));
+    return;
+  } catch {
+    // fall through to cleanup/retry
+  }
+
+  // Free space from image caches and retry once.
+  clearImageStore();
+  clearSharedImages();
+
+  try {
+    localStorage.setItem(KEY, JSON.stringify(normalized));
+  } catch {
+    // never block app
+  }
 }
 
 export function upsertCard(card: SportsCard) {

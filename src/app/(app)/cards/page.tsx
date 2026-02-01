@@ -46,6 +46,126 @@ function teamSwatchStyle(team: string): CSSProperties {
   };
 }
 
+type CwcTeam = {
+  abbr: string;
+  fullName: string;
+  primaryColor: string;
+  secondaryColor: string;
+  altNames?: string[];
+};
+
+const CWC_SET_KEY = `${normalize("Panini Prizm FIFA Club World Cup")}__2025`;
+
+const CWC_TEAMS: CwcTeam[] = [
+  { abbr: "ALAH", fullName: "Al Ahly FC", primaryColor: "#E60000", secondaryColor: "#000000" },
+  { abbr: "ALAI", fullName: "Al Ain FC", primaryColor: "#5A2A82", secondaryColor: "#F2A900" },
+  { abbr: "ALHI", fullName: "Al Hilal", primaryColor: "#0057B8", secondaryColor: "#FFFFFF" },
+  {
+    abbr: "ATM",
+    fullName: "Atletico de Madrid",
+    primaryColor: "#E60026",
+    secondaryColor: "#FFFFFF",
+    altNames: ["Atletico Madrid"],
+  },
+  {
+    abbr: "PSG",
+    fullName: "Paris Saint-Germain",
+    primaryColor: "#004170",
+    secondaryColor: "#DA291C",
+    altNames: ["Paris Saint Germain", "Paris SG"],
+  },
+  { abbr: "AKL", fullName: "Auckland City FC", primaryColor: "#002D62", secondaryColor: "#FFFFFF" },
+  { abbr: "BOC", fullName: "Boca Juniors", primaryColor: "#003F79", secondaryColor: "#FFB81C" },
+  { abbr: "BVB", fullName: "Borussia Dortmund", primaryColor: "#FDE100", secondaryColor: "#000000" },
+  { abbr: "FCB", fullName: "FC Bayern Munchen", primaryColor: "#DC052D", secondaryColor: "#FFFFFF" },
+  { abbr: "BOTA", fullName: "Botafogo", primaryColor: "#000000", secondaryColor: "#FFFFFF" },
+  { abbr: "MTY", fullName: "CF Monterrey", primaryColor: "#002D62", secondaryColor: "#FFFFFF" },
+  { abbr: "CHE", fullName: "Chelsea FC", primaryColor: "#034694", secondaryColor: "#FFFFFF" },
+  {
+    abbr: "URD",
+    fullName: "Urawa Red Diamonds",
+    primaryColor: "#E60012",
+    secondaryColor: "#000000",
+  },
+  {
+    abbr: "EST",
+    fullName: "Esperance Sportive de Tunis",
+    primaryColor: "#D50000",
+    secondaryColor: "#FFD100",
+  },
+  {
+    abbr: "INT",
+    fullName: "FC Internazionale Milano",
+    primaryColor: "#0057B8",
+    secondaryColor: "#000000",
+    altNames: ["Inter", "Inter Milan"],
+  },
+  { abbr: "POR", fullName: "FC Porto", primaryColor: "#0033A0", secondaryColor: "#FFFFFF" },
+  { abbr: "FLA", fullName: "Flamengo", primaryColor: "#C8102E", secondaryColor: "#000000" },
+  { abbr: "FLU", fullName: "Fluminense", primaryColor: "#7A263A", secondaryColor: "#006341" },
+  { abbr: "JUV", fullName: "Juventus", primaryColor: "#000000", secondaryColor: "#FFFFFF" },
+  { abbr: "PAC", fullName: "CF Pachuca", primaryColor: "#0033A0", secondaryColor: "#FFFFFF" },
+  { abbr: "PAL", fullName: "Palmeiras", primaryColor: "#006437", secondaryColor: "#FFFFFF" },
+  {
+    abbr: "MSU",
+    fullName: "Mamelodi Sundowns FC",
+    primaryColor: "#FFD100",
+    secondaryColor: "#0057B8",
+  },
+  { abbr: "MCI", fullName: "Manchester City", primaryColor: "#6CABDD", secondaryColor: "#FFFFFF" },
+  { abbr: "RMA", fullName: "Real Madrid", primaryColor: "#FFFFFF", secondaryColor: "#FEBE10" },
+  { abbr: "SAL", fullName: "FC Salzburg", primaryColor: "#ED1C24", secondaryColor: "#FFFFFF" },
+  { abbr: "RIV", fullName: "River Plate", primaryColor: "#FFFFFF", secondaryColor: "#D50032" },
+  { abbr: "SLB", fullName: "SL Benfica", primaryColor: "#E41B13", secondaryColor: "#FFFFFF" },
+  { abbr: "ULS", fullName: "Ulsan HD FC", primaryColor: "#0057B8", secondaryColor: "#FFD100" },
+  { abbr: "WAC", fullName: "Wydad AC", primaryColor: "#E30613", secondaryColor: "#FFFFFF" },
+  { abbr: "MIA", fullName: "Inter Miami CF", primaryColor: "#F7B5CD", secondaryColor: "#231F20" },
+  {
+    abbr: "SEA",
+    fullName: "Seattle Sounders FC",
+    primaryColor: "#1DFF0B",
+    secondaryColor: "#00539F",
+  },
+];
+
+function hexToRgb(hex: string) {
+  const value = hex.replace("#", "");
+  if (value.length !== 6) return null;
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  return { r, g, b };
+}
+
+function contrastTextColor(primary: string, secondary: string) {
+  const p = hexToRgb(primary);
+  const s = hexToRgb(secondary);
+  if (!p || !s) return "white";
+  const r = (p.r + s.r) / 2;
+  const g = (p.g + s.g) / 2;
+  const b = (p.b + s.b) / 2;
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.6 ? "black" : "white";
+}
+
+function resolveCwcTeam(team: string) {
+  const value = normalize(team);
+  if (!value) return null;
+  return CWC_TEAMS.find((t) => normalize(t.fullName) === value) ??
+    CWC_TEAMS.find((t) => normalize(t.abbr) === value) ??
+    CWC_TEAMS.find((t) => t.altNames?.some((alt) => normalize(alt) === value)) ??
+    CWC_TEAMS.find((t) => value.includes(normalize(t.fullName))) ??
+    CWC_TEAMS.find((t) => t.altNames?.some((alt) => value.includes(normalize(alt)))) ??
+    CWC_TEAMS.find((t) => value.includes(normalize(t.abbr)));
+}
+
+function cwcSwatchStyle(team: CwcTeam): CSSProperties {
+  return {
+    background: `linear-gradient(135deg, ${team.primaryColor}, ${team.secondaryColor})`,
+    color: contrastTextColor(team.primaryColor, team.secondaryColor),
+  };
+}
+
 type NflTeam = {
   id: string;
   abbr: string;
@@ -335,7 +455,7 @@ export default function CardsPage() {
 
   function exportCsv() {
     const csv = cardsToCsv(cards);
-    downloadCsv(`card-ledger-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    downloadCsv(`thebindr-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   }
 
   useEffect(() => {
@@ -820,7 +940,9 @@ export default function CardsPage() {
                 key={o.key}
                 active={sportFilter === o.label}
                 onClick={() => setSportAndReset(o.label)}
-                variant={o.label === "Football" ? "football" : "default"}
+                variant={
+                  o.label === "Football" ? "football" : o.label === "Soccer" ? "soccer" : "default"
+                }
               >
                 {o.label}
                 {o.count ? ` • ${o.count}` : ""}
@@ -1089,6 +1211,7 @@ export default function CardsPage() {
 
                   {group.cards.length ? (
                     <div className="ml-auto flex flex-wrap items-center gap-1 text-[10px]">
+                      {/** team swatches */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1113,12 +1236,16 @@ export default function CardsPage() {
                       )
                         .sort((a, b) => a.localeCompare(b))
                         .map((team) => {
+                          const isCwcSet = group.key === CWC_SET_KEY;
                           const selected = (teamFiltersBySet[group.key] ?? "ALL") === team;
-                          const resolved = resolveNflTeam(team);
-                          const swatchStyle = resolved
-                            ? { backgroundColor: resolved.primaryColor, color: resolved.textColor }
+                          const resolvedCwc = isCwcSet ? resolveCwcTeam(team) : null;
+                          const resolvedNfl = !isCwcSet ? resolveNflTeam(team) : null;
+                          const swatchStyle = resolvedCwc
+                            ? cwcSwatchStyle(resolvedCwc)
+                            : resolvedNfl
+                            ? { backgroundColor: resolvedNfl.primaryColor, color: resolvedNfl.textColor }
                             : teamSwatchStyle(team);
-                          const label = resolved?.abbr ?? team;
+                          const label = resolvedCwc?.abbr ?? resolvedNfl?.abbr ?? team;
                           return (
                             <button
                               key={team}
@@ -1132,7 +1259,7 @@ export default function CardsPage() {
                                 "h-6 w-6 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center justify-center shadow-sm transition " +
                                 (selected ? "ring-2 ring-white/80" : "hover:brightness-110")
                               }
-                              title={resolved?.fullName ?? team}
+                              title={resolvedCwc?.fullName ?? resolvedNfl?.fullName ?? team}
                             >
                               {label}
                             </button>
@@ -1439,15 +1566,19 @@ function Tab({
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
-  variant?: "default" | "football";
+  variant?: "default" | "football" | "soccer";
 }) {
   const base =
-    "inline-flex whitespace-nowrap items-center rounded-full px-3 py-2 text-sm font-medium transition";
+    "inline-flex whitespace-nowrap items-center rounded-full px-3 py-2 text-sm font-semibold transition";
   const cls =
     variant === "football"
       ? active
         ? "border border-[#4a2a14] bg-[#7a3f22] text-[#fff3e1] shadow-[0_0_0_1px_rgba(210,164,108,0.55)]"
         : "border border-[#5a2f18] bg-[#8b4a2b] text-[#fff3e1] hover:bg-[#7f4226]"
+      : variant === "soccer"
+      ? active
+        ? "border border-zinc-900 bg-white text-black shadow-[0_0_0_1px_rgba(24,24,27,0.35)]"
+        : "border border-zinc-900 bg-white text-black hover:bg-zinc-50"
       : active
       ? "bg-zinc-900 text-white"
       : "bg-zinc-100 text-zinc-800 hover:bg-zinc-200";

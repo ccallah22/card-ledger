@@ -33,7 +33,34 @@ export function saveSharedImage(entry: SharedImage) {
   if (typeof window === "undefined") return;
   const map = loadSharedImages();
   map[entry.fingerprint] = entry;
-  localStorage.setItem(KEY, JSON.stringify(map));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(map));
+    return;
+  } catch {
+    // fall through to eviction
+  }
+
+  const entries = Object.entries(map)
+    .filter(([key]) => key !== entry.fingerprint)
+    .sort((a, b) => b[1].dataUrl.length - a[1].dataUrl.length);
+
+  for (const [key] of entries) {
+    delete map[key];
+    try {
+      localStorage.setItem(KEY, JSON.stringify(map));
+      return;
+    } catch {
+      // keep evicting
+    }
+  }
+
+  // still too big, drop the new entry
+  delete map[entry.fingerprint];
+  try {
+    localStorage.setItem(KEY, JSON.stringify(map));
+  } catch {
+    // no-op
+  }
 }
 
 export function removeSharedImage(fingerprint: string) {
@@ -53,4 +80,9 @@ export function replaceSharedImages(nextMap: Record<string, SharedImage>) {
   } catch {
     return false;
   }
+}
+
+export function clearSharedImages() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(KEY);
 }

@@ -3,7 +3,7 @@ import "./globals.css";
 import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
-  title: "Collectors",
+  title: "TheBindr",
   description: "Track and manage your collection.",
 };
 

@@ -275,10 +275,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         >
           <div className={"flex items-center " + (collapsed ? "" : "gap-2")}>
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-white">
-              <span className="text-sm font-semibold">C</span>
+              <span className="text-sm font-semibold">T</span>
             </div>
             {!collapsed ? (
-              <div className="text-sm font-semibold tracking-tight">Collectors</div>
+              <div className="text-sm font-semibold tracking-tight">TheBindr</div>
             ) : null}
           </div>
         </div>
@@ -380,7 +380,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Mobile top bar */}
         <div className="sm:hidden border-b bg-white">
           <div className="flex items-center justify-between px-4 py-3">
-            <div className="text-sm font-semibold">Collectors</div>
+            <div className="text-sm font-semibold">TheBindr</div>
             <Link
               href="/cards/new"
               className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"

@@ -76,3 +76,8 @@ export function replaceImageMap(nextMap: Record<string, string>) {
   }
   return false;
 }
+
+export function clearImageStore() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(KEY);
+}

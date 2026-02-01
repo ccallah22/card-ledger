@@ -3,7 +3,7 @@ export type SetEntry = {
   name: string;
   brand?: string;
   sport?: string;
-  checklistKey?: "score-2025" | "donruss-2025" | "prizm-2025";
+  checklistKey?: "score-2025" | "donruss-2025" | "prizm-2025" | "prizm-cwc-2025";
 };
 
 // Confirmed 2025 / 2025-26 products only.
@@ -49,6 +49,13 @@ export const SET_LIBRARY: SetEntry[] = [
     name: "Topps UEFA Club Competitions",
     brand: "Topps",
     sport: "Soccer",
+  },
+  {
+    year: "2025",
+    name: "Panini Prizm FIFA Club World Cup",
+    brand: "Panini",
+    sport: "Soccer",
+    checklistKey: "prizm-cwc-2025",
   },
 
   // Hockey — 2025-26 (Seasonal releases)

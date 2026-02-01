@@ -55,7 +55,7 @@ export default function BackupPage() {
       images,
       sharedImages,
     };
-    downloadJson(`card-ledger-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
+    downloadJson(`thebindr-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
     setNotice("Backup exported.");
   }
 

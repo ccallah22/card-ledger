@@ -22,6 +22,7 @@ import { PRIZM_2025_CHECKLIST } from "@/lib/checklists/prizm2025";
 import { PRIZM_2025_AUTOGRAPHS } from "@/lib/checklists/prizm2025_autographs";
 import { PRIZM_2025_MEMORABILIA } from "@/lib/checklists/prizm2025_memorabilia";
 import { PRIZM_2025_INSERTS } from "@/lib/checklists/prizm2025_inserts";
+import { PRIZM_2025_FIFA_CLUB_WORLD_CUP_CHECKLIST } from "@/lib/checklists/prizm2025_fifa_club_world_cup";
 
 const INSERT_SECTIONS = new Set([
   "Anniversary Rookies",
@@ -89,6 +90,19 @@ const INSERT_SECTIONS = new Set([
   "Prizm Flashback Rookie Prizms Silver",
   "Prizmania",
   "Prizmatic",
+  "Continental Contenders",
+  "Continental Pride",
+  "En Fuego",
+  "Global Graphs",
+  "Inter-Continental",
+  "Kaboom!",
+  "Legendary Talents",
+  "New Era",
+  "Pitch Crowns",
+  "Team Badges",
+  "The Logo",
+  "The Trophy",
+  "Widescreen",
 ]);
 
 const VARIANT_KEYWORDS = [
@@ -583,6 +597,72 @@ const PRIZM_SECTION_VARIANTS: Record<string, string[]> = {
   "Rookie Gear": PRIZM_MEMO_VARIANTS,
 };
 
+const CWC_BASE_VARIANTS = [
+  "Glitter Prizms",
+  "Green Ice Prizms",
+  "Hyper Prizms",
+  "Ice Prizms",
+  "Pandora Prizms",
+  "Pulsar Prizms",
+  "Red, White, and Blue Mojo Prizms",
+  "Seismic Prizms",
+  "Silver Prizms",
+  "White Knight Prizms",
+  "White Sparkle Prizms",
+  "Pink Seismic Prizms /299",
+  "Red Pulsar Prizms /299",
+  "Blue Pulsar Prizms /275",
+  "Blue Seismic Prizms /275",
+  "Orange Seismic Prizms /199",
+  "Red Prizms /199",
+  "Blue Ice Prizms /175",
+  "Blue Glitter Prizms /149",
+  "Orange Pulsar Prizms /149",
+  "Purple Glitter Prizms /125",
+  "Purple Prizms /125",
+  "Orange Glitter Prizms /99",
+  "Purple Seismic Prizms /99",
+  "Teal Prizms /99",
+  "Purple Pulsar Prizms /75",
+  "Purple Pandora Prizms /49",
+  "Teal Seismic Prizms /49",
+  "Multicolor Mojo Prizms /25",
+  "Teal Pulsar Prizms /25",
+  "Logo Prizms /20",
+  "Pink Mojo Prizms /11",
+  "Gold Glitter Prizms /10",
+  "Gold Prizms /10",
+  "Gold Pulsar Prizms /10",
+  "Gold Seismic Prizms /10",
+  "Blue Shimmer Prizms /8",
+  "Green Prizms /5",
+  "Gold Shimmer Prizms /3",
+  "Gold Vinyl Prizms /1",
+];
+
+const CWC_INSERT_VARIANTS = [
+  "Silver Prizms",
+  "Blue Ice Prizms /99",
+  "Purple Pandora Prizms /49",
+  "Mojo Prizms /25",
+  "Gold Prizms /10",
+  "Green Prizms /5",
+  "Gold Vinyl Prizms /1",
+];
+
+const CWC_SECTION_VARIANTS: Record<string, string[]> = {
+  "Base Set": CWC_BASE_VARIANTS,
+  "Continental Contenders": CWC_INSERT_VARIANTS,
+  "En Fuego": CWC_INSERT_VARIANTS,
+  "Inter-Continental": CWC_INSERT_VARIANTS,
+  "Kaboom!": ["Gold /10", "Green /1"],
+  "Legendary Talents": CWC_INSERT_VARIANTS,
+  "New Era": CWC_INSERT_VARIANTS,
+  "Prizmania": CWC_INSERT_VARIANTS,
+  "Team Badges": CWC_INSERT_VARIANTS,
+  "Widescreen": CWC_INSERT_VARIANTS,
+};
+
 const DONRUSS_BASE_VARIANTS = [
   "Aqueous Test",
   "Canvas",
@@ -934,6 +1014,18 @@ const PRIZM_EXCLUSIONS: Record<
   },
 };
 
+const CWC_EXCLUSIONS: Record<string, { noBase?: boolean }> = {
+  // Dual Signatures
+  "Dual Signatures#1": { noBase: true },
+  // Global Graphs
+  "Global Graphs#8": { noBase: true },
+  "Global Graphs#10": { noBase: true },
+  // Signatures
+  "Signatures#1": { noBase: true },
+  "Signatures#19": { noBase: true },
+  "Signatures#25": { noBase: true },
+};
+
 const SCORE_EXCLUSIONS: Record<
   string,
   { noBase?: boolean; noVariants?: string[] }
@@ -1009,6 +1101,19 @@ function expandPrizmChecklist<T extends { section: string; number: string | numb
   return out;
 }
 
+function expandCwcChecklist<T extends { section: string; number: string | number }>(items: T[]) {
+  const out: T[] = [];
+  for (const item of items) {
+    const exclusion = CWC_EXCLUSIONS[`${item.section}#${item.number}`];
+    if (!exclusion?.noBase) out.push(item);
+    const variants = CWC_SECTION_VARIANTS[item.section] ?? [];
+    for (const variant of variants) {
+      out.push({ ...item, section: `${item.section} • ${variant}` });
+    }
+  }
+  return out;
+}
+
 function expandDonrussChecklist<T extends { section: string; number: string | number }>(
   items: T[]
 ) {
@@ -1062,8 +1167,19 @@ function applySectionAutoFill(
   setSerialTotal: (v: string) => void,
   setInsert: (v: string) => void
 ) {
-  if (INSERT_SECTIONS.has(section)) {
-    setInsert(section);
+  const [rawBase, rawVariant] = section.split("•").map((s) => s.trim());
+  const baseSection = rawBase ?? section;
+  const variantSection = rawVariant ?? "";
+
+  if (INSERT_SECTIONS.has(baseSection)) {
+    setInsert(baseSection);
+  }
+
+  if (variantSection) {
+    setParallel(variantSection);
+    const match = variantSection.match(/\/\s*(\d+)/);
+    setSerialTotal(match ? match[1] : "");
+    return;
   }
 
   if (section.includes("Season Stat Line /")) {
@@ -1907,6 +2023,9 @@ function NewCardPageInner() {
         ...expandDonrussChecklist(DONRUSS_2025_MEMORABILIA),
         ...expandDonrussChecklist(DONRUSS_2025_INSERTS),
       ];
+    }
+    if (checklistKey === "prizm-cwc-2025") {
+      return [...expandCwcChecklist(PRIZM_2025_FIFA_CLUB_WORLD_CUP_CHECKLIST)];
     }
     if (checklistKey === "prizm-2025") {
       return [
