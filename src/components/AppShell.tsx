@@ -378,17 +378,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main */}
       <main className="flex-1">
         {/* Mobile top bar */}
-        <div className="sm:hidden border-b bg-white">
+        <div className="sm:hidden border-b bg-[#2b323a] text-white">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
                 <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
               </div>
               <div className="text-sm font-semibold">TheBindr</div>
             </div>
             <Link
               href="/cards/new"
-              className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white"
+              className="rounded-md bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20"
             >
               Add to Binder
             </Link>
@@ -402,8 +402,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={
-                    "rounded-full px-3 py-1 text-sm whitespace-nowrap " +
-                    (active ? "bg-[#2b323a] text-white" : "bg-zinc-100 text-zinc-800")
+                    "rounded-full border px-3 py-1 text-sm whitespace-nowrap transition " +
+                    (active
+                      ? "border-white bg-white text-[#2b323a]"
+                      : "border-white/25 bg-white/10 text-white hover:bg-white/20")
                   }
                 >
                   {item.label}
