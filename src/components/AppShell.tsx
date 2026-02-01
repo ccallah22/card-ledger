@@ -131,7 +131,7 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
       <div
         className="
           pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2
-          whitespace-nowrap rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-white
+          whitespace-nowrap rounded-md border border-zinc-800 bg-[#2b323a] px-2 py-1 text-xs text-white
           opacity-0 shadow-sm transition group-hover:opacity-100
         "
       >
@@ -139,7 +139,7 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
         <div
           className="
             absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2
-            h-2 w-2 rotate-45 bg-zinc-900
+            h-2 w-2 rotate-45 bg-[#2b323a]
             border-l border-b border-zinc-800
           "
         />
@@ -167,7 +167,7 @@ function NavLink({
       className={
         "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
         (active
-          ? "bg-zinc-900 text-white"
+          ? "bg-[#2b323a] text-white"
           : "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900")
       }
     >
@@ -274,8 +274,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           }
         >
           <div className={"flex items-center " + (collapsed ? "" : "gap-2")}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-white">
-              <span className="text-sm font-semibold">T</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden">
+              <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
             </div>
             {!collapsed ? (
               <div className="text-sm font-semibold tracking-tight">TheBindr</div>
@@ -380,10 +380,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Mobile top bar */}
         <div className="sm:hidden border-b bg-white">
           <div className="flex items-center justify-between px-4 py-3">
-            <div className="text-sm font-semibold">TheBindr</div>
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden">
+                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+              </div>
+              <div className="text-sm font-semibold">TheBindr</div>
+            </div>
             <Link
               href="/cards/new"
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+              className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white"
             >
               Add to Binder
             </Link>
@@ -398,7 +403,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   href={item.href}
                   className={
                     "rounded-full px-3 py-1 text-sm whitespace-nowrap " +
-                    (active ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-800")
+                    (active ? "bg-[#2b323a] text-white" : "bg-zinc-100 text-zinc-800")
                   }
                 >
                   {item.label}

@@ -5,6 +5,10 @@ import AppShell from "@/components/AppShell";
 export const metadata: Metadata = {
   title: "TheBindr",
   description: "Track and manage your binder.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({

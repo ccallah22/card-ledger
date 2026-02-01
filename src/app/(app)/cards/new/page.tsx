@@ -2371,7 +2371,7 @@ function NewCardPageInner() {
                 className={
                   "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
                   (checklistSection === "ALL"
-                    ? "border-zinc-900 bg-zinc-900 text-white"
+                    ? "border-zinc-900 bg-[#2b323a] text-white"
                     : "bg-white hover:bg-zinc-50")
                 }
               >
@@ -2387,7 +2387,7 @@ function NewCardPageInner() {
                   className={
                     "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
                     (checklistSection === g.label
-                      ? "border-zinc-900 bg-zinc-900 text-white"
+                      ? "border-zinc-900 bg-[#2b323a] text-white"
                       : "bg-white hover:bg-zinc-50")
                   }
                 >
@@ -2726,7 +2726,7 @@ function NewCardPageInner() {
           <button
             onClick={onSave}
             disabled={!canSave}
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             Save Card
           </button>
@@ -2885,7 +2885,7 @@ function NewCardPageInner() {
                     setImageError(err.message || "Image failed validation.");
                   });
                 }}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+                className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
               >
                 Use Crop
               </button>

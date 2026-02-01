@@ -568,7 +568,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             <button
               type="button"
               onClick={() => router.push(`/cards/${String(id)}/sold`)}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+              className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
             >
               Mark as Sold
             </button>
@@ -754,7 +754,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
               <button
                 type="button"
                 onClick={handleSaveImage}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800"
+                className="rounded-md bg-[#2b323a] px-3 py-2 text-xs font-medium text-white hover:bg-[#242a32]"
               >
                 Save image
               </button>
@@ -795,7 +795,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                   <button
                     type="button"
                     onClick={handleReportImage}
-                    className="rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800"
+                    className="rounded-md bg-[#2b323a] px-3 py-2 text-xs font-medium text-white hover:bg-[#242a32]"
                   >
                     Submit report
                   </button>
@@ -905,7 +905,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             <button
               type="button"
               onClick={() => setShowCompForm((v) => !v)}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800"
+              className="rounded-md bg-[#2b323a] px-3 py-2 text-xs font-medium text-white hover:bg-[#242a32]"
             >
               {showCompForm ? "Cancel" : "Add comp"}
             </button>
@@ -956,7 +956,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                   type="button"
                   onClick={handleAddComp}
                   disabled={!Number.isFinite(Number(compPrice))}
-                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                  className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32] disabled:opacity-50"
                 >
                   Save comp
                 </button>
@@ -1161,7 +1161,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                     setImageError(err.message || "Image failed validation.");
                   });
                 }}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+                className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
               >
                 Use Crop
               </button>

@@ -38,7 +38,7 @@ export default function WishlistPage() {
         <div className="flex gap-2">
           <Link
             href="/cards/new?wishlist=1"
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+            className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
           >
             Add to Binder
           </Link>
