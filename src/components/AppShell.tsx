@@ -57,6 +57,15 @@ function IconDownload() {
     </svg>
   );
 }
+function IconDatabase() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+      <ellipse cx="12" cy="5" rx="8" ry="3" />
+      <path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+      <path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" />
+    </svg>
+  );
+}
 function IconHeart() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
@@ -93,6 +102,7 @@ const NAV: NavItem[] = [
   { href: "/cards/new", label: "Add Card", icon: <IconPlus /> },
   { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
   { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
+  { href: "/cards/backup", label: "Backup", icon: <IconDatabase /> },
   { href: "/cards/sold", label: "Sold History", icon: <IconReceipt /> },
 ];
 
@@ -105,7 +115,8 @@ function isActivePath(pathname: string, href: string) {
         !pathname.startsWith("/cards/sold") &&
         !pathname.startsWith("/cards/locations") &&
         !pathname.startsWith("/cards/wishlist") &&
-        !pathname.startsWith("/cards/for-sale")
+        !pathname.startsWith("/cards/for-sale") &&
+        !pathname.startsWith("/cards/backup")
       );
     }
     return false;

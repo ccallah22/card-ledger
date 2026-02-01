@@ -25,6 +25,10 @@ function saveMap(map: Record<string, string>) {
   }
 }
 
+export function loadImageMap() {
+  return loadMap();
+}
+
 export function loadImageForCard(id: string) {
   if (!id) return null;
   const map = loadMap();
@@ -59,4 +63,16 @@ export function removeImageForCard(id: string) {
     delete map[id];
     saveMap(map);
   }
+}
+
+export function replaceImageMap(nextMap: Record<string, string>) {
+  if (saveMap(nextMap)) return true;
+
+  const map = { ...nextMap };
+  const entries = Object.entries(map).sort((a, b) => b[1].length - a[1].length);
+  for (const [key] of entries) {
+    delete map[key];
+    if (saveMap(map)) return true;
+  }
+  return false;
 }

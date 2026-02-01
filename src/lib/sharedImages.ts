@@ -44,3 +44,13 @@ export function removeSharedImage(fingerprint: string) {
     localStorage.setItem(KEY, JSON.stringify(map));
   }
 }
+
+export function replaceSharedImages(nextMap: Record<string, SharedImage>) {
+  if (typeof window === "undefined") return false;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(nextMap));
+    return true;
+  } catch {
+    return false;
+  }
+}
