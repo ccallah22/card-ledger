@@ -918,7 +918,7 @@ export default function CardsPage() {
             <select
               value={sportFilter}
               onChange={(e) => setSportAndReset(e.target.value)}
-              className="w-full rounded-md border bg-white px-3 py-2 text-sm"
+              className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
             >
               <option value="ALL">All</option>
               {sportOptions.map((o) => (
@@ -953,7 +953,7 @@ export default function CardsPage() {
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
-            className="w-18 rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50 whitespace-nowrap"
+            className="hidden sm:inline-flex w-18 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
           >
             Filters{activeFiltersCount ? ` • ${activeFiltersCount}` : ""}
           </button>
@@ -966,13 +966,13 @@ export default function CardsPage() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search player, set, year, grade..."
-              className="w-full rounded-md border bg-white px-3 py-2 text-sm outline-none ring-zinc-300 focus:ring-2 sm:w-80"
+              className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-zinc-300 focus:ring-2 sm:w-80"
             />
 
             <select
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as SortMode)}
-              className="w-full rounded-md border bg-white px-3 py-2 text-sm sm:w-56"
+              className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-56"
             >
               <option value="PLAYER_ASC">Sort: Player (A→Z)</option>
               <option value="YEAR_DESC">Sort: Year (newest)</option>
@@ -984,6 +984,13 @@ export default function CardsPage() {
 
           <div className="flex gap-2">
             <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              className="sm:hidden w-18 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
+            >
+              Filters{activeFiltersCount ? ` • ${activeFiltersCount}` : ""}
+            </button>
+            <button
               onClick={() => {
                 setQ("");
                 setSportFilter("ALL");
@@ -991,7 +998,7 @@ export default function CardsPage() {
                 setShowFilters(false);
                 refresh();
               }}
-              className="w-18 rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+              className="w-18 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
             >
               Clear filters
             </button>
@@ -1124,7 +1131,7 @@ export default function CardsPage() {
                   clearCollectorFilters();
                   setShowFilters(false);
                 }}
-                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+                className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
               >
                 Clear filters
               </button>
@@ -1609,7 +1616,7 @@ function Chip({
         "inline-flex whitespace-nowrap items-center rounded-full border px-3 py-1 text-xs font-medium transition " +
         (active
           ? "border-zinc-900 bg-[#2b323a] text-white"
-          : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50")
+          : "border-zinc-400 bg-white text-zinc-800 hover:bg-zinc-50")
       }
     >
       {children}

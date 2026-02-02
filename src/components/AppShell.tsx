@@ -14,7 +14,7 @@ const SIDEBAR_KEY = "card-ledger:ui:sidebar-collapsed:v1";
 
 function IconGrid() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M4 4h7v7H4z" />
       <path d="M13 4h7v7h-7z" />
       <path d="M4 13h7v7H4z" />
@@ -24,7 +24,7 @@ function IconGrid() {
 }
 function IconPlus() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 5v14" />
       <path d="M5 12h14" />
     </svg>
@@ -32,17 +32,25 @@ function IconPlus() {
 }
 function IconReceipt() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M6 2h12v20l-2-1-2 1-2-1-2 1-2-1-2 1V2z" />
-      <path d="M9 7h6" />
-      <path d="M9 11h6" />
-      <path d="M9 15h6" />
+    <svg
+      viewBox="0 0 24 24"
+      className="h-[21px] w-[21px] block"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <g transform="translate(2 2) scale(0.83)">
+        <path d="M6 2h12v20l-2-1-2 1-2-1-2 1-2-1-2 1V2z" />
+        <path d="M9 7h6" />
+        <path d="M9 11h6" />
+        <path d="M9 15h6" />
+      </g>
     </svg>
   );
 }
 function IconMapPin() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 21s7-4.5 7-11a7 7 0 10-14 0c0 6.5 7 11 7 11z" />
       <path d="M12 10a2 2 0 100-4 2 2 0 000 4z" />
     </svg>
@@ -50,7 +58,7 @@ function IconMapPin() {
 }
 function IconDownload() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 3v12" />
       <path d="M8 11l4 4 4-4" />
       <path d="M4 21h16" />
@@ -59,7 +67,7 @@ function IconDownload() {
 }
 function IconDatabase() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
       <ellipse cx="12" cy="5" rx="8" ry="3" />
       <path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
       <path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" />
@@ -68,30 +76,40 @@ function IconDatabase() {
 }
 function IconHeart() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M20.8 5.6a5 5 0 00-7.1 0L12 7.3l-1.7-1.7a5 5 0 10-7.1 7.1l1.7 1.7L12 21l7.1-6.6 1.7-1.7a5 5 0 000-7.1z" />
     </svg>
   );
 }
 function IconTag() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M20 12l-8 8-10-10V2h8l10 10z" />
       <circle cx="7" cy="7" r="2" />
     </svg>
   );
 }
 
+function IconDots() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="currentColor">
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
+    </svg>
+  );
+}
+
 function IconChevronLeft() {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-4 w-4 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M15 6l-6 6 6 6" />
     </svg>
   );
 }
 function IconChevronRight() {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" className="h-4 w-4 block" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M9 6l6 6-6 6" />
     </svg>
   );
@@ -99,10 +117,8 @@ function IconChevronRight() {
 
 const NAV: NavItem[] = [
   { href: "/cards", label: "Binder", icon: <IconGrid /> },
-  { href: "/cards/new", label: "Add to Binder", icon: <IconPlus /> },
   { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
   { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
-  { href: "/cards/backup", label: "Backup", icon: <IconDatabase /> },
   { href: "/cards/sold", label: "Sold History", icon: <IconReceipt /> },
 ];
 
@@ -173,14 +189,14 @@ function NavLink({
     >
       <span
         className={
-          "flex h-9 w-9 items-center justify-center rounded-md " +
+          "flex h-9 w-9 items-center justify-center rounded-md shrink-0 " +
           (active ? "bg-white/10" : "bg-zinc-100 group-hover:bg-white")
         }
       >
         {icon}
       </span>
 
-      {!collapsed ? <span className="font-medium">{label}</span> : null}
+      {!collapsed ? <span className="font-medium whitespace-nowrap">{label}</span> : null}
     </Link>
   );
 
@@ -194,7 +210,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hasLoadedPref, setHasLoadedPref] = useState(false);
   const [sidebarEdgeLeft, setSidebarEdgeLeft] = useState<number | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement | null>(null);
+  const moreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
@@ -241,6 +259,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("scroll", updateLeft, true);
     };
   }, [collapsed]);
+
+  useEffect(() => {
+    function onDocClick(event: MouseEvent) {
+      if (!moreRef.current) return;
+      if (!moreRef.current.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    }
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, []);
 
 
   const activeMap = useMemo(() => {
@@ -329,27 +358,59 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               ) : null}
 
-              {(() => {
-                const button = (
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent("cards:export"))}
-                    className={
-                      "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
-                      (collapsed ? "-ml-0.5 w-full " : "w-full ") +
-                      "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
-                    }
-                  >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 group-hover:bg-white">
-                      <IconDownload />
-                    </span>
-                    {!collapsed ? <span className="font-medium">Export CSV</span> : null}
-                  </button>
-                );
+              <div ref={moreRef} className="relative">
+                {(() => {
+                  const button = (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMoreOpen((v) => !v);
+                      }}
+                      className={
+                        "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
+                        (collapsed ? "-ml-0.5 w-full " : "w-full ") +
+                        "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
+                      }
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 group-hover:bg-white">
+                        <IconDots />
+                      </span>
+                      {!collapsed ? <span className="font-medium">More</span> : null}
+                    </button>
+                  );
 
-                if (!collapsed) return button;
-                return <Tooltip text="Export CSV">{button}</Tooltip>;
-              })()}
+                  if (!collapsed) return button;
+                  return <Tooltip text="More">{button}</Tooltip>;
+                })()}
+
+                {moreOpen ? (
+                  <div
+                    className="absolute left-2 top-full z-50 mt-2 w-44 overflow-hidden rounded-md border bg-white shadow-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Link
+                      href="/cards/backup"
+                      onClick={() => setMoreOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                    >
+                      <IconDatabase />
+                      Backup
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        window.dispatchEvent(new CustomEvent("cards:export"));
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                    >
+                      <IconDownload />
+                      Export CSV
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -379,22 +440,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1">
         {/* Mobile top bar */}
         <div className="sm:hidden border-b bg-[#2b323a] text-white">
-          <div className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
-              </div>
-              <div className="text-sm font-semibold">TheBindr</div>
+          <div className="flex items-center justify-center px-4 py-2 gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
+              <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
             </div>
-            <Link
-              href="/cards/new"
-              className="rounded-md bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20"
-            >
-              Add to Binder
-            </Link>
+            <div className="text-xl font-semibold tracking-tight">TheBindr</div>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto px-4 pb-3">
+          <div className="px-4 pb-1" aria-hidden="true" />
+        </div>
+
+        {/* Content container */}
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-6">
+          {children}
+        </div>
+      </main>
+
+      {/* Mobile bottom nav */}
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 border-t bg-white/95 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-3">
+          <div className="grid grid-cols-5 gap-1 py-2">
             {NAV.map((item) => {
               const active = !!activeMap.get(item.href);
               return (
@@ -402,22 +467,61 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={
-                    "rounded-full border px-3 py-1 text-sm whitespace-nowrap transition " +
+                    "flex flex-col items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] transition " +
                     (active
-                      ? "border-white bg-white text-[#2b323a]"
-                      : "border-white/25 bg-white/10 text-white hover:bg-white/20")
+                      ? "text-white bg-[#2b323a]"
+                      : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
                   }
                 >
-                  {item.label}
+                  <span className="h-5 w-5">{item.icon}</span>
+                  <span className="font-medium leading-none">{item.label.replace(" ", "\u00a0")}</span>
                 </Link>
               );
             })}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMoreOpen((v) => !v);
+              }}
+              className={
+                "flex flex-col items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] transition " +
+                (moreOpen ? "text-white bg-[#2b323a]" : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
+              }
+            >
+              <span className="h-5 w-5">
+                <IconDots />
+              </span>
+              <span className="font-medium">More</span>
+            </button>
           </div>
         </div>
-
-        {/* Content container */}
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6">{children}</div>
-      </main>
+        {moreOpen ? (
+          <div className="border-t bg-white" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto max-w-6xl px-4 py-3 space-y-2">
+              <Link
+                href="/cards/backup"
+                onClick={() => setMoreOpen(false)}
+                className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <IconDatabase />
+                Backup
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  window.dispatchEvent(new CustomEvent("cards:export"));
+                }}
+                className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <IconDownload />
+                Export CSV
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </nav>
     </div>
   );
 }
