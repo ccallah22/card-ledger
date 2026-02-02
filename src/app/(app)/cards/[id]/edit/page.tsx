@@ -5,6 +5,8 @@ import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
 import { loadCards, upsertCard } from "@/lib/storage";
+import { loadImageForCard, removeImageForCard } from "@/lib/imageStore";
+import { IMAGE_RULES, processImageFile } from "@/lib/image";
 import { formatCurrency } from "@/lib/format";
 
 function toNum(v: string): number | undefined {
@@ -63,6 +65,9 @@ export default function EditCardPage({
   const [isPatch, setIsPatch] = useState(false);
 
   const [notes, setNotes] = useState("");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState("");
+  const [imageRemoved, setImageRemoved] = useState(false);
 
   useEffect(() => {
     const cards = loadCards();
@@ -108,6 +113,8 @@ export default function EditCardPage({
     setIsPatch(!!(found as any).isPatch);
 
     setNotes(found.notes ?? "");
+    setImageUrl(loadImageForCard(String(found.id)));
+    setImageRemoved(false);
 
     setLoading(false);
   }, [id]);
@@ -160,10 +167,18 @@ export default function EditCardPage({
       isPatch: isPatch || undefined,
 
       notes: notes.trim() || undefined,
+      imageUrl: imageUrl || undefined,
+      imageShared: imageUrl ? (original as any).imageShared : undefined,
 
       updatedAt: now,
       createdAt: original.createdAt ?? now,
     };
+
+    if (imageRemoved) {
+      removeImageForCard(String(original.id));
+      next.imageUrl = undefined;
+      next.imageShared = undefined;
+    }
 
     upsertCard(next);
     router.push(`/cards/${original.id}`);
@@ -278,6 +293,56 @@ export default function EditCardPage({
             rows={3}
             placeholder="Any extra details…"
           />
+        </div>
+
+        <div className="sm:col-span-2 mt-2 border-t pt-4">
+          <div className="text-sm font-medium text-zinc-900">Card image</div>
+          <div className="text-xs text-zinc-500">Upload a new image or remove the current one.</div>
+        </div>
+
+        <div className="sm:col-span-2 grid gap-3 sm:grid-cols-[180px_1fr] items-start">
+          <div className="h-40 w-full rounded-md border bg-zinc-50 flex items-center justify-center overflow-hidden">
+            {imageUrl ? (
+              <img src={imageUrl} alt="Card" className="h-full w-full object-cover" />
+            ) : (
+              <div className="text-xs text-zinc-400">No image</div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <label className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50 cursor-pointer">
+              <input
+                type="file"
+                accept={IMAGE_RULES.allowedTypes.join(",")}
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setImageError("");
+                  try {
+                    const { dataUrl } = await processImageFile(file);
+                    setImageUrl(dataUrl);
+                    setImageRemoved(false);
+                  } catch (err) {
+                    setImageError((err as Error).message || "Image failed validation.");
+                  }
+                }}
+              />
+              Upload image
+            </label>
+            {imageUrl ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setImageUrl(null);
+                  setImageRemoved(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50"
+              >
+                Remove image
+              </button>
+            ) : null}
+            {imageError ? <div className="text-xs text-red-600">{imageError}</div> : null}
+          </div>
         </div>
 
         <div className="sm:col-span-2 flex justify-end gap-2">
