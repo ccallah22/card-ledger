@@ -67,16 +67,17 @@ function LineChart({ points, height = 140 }: { points: TrendPoint[]; height?: nu
     <div className="rounded-xl border bg-white p-4">
       <div className="mb-2 flex items-end justify-between">
         <div>
-          <div className="text-xs text-zinc-500">Realized Net Trend</div>
-          <div className="text-sm font-medium text-zinc-900">Cumulative realized net over time</div>
+          <div className="text-sm font-semibold text-zinc-900">Realized Net Trend</div>
+          <div className="text-xs text-zinc-500">Cumulative realized net over time</div>
         </div>
-        <div className="text-xs text-zinc-500">
-          Min: {formatCurrency(minV, { accounting: true })} • Max:{" "}
-          {formatCurrency(maxV, { accounting: true })}
-        </div>
+        <div className="text-xs text-zinc-500" />
       </div>
 
-      <svg viewBox={`0 0 ${width} 0 ${height}`} className="h-[160px] w-full" role="img">
+      <svg
+        viewBox={`0 0 ${width} 0 ${height}`}
+        className="h-[160px] w-full text-zinc-800"
+        role="img"
+      >
         <line x1={pad} y1={pad} x2={width - pad} y2={pad} stroke="currentColor" opacity="0.08" />
         <line
           x1={pad}
@@ -245,8 +246,11 @@ export default function SoldHistoryPage() {
           <p className="text-sm text-zinc-600">Realized performance based on actual sold prices.</p>
         </div>
 
-        <Link href="/cards" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50">
-          Back to binder
+        <Link
+          href="/cards"
+          className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
+        >
+          Back to Binder
         </Link>
       </div>
 
@@ -263,14 +267,6 @@ export default function SoldHistoryPage() {
           tone={netTone}
         />
         <Stat label="Win rate" value={`${Math.round(totals.winRate * 100)}%`} />
-        <Stat
-          label="Avg P/L per sale"
-          value={formatCurrency(totals.avgProfit, { accounting: true })}
-          tone={avgTone}
-        />
-        <Stat label="ROI" value={roiPct} tone={roiTone} />
-        <Stat label="Avg days to sell" value={totals.holdCount > 0 ? `${Math.round(totals.avgDaysToSell)} d` : "—"} />
-        <Stat label="Median days" value={totals.holdCount > 0 ? `${Math.round(totals.medianDaysToSell)} d` : "—"} />
       </div>
 
       {/* Best / Worst callouts */}
@@ -291,7 +287,7 @@ export default function SoldHistoryPage() {
       <div className="overflow-hidden rounded-xl border bg-white">
         <div className="grid grid-cols-12 gap-2 border-b bg-zinc-50 px-4 py-2 text-xs font-medium text-zinc-600">
           <div className="col-span-4">Card</div>
-          <div className="col-span-2">Sold date</div>
+          <div className="col-span-2 whitespace-nowrap">Sold date</div>
           <div className="col-span-1 text-right">Days</div>
           <div className="col-span-2 text-right">Paid</div>
           <div className="col-span-2 text-right">Sold</div>
@@ -328,7 +324,9 @@ export default function SoldHistoryPage() {
                         {c.team ? <div className="text-xs text-zinc-500">{c.team}</div> : null}
                       </div>
 
-                      <div className="col-span-2 text-zinc-700">{soldDate || "—"}</div>
+                      <div className="col-span-2 whitespace-nowrap text-zinc-700">
+                        {soldDate || "—"}
+                      </div>
 
                       <div className="col-span-1 text-right tabular-nums text-zinc-700">
                         {typeof hold === "number" ? `${hold}` : "—"}

@@ -457,9 +457,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 border-t bg-white/95 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-3">
-          <div className="grid grid-cols-5 gap-1 py-2">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 w-screen max-w-full border-t bg-white/95 backdrop-blur overflow-x-hidden">
+        <div className="w-full max-w-full px-0 overflow-x-hidden">
+          <div className="flex w-full max-w-full items-center gap-0 py-2">
             {NAV.map((item) => {
               const active = !!activeMap.get(item.href);
               return (
@@ -467,14 +467,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={
-                    "flex flex-col items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] transition " +
+                    "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-0 py-1 text-[9px] transition " +
                     (active
                       ? "text-white bg-[#2b323a]"
                       : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
                   }
                 >
-                  <span className="h-5 w-5">{item.icon}</span>
-                  <span className="font-medium leading-none">{item.label.replace(" ", "\u00a0")}</span>
+                  <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">{item.icon}</span>
+                  <span className="w-full truncate text-center font-medium leading-none">
+                    {item.label.replace(" ", "\u00a0")}
+                  </span>
                 </Link>
               );
             })}
@@ -485,14 +487,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 setMoreOpen((v) => !v);
               }}
               className={
-                "flex flex-col items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] transition " +
+                "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-0 py-1 text-[9px] transition " +
                 (moreOpen ? "text-white bg-[#2b323a]" : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
               }
             >
-              <span className="h-5 w-5">
+              <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">
                 <IconDots />
               </span>
-              <span className="font-medium">More</span>
+              <span className="w-full truncate text-center font-medium leading-none">More</span>
             </button>
           </div>
         </div>

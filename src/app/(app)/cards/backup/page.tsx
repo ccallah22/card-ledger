@@ -95,14 +95,14 @@ export default function BackupPage() {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pb-10 pt-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">Backup</h1>
-        <p className="mt-1 text-sm text-zinc-600">
+        <h1 className="text-2xl font-semibold text-zinc-500 sm:text-zinc-900">Backup</h1>
+        <p className="mt-1 text-sm text-zinc-700">
           Export a full backup (cards + images + shared images) and restore it on another device.
         </p>
       </div>
 
-      <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-        <div className="text-sm text-zinc-700">
+      <div className="rounded-lg border border-zinc-300 bg-white p-4 shadow-sm">
+        <div className="text-sm text-zinc-900">
           Current data:{" "}
           <span className="font-medium text-zinc-900">{summary.cards}</span> cards,{" "}
           <span className="font-medium text-zinc-900">{summary.images}</span> images,{" "}
@@ -112,11 +112,11 @@ export default function BackupPage() {
           <button
             type="button"
             onClick={handleExport}
-            className="rounded-md border bg-white px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-50"
+            className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
           >
             Export JSON
           </button>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-50">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50">
             <span>{importing ? "Importing…" : "Import JSON"}</span>
             <input
               type="file"
@@ -131,7 +131,7 @@ export default function BackupPage() {
             />
           </label>
         </div>
-        <p className="mt-2 text-xs text-zinc-500">
+        <p className="mt-2 text-xs text-zinc-600">
           Import replaces your current local data on this device.
         </p>
       </div>

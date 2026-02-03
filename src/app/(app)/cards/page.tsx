@@ -895,7 +895,6 @@ export default function CardsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Binder</h1>
-          <p className="text-sm text-zinc-600">Sports cards (local MVP).</p>
         </div>
 
         <div className="flex gap-2">

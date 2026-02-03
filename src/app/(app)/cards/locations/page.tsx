@@ -132,7 +132,7 @@ export default function LocationsPage() {
           href="/cards"
           className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
         >
-          Back to binder
+          Back to Binder
         </Link>
       </div>
 

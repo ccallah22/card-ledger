@@ -437,7 +437,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           ID in URL: <span className="font-mono">{String(id)}</span>
         </div>
         <Link href="/cards" className="text-zinc-300 underline">
-          Back to binder
+          Back to Binder
         </Link>
       </div>
     );
