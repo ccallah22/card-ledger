@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import RequireAuth from "@/components/RequireAuth";
 import { fetchCardsPage, type CardRow } from "@/lib/cardsDb";
 import { signImage } from "@/lib/cardImages";
 
 const PAGE_SIZE = 50;
 
-export default function CardsDbPage() {
+function CardsDbInner() {
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<CardRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -42,7 +43,7 @@ export default function CardsDbPage() {
 
   return (
     <div style={{ maxWidth: 900, margin: "40px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700 }}>Cards (Supabase)</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700 }}>Supabase Cards (DB)</h1>
 
       {msg && <p style={{ marginTop: 10 }}>{msg}</p>}
 
@@ -92,5 +93,13 @@ export default function CardsDbPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function CardsDbPage() {
+  return (
+    <RequireAuth>
+      <CardsDbInner />
+    </RequireAuth>
   );
 }

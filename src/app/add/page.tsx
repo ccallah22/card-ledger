@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import RequireAuth from "@/components/RequireAuth";
 import { supabase } from "@/lib/supabaseClient";
 import { uploadCardImages } from "@/lib/cardImages";
 import { createCardRow } from "@/lib/cardsDb";
 
-export default function AddCardPage() {
+function AddCardInner() {
   const [userId, setUserId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
@@ -28,7 +29,7 @@ export default function AddCardPage() {
     setMsg(null);
 
     if (!userId) {
-      setMsg("You must be logged in. Go to /login first.");
+      setMsg("You must be logged in.");
       return;
     }
     if (!name.trim()) {
@@ -72,8 +73,6 @@ export default function AddCardPage() {
   return (
     <div style={{ maxWidth: 640, margin: "40px auto", padding: 16 }}>
       <h1 style={{ fontSize: 24, fontWeight: 700 }}>Add Card</h1>
-
-      <p style={{ marginTop: 8 }}>{userId ? "Logged in ✅" : "Not logged in ❌ (go to /login)"}</p>
 
       <label style={{ display: "block", marginTop: 12 }}>
         Name
@@ -137,5 +136,13 @@ export default function AddCardPage() {
 
       {msg && <p style={{ marginTop: 12 }}>{msg}</p>}
     </div>
+  );
+}
+
+export default function AddCardPage() {
+  return (
+    <RequireAuth>
+      <AddCardInner />
+    </RequireAuth>
   );
 }
