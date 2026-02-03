@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import AuthStatus from "@/components/AuthStatus";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -14,7 +13,6 @@ import { loadSharedImages, type SharedImage } from "@/lib/sharedImages";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard } from "@/lib/imageStore";
 import { SET_LIBRARY } from "@/lib/sets";
-import { getThumbSignedUrl } from "@/lib/thumbUrl";
 
 const STALE_DAYS = 90;
 
@@ -456,16 +454,7 @@ export default function CardsPage() {
   }
 
   async function loadAndAttachThumbs() {
-    const nextCards = loadCards();
-    const withThumbs = await Promise.all(
-      nextCards.map(async (card) => {
-        const path = (card as any).thumb_path ?? card.thumbPath ?? null;
-        if (!path) return card;
-        const thumbUrl = await getThumbSignedUrl(path);
-        return { ...card, thumbUrl };
-      })
-    );
-    setCards(withThumbs);
+    setCards(loadCards());
   }
 
   function exportCsv() {
@@ -908,23 +897,12 @@ export default function CardsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div />
-          <AuthStatus />
-        </div>
-
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Binder</h1>
           </div>
 
           <div className="flex gap-2">
-            <Link
-              href="/cards-db"
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-            >
-              Supabase Cards (DB)
-            </Link>
             <Link
               href="/cards/new"
               className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
