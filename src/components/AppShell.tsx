@@ -271,6 +271,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }, []);
+
 
   const activeMap = useMemo(() => {
     const map = new Map<string, boolean>();

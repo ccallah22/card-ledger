@@ -5,6 +5,8 @@ import AppShell from "@/components/AppShell";
 export const metadata: Metadata = {
   title: "TheBindr",
   description: "Track and manage your binder.",
+  manifest: "/manifest.json",
+  themeColor: "#2b323a",
   icons: {
     icon: "/icon.png",
     apple: "/apple-icon.png",
@@ -18,6 +20,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+      </head>
       <body className="min-h-screen bg-zinc-50 text-zinc-900 antialiased">
         <AppShell>{children}</AppShell>
       </body>
