@@ -291,6 +291,10 @@ export default function CardsPage() {
   const [authLoading, setAuthLoading] = useState(true);
 
   const [cards, setCards] = useState<SportsCard[]>([]);
+  const [dataSource, setDataSource] = useState<"cloud" | "local">("local");
+  const [cloudLoading, setCloudLoading] = useState(true);
+  const [migrateBusy, setMigrateBusy] = useState(false);
+  const [migrateMsg, setMigrateMsg] = useState<string>("");
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
     Record<string, { reports: number; status?: string }>
@@ -496,12 +500,91 @@ export default function CardsPage() {
   }
 
   async function loadAndAttachThumbs() {
-    setCards(loadCards());
+    // Try cloud first
+    setCloudLoading(true);
+    setMigrateMsg("");
+
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const u = auth.user;
+      if (!u) {
+        // not logged in (shouldn't happen because you gate above)
+        setCards(loadCards());
+        setDataSource("local");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("cards_v1")
+        .select("id, card, created_at")
+        .eq("user_id", u.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const cloudCards: SportsCard[] = (data ?? []).map((row: any) => {
+        const c = (row.card ?? {}) as SportsCard;
+        // IMPORTANT: force the app card id to match the row id
+        return { ...c, id: row.id };
+      });
+
+      if (cloudCards.length > 0) {
+        setCards(cloudCards);
+        setDataSource("cloud");
+      } else {
+        // If no cloud cards yet, show local cards (so you don't "lose" anything)
+        const local = loadCards();
+        setCards(local);
+        setDataSource("local");
+      }
+    } catch (e: any) {
+      // If cloud fails for any reason, fall back to local so app still works
+      const local = loadCards();
+      setCards(local);
+      setDataSource("local");
+      setMigrateMsg(`Cloud load failed (showing local): ${e?.message ?? "unknown error"}`);
+    } finally {
+      setCloudLoading(false);
+    }
   }
 
   function exportCsv() {
     const csv = cardsToCsv(cards);
     downloadCsv(`thebindr-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
+
+  async function migrateLocalToCloud() {
+    setMigrateBusy(true);
+    setMigrateMsg("");
+
+    try {
+      const local = loadCards();
+      if (!local.length) {
+        setMigrateMsg("No local cards found to migrate.");
+        return;
+      }
+
+      const { data: auth } = await supabase.auth.getUser();
+      const u = auth.user;
+      if (!u) throw new Error("Not logged in");
+
+      // Insert all local cards into Supabase as JSON
+      const rows = local.map((c) => ({
+        user_id: u.id,
+        card: c,
+      }));
+
+      const { error } = await supabase.from("cards_v1").insert(rows);
+      if (error) throw error;
+
+      setMigrateMsg(`Migrated ${local.length} cards to cloud ✅`);
+      // Reload from cloud now
+      await loadAndAttachThumbs();
+    } catch (e: any) {
+      setMigrateMsg(`Migration failed: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setMigrateBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -928,11 +1011,24 @@ export default function CardsPage() {
     setDeleteTarget({ id: c.id, label: labelForCard(c) });
   }
 
-  function doDelete() {
+  async function doDelete() {
     if (!deleteTarget) return;
-    deleteCard(deleteTarget.id);
-    setDeleteTarget(null);
-    refresh();
+
+    try {
+      if (dataSource === "cloud") {
+        // Delete from Supabase
+        const { error } = await supabase.from("cards_v1").delete().eq("id", deleteTarget.id);
+        if (error) throw error;
+      } else {
+        // Delete from localStorage (your existing behavior)
+        deleteCard(deleteTarget.id);
+      }
+    } catch (e: any) {
+      alert(`Delete failed: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setDeleteTarget(null);
+      refresh();
+    }
   }
 
   return (
@@ -945,6 +1041,25 @@ export default function CardsPage() {
           </div>
 
           <div className="flex gap-2">
+            {dataSource === "local" ? (
+              <button
+                type="button"
+                onClick={migrateLocalToCloud}
+                disabled={migrateBusy || cloudLoading}
+                className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+                title="Upload your current local cards to Supabase so they sync across devices"
+              >
+                {migrateBusy ? "Migrating…" : "Migrate to Cloud"}
+              </button>
+            ) : (
+              <div
+                className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700"
+                title="Your Binder is loading from Supabase"
+              >
+                Cloud ✓
+              </div>
+            )}
+
             <Link
               href="/cards/new"
               className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
@@ -954,6 +1069,12 @@ export default function CardsPage() {
           </div>
         </div>
       </div>
+
+      {migrateMsg ? (
+        <div className="rounded-xl border bg-white p-3 text-sm text-zinc-700">
+          {migrateMsg}
+        </div>
+      ) : null}
 
       {/* ✅ Clean control card */}
       <div className="rounded-xl border bg-white p-3 space-y-3">
