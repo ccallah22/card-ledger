@@ -899,6 +899,12 @@ export default function CardsPage() {
 
         <div className="flex gap-2">
           <Link
+            href="/cards-db"
+            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+          >
+            Supabase Cards (DB)
+          </Link>
+          <Link
             href="/cards/new"
             className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
           >
