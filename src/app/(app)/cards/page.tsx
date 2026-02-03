@@ -14,6 +14,7 @@ import { loadSharedImages, type SharedImage } from "@/lib/sharedImages";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard } from "@/lib/imageStore";
 import { SET_LIBRARY } from "@/lib/sets";
+import { getThumbSignedUrl } from "@/lib/thumbUrl";
 
 const STALE_DAYS = 90;
 
@@ -328,7 +329,7 @@ export default function CardsPage() {
   } | null>(null);
 
   useEffect(() => {
-    setCards(loadCards());
+    void loadAndAttachThumbs();
     setSharedImages(loadSharedImages());
   }, []);
 
@@ -450,8 +451,21 @@ export default function CardsPage() {
   }, []);
 
   function refresh() {
-    setCards(loadCards());
+    void loadAndAttachThumbs();
     setSharedImages(loadSharedImages());
+  }
+
+  async function loadAndAttachThumbs() {
+    const nextCards = loadCards();
+    const withThumbs = await Promise.all(
+      nextCards.map(async (card) => {
+        const path = (card as any).thumb_path ?? card.thumbPath ?? null;
+        if (!path) return card;
+        const thumbUrl = await getThumbSignedUrl(path);
+        return { ...card, thumbUrl };
+      })
+    );
+    setCards(withThumbs);
   }
 
   function exportCsv() {
@@ -1330,11 +1344,13 @@ export default function CardsPage() {
                         (report.status === "blocked" ||
                           (report.reports ?? 0) >= REPORT_HIDE_THRESHOLD);
                       const storedImage = loadImageForCard(c.id);
+                      const thumbUrl = (c as any).thumbUrl as string | undefined;
                       const displayImage = hideImage
                         ? ""
                         : storedImage ??
                           ((c as any).imageUrl as string | undefined) ??
                           sharedImage?.dataUrl ??
+                          thumbUrl ??
                           "";
 
                       const rowHref = `/cards/${c.id}`;

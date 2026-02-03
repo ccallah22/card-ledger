@@ -117,6 +117,7 @@ function IconChevronRight() {
 
 const NAV: NavItem[] = [
   { href: "/cards", label: "Binder", icon: <IconGrid /> },
+  { href: "/cards-supabase", label: "Cards (Supabase)", icon: <IconGrid /> },
   { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
   { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
   { href: "/cards/sold", label: "Sold History", icon: <IconReceipt /> },

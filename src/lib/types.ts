@@ -63,6 +63,9 @@ export type SportsCard = {
   imageIsFront?: boolean;
   imageIsSlabbed?: boolean;
   imageType?: "front" | "back" | "slab_front" | "slab_back";
+  thumbPath?: string | null;
+  imagePath?: string | null;
+  thumbUrl?: string | null; // computed at runtime for display
 
   // Timestamps (helpful for future features like "recently added", "inventory age", etc.)
   createdAt?: string; // ISO string
