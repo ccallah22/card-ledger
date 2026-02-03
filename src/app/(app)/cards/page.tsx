@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
+import type { User } from "@supabase/supabase-js";
 import type { SportsCard } from "@/lib/types";
 import { loadCards, deleteCard } from "@/lib/storage";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
@@ -13,6 +14,7 @@ import { loadSharedImages, type SharedImage } from "@/lib/sharedImages";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard } from "@/lib/imageStore";
 import { SET_LIBRARY } from "@/lib/sets";
+import { supabase } from "@/lib/supabaseClient";
 
 const STALE_DAYS = 90;
 
@@ -285,6 +287,9 @@ function isRookie(c: SportsCard) {
 export default function CardsPage() {
   const router = useRouter();
 
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [cards, setCards] = useState<SportsCard[]>([]);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
@@ -325,6 +330,25 @@ export default function CardsPage() {
     id: string;
     label: string;
   } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!mounted) return;
+      setUser(data.user ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     void loadAndAttachThumbs();
@@ -451,6 +475,24 @@ export default function CardsPage() {
   function refresh() {
     void loadAndAttachThumbs();
     setSharedImages(loadSharedImages());
+  }
+
+  if (authLoading) {
+    return (
+      <div style={{ padding: 16 }}>
+        <p>Loading…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div style={{ maxWidth: 520, margin: "40px auto", padding: 16 }}>
+        <h1>Your collection</h1>
+        <p>You need to log in to view your cards.</p>
+        <Link href="/login">Go to login</Link>
+      </div>
+    );
   }
 
   async function loadAndAttachThumbs() {
