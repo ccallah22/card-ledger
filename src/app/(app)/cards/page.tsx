@@ -481,24 +481,6 @@ export default function CardsPage() {
     setSharedImages(loadSharedImages());
   }
 
-  if (authLoading) {
-    return (
-      <div style={{ padding: 16 }}>
-        <p>Loading…</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div style={{ maxWidth: 520, margin: "40px auto", padding: 16 }}>
-        <h1>Your collection</h1>
-        <p>You need to log in to view your cards.</p>
-        <Link href="/login">Go to login</Link>
-      </div>
-    );
-  }
-
   async function loadAndAttachThumbs() {
     // Try cloud first
     setCloudLoading(true);
@@ -594,6 +576,18 @@ export default function CardsPage() {
     window.addEventListener("cards:export", onExport as EventListener);
     return () => window.removeEventListener("cards:export", onExport as EventListener);
   }, [cards]);
+
+  const authGate = authLoading ? (
+    <div style={{ padding: 16 }}>
+      <p>Loading…</p>
+    </div>
+  ) : !user ? (
+    <div style={{ maxWidth: 520, margin: "40px auto", padding: 16 }}>
+      <h1>Your collection</h1>
+      <p>You need to log in to view your cards.</p>
+      <Link href="/login">Go to login</Link>
+    </div>
+  ) : null;
 
   function clearCollectorFilters() {
     setDupOnly(false);
@@ -1031,7 +1025,9 @@ export default function CardsPage() {
     }
   }
 
-  return (
+  return authGate ? (
+    authGate
+  ) : (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-3">
