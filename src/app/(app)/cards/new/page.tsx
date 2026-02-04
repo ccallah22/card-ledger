@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
 import { dbLoadCards, dbUpsertCard } from "@/lib/db/cards";
 import { buildCardFingerprint } from "@/lib/fingerprint";
-import { getSharedImage, saveSharedImage } from "@/lib/sharedImages";
+import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { SET_LIBRARY } from "@/lib/sets";
@@ -1805,10 +1805,31 @@ function NewCardPageInner() {
     [year, setName, cardNumber, playerName, team, insert, variation, parallel]
   );
 
-  const sharedImage = useMemo(
-    () => (fingerprint ? getSharedImage(fingerprint) : null),
-    [fingerprint]
-  );
+  const [sharedImage, setSharedImage] = useState<null | {
+    fingerprint: string;
+    dataUrl: string;
+    isFront: boolean;
+    isSlabbed: boolean;
+    createdAt: string;
+  }>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!fingerprint) {
+      setSharedImage(null);
+      return;
+    }
+    fetchSharedImage(fingerprint)
+      .then((img) => {
+        if (active) setSharedImage(img);
+      })
+      .catch(() => {
+        if (active) setSharedImage(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [fingerprint]);
 
   useEffect(() => {
     if (!fingerprint) {
@@ -2152,7 +2173,7 @@ function NewCardPageInner() {
       fingerprint &&
       imageUrl.trim().length > 0
     ) {
-      saveSharedImage({
+      await saveSharedImage({
         fingerprint,
         dataUrl: imageUrl,
         isFront: imageIsFront,
@@ -2176,7 +2197,7 @@ function NewCardPageInner() {
       fingerprint &&
       imageUrl.trim().length > 0
     ) {
-      saveSharedImage({
+      await saveSharedImage({
         fingerprint,
         dataUrl: imageUrl,
         isFront: imageIsFront,

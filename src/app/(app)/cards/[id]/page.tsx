@@ -7,7 +7,7 @@ import type { SportsCard, CardComp } from "@/lib/types";
 import { loadCards, deleteCard, upsertCard, newId } from "@/lib/storage";
 import { formatCurrency } from "@/lib/format";
 import { buildCardFingerprint } from "@/lib/fingerprint";
-import { getSharedImage, saveSharedImage } from "@/lib/sharedImages";
+import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD, REPORT_REASONS } from "@/lib/reporting";
 import { loadImageForCard, removeImageForCard } from "@/lib/imageStore";
@@ -148,10 +148,31 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     });
   }, [card]);
 
-  const sharedImage = useMemo(
-    () => (fingerprint ? getSharedImage(fingerprint) : null),
-    [fingerprint]
-  );
+  const [sharedImage, setSharedImage] = useState<null | {
+    fingerprint: string;
+    dataUrl: string;
+    isFront: boolean;
+    isSlabbed: boolean;
+    createdAt: string;
+  }>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!fingerprint) {
+      setSharedImage(null);
+      return;
+    }
+    fetchSharedImage(fingerprint)
+      .then((img) => {
+        if (active) setSharedImage(img);
+      })
+      .catch(() => {
+        if (active) setSharedImage(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [fingerprint]);
 
   useEffect(() => {
     if (!fingerprint) {
@@ -294,7 +315,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       });
   }
 
-  function handleSaveImage() {
+  async function handleSaveImage() {
     if (!card) return;
     if ((pendingImageUrl || (card as any).imageUrl) && !cardPhotoConfirm) {
       setImageError("Please confirm this is a photo of the card (or slab).");
@@ -313,7 +334,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     upsertCard(next);
     setCard(next);
     if (imageShare && imageOwnerConfirm && nextUrl && fingerprint) {
-      saveSharedImage({
+      await saveSharedImage({
         fingerprint,
         dataUrl: nextUrl,
         isFront: imageIsFront,

@@ -10,7 +10,7 @@ import { dbDeleteCard, dbLoadCards } from "@/lib/db/cards";
 import { migrateLocalCardsToSupabaseOnce } from "@/lib/db/migrateLocalToSupabase";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
-import { loadSharedImages, type SharedImage } from "@/lib/sharedImages";
+import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard } from "@/lib/imageStore";
 import { SET_LIBRARY } from "@/lib/sets";
@@ -349,8 +349,6 @@ export default function CardsPage() {
       }
     })();
 
-    setSharedImages(loadSharedImages());
-
     return () => {
       mounted = false;
     };
@@ -376,6 +374,7 @@ export default function CardsPage() {
 
     if (!fingerprints.length) {
       setReportMap({});
+      setSharedImages({});
       return;
     }
 
@@ -390,6 +389,14 @@ export default function CardsPage() {
       })
       .catch(() => {
         setReportMap({});
+      });
+
+    fetchSharedImagesByFingerprints(fingerprints)
+      .then((map) => {
+        setSharedImages(map);
+      })
+      .catch(() => {
+        setSharedImages({});
       });
   }, [cards]);
 
@@ -492,7 +499,6 @@ export default function CardsPage() {
 
   function refresh() {
     void loadCardsFromDb();
-    setSharedImages(loadSharedImages());
   }
 
   function exportCsv() {

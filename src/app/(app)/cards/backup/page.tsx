@@ -4,14 +4,12 @@ import { useMemo, useState } from "react";
 import type { SportsCard } from "@/lib/types";
 import { loadCards, saveCards } from "@/lib/storage";
 import { loadImageMap, replaceImageMap } from "@/lib/imageStore";
-import { loadSharedImages, replaceSharedImages } from "@/lib/sharedImages";
 
 type BackupPayload = {
   version: 1;
   exportedAt: string;
   cards: SportsCard[];
   images: Record<string, string>;
-  sharedImages: Record<string, unknown>;
 };
 
 function downloadJson(filename: string, data: unknown) {
@@ -34,11 +32,9 @@ export default function BackupPage() {
   const summary = useMemo(() => {
     const cards = loadCards();
     const images = loadImageMap();
-    const sharedImages = loadSharedImages();
     return {
       cards: cards.length,
       images: Object.keys(images).length,
-      sharedImages: Object.keys(sharedImages).length,
     };
   }, []);
 
@@ -47,13 +43,11 @@ export default function BackupPage() {
     setNotice("");
     const cards = loadCards();
     const images = loadImageMap();
-    const sharedImages = loadSharedImages();
     const payload: BackupPayload = {
       version: 1,
       exportedAt: new Date().toISOString(),
       cards,
       images,
-      sharedImages,
     };
     downloadJson(`thebindr-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
     setNotice("Backup exported.");
@@ -75,16 +69,13 @@ export default function BackupPage() {
 
       const cards = parsed.cards as SportsCard[];
       const images = (parsed.images ?? {}) as Record<string, string>;
-      const sharedImages = (parsed.sharedImages ?? {}) as Record<string, unknown>;
 
       saveCards(cards);
       const imagesOk = replaceImageMap(images);
-      const sharedOk = replaceSharedImages(sharedImages as any);
 
       const imageMsg = imagesOk ? "" : " Some images were skipped due to storage limits.";
-      const sharedMsg = sharedOk ? "" : " Shared images could not be restored.";
 
-      setNotice(`Backup imported: ${cards.length} cards.${imageMsg}${sharedMsg}`.trim());
+      setNotice(`Backup imported: ${cards.length} cards.${imageMsg}`.trim());
     } catch (err) {
       setError((err as Error).message || "Failed to import backup.");
     } finally {
@@ -97,7 +88,7 @@ export default function BackupPage() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-500 sm:text-zinc-900">Backup</h1>
         <p className="mt-1 text-sm text-zinc-700">
-          Export a full backup (cards + images + shared images) and restore it on another device.
+          Export a backup (cards + images) and restore it on another device.
         </p>
       </div>
 
@@ -105,8 +96,7 @@ export default function BackupPage() {
         <div className="text-sm text-zinc-900">
           Current data:{" "}
           <span className="font-medium text-zinc-900">{summary.cards}</span> cards,{" "}
-          <span className="font-medium text-zinc-900">{summary.images}</span> images,{" "}
-          <span className="font-medium text-zinc-900">{summary.sharedImages}</span> shared images.
+          <span className="font-medium text-zinc-900">{summary.images}</span> images.
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
