@@ -2609,11 +2609,17 @@ function NewCardPageInner() {
                   Image needs review. Please confirm this is a card photo.
                 </div>
               ) : null}
-              {imageCheckStatus === "accept" ? (
-                <div className="text-xs text-emerald-600">Image looks like a card.</div>
-              ) : null}
-            </div>
-          </div>
+      {imageCheckStatus === "accept" ? (
+        <div className="text-xs text-emerald-600">Image looks like a card.</div>
+      ) : null}
+
+      {fingerprint ? (
+        <div className="mt-2 rounded-md border bg-zinc-50 p-2 text-[10px] text-zinc-600">
+          Fingerprint: <span className="break-all">{fingerprint}</span>
+        </div>
+      ) : null}
+    </div>
+  </div>
           <div className="mt-2 text-xs text-zinc-500">
             {imageUrl
               ? "Using your image."

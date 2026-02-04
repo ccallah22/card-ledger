@@ -852,6 +852,11 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             {reportStatusMsg ? (
               <div className="text-xs text-zinc-500">{reportStatusMsg}</div>
             ) : null}
+            {fingerprint ? (
+              <div className="mt-2 rounded-md border bg-zinc-50 p-2 text-[10px] text-zinc-600">
+                Fingerprint: <span className="break-all">{fingerprint}</span>
+              </div>
+            ) : null}
             <div className="text-xs text-zinc-500">
               Allowed: JPG/PNG/WebP/HEIC • Max {Math.round(IMAGE_RULES.maxBytes / 1024 / 1024)}MB •
               Min {IMAGE_RULES.minWidth}×{IMAGE_RULES.minHeight}
