@@ -68,6 +68,7 @@ function parsePastedChecklist(text: string): Entry[] {
 
   const entries: Entry[] = [];
   let currentSection = "Base";
+  let activeParallels: string[] = [];
 
   const ignoreExact = new Set([
     "base set",
@@ -115,6 +116,22 @@ function parsePastedChecklist(text: string): Entry[] {
       .replace(/\s*\/\d+.*$/, "")
       .trim();
 
+  const isParallelLine = (line: string) => {
+    const lower = line.toLowerCase();
+    if (ignoreExact.has(lower)) return true;
+    if (ignoreStartsWith.some((s) => lower.startsWith(s))) return true;
+    if (lower.includes("ticket") || lower.includes("zone")) return true;
+    if (lower.includes("ice") || lower.includes("foil")) return true;
+    if (lower.includes("gold") || lower.includes("silver")) return true;
+    if (lower.includes("blue") || lower.includes("green") || lower.includes("red")) return true;
+    if (lower.includes("orange") || lower.includes("bronze") || lower.includes("black")) return true;
+    if (lower.includes("platinum") || lower.includes("teal")) return true;
+    if (lower.includes("stub") || lower.includes("clear")) return true;
+    if (lower.includes("printing plates") || lower.includes("super bowl")) return true;
+    if (lower.includes("week")) return true;
+    return false;
+  };
+
   for (const line of lines) {
     const lower = line.toLowerCase();
 
@@ -133,6 +150,16 @@ function parsePastedChecklist(text: string): Entry[] {
           team,
           section: currentSection,
         });
+        if (activeParallels.length) {
+          for (const parallel of activeParallels) {
+            entries.push({
+              number,
+              name,
+              team,
+              section: `${currentSection} - ${parallel}`,
+            });
+          }
+        }
       }
       continue;
     }
@@ -143,10 +170,15 @@ function parsePastedChecklist(text: string): Entry[] {
 
     if (isSectionLine(line)) {
       currentSection = line;
+      activeParallels = [];
       continue;
     }
 
-    if (ignoreStartsWith.some((s) => lower.startsWith(s))) continue;
+    if (isParallelLine(line)) {
+      const cleaned = stripSuffix(line);
+      if (cleaned) activeParallels.push(cleaned);
+      continue;
+    }
   }
 
   return entries;
