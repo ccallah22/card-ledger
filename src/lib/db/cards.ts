@@ -41,6 +41,29 @@ export async function dbLoadCards(): Promise<SportsCard[]> {
   });
 }
 
+export async function dbGetCard(id: string): Promise<SportsCard | null> {
+  const supabase = createClient();
+  const user = await getUserOrThrow();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select("id, card, created_at, updated_at")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const base = (data.card ?? {}) as SportsCard;
+  return {
+    ...base,
+    id: data.id,
+    createdAt: data.created_at ?? base.createdAt,
+    updatedAt: data.updated_at ?? base.updatedAt,
+  };
+}
+
 export async function dbUpsertCard(card: SportsCard): Promise<void> {
   const supabase = createClient();
   const user = await getUserOrThrow();

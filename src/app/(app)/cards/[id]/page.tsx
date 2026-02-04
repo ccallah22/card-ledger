@@ -4,7 +4,8 @@ import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SportsCard, CardComp } from "@/lib/types";
-import { loadCards, deleteCard, upsertCard, newId } from "@/lib/storage";
+import { dbDeleteCard, dbGetCard, dbUpsertCard } from "@/lib/db/cards";
+import { newId } from "@/lib/storage";
 import { formatCurrency } from "@/lib/format";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
@@ -120,10 +121,21 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
   const [reportStatusMsg, setReportStatusMsg] = useState<string>("");
 
   useEffect(() => {
-    const cards = loadCards();
-    const found = cards.find((c: any) => String(c?.id) === String(id));
-    setCard((found as SportsCard) ?? null);
-    setLoading(false);
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const found = await dbGetCard(String(id));
+        if (active) setCard(found);
+      } catch {
+        if (active) setCard(null);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -331,7 +343,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       imageShared: imageShare && imageOwnerConfirm ? true : undefined,
       updatedAt: new Date().toISOString(),
     };
-    upsertCard(next);
+    await dbUpsertCard(next);
     setCard(next);
     if (imageShare && imageOwnerConfirm && nextUrl && fingerprint) {
       const res = await saveSharedImage({
@@ -352,7 +364,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     setPendingImageUrl(null);
   }
 
-  function handleRemoveImage() {
+  async function handleRemoveImage() {
     if (!card) return;
     const next: SportsCard = {
       ...card,
@@ -360,7 +372,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       imageShared: undefined,
       updatedAt: new Date().toISOString(),
     };
-    upsertCard(next);
+    await dbUpsertCard(next);
     removeImageForCard(card.id);
     setCard(next);
     setPendingImageUrl(null);
@@ -415,7 +427,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     return { status, paid, asking, sold, held, net, serial };
   }, [card]);
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!card) return;
 
     const ok = window.confirm(
@@ -425,11 +437,11 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     );
     if (!ok) return;
 
-    deleteCard(card.id);
+    await dbDeleteCard(card.id);
     router.push("/cards");
   }
 
-  function handleAddComp() {
+  async function handleAddComp() {
     if (!card) return;
     const price = Number(compPrice);
     if (!Number.isFinite(price)) return;
@@ -446,7 +458,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     const nextComps = [nextComp, ...((card as any).comps ?? [])];
     const now = new Date().toISOString();
     const next: SportsCard = { ...card, comps: nextComps, updatedAt: now };
-    upsertCard(next);
+    await dbUpsertCard(next);
     setCard(next);
     setCompPrice("");
     setCompDate("");
