@@ -1686,25 +1686,22 @@ function toNum(v: string): number | undefined {
   return n;
 }
 
-// ✅ One-time migration: move legacy localStorage "cards" into lib/storage
-function migrateLegacyCardsOnce() {
-  try {
-    const raw = localStorage.getItem("cards");
-    if (!raw) return;
+async function upsertCardToSupabase(card: SportsCard) {
+  const res = await fetch("/api/cards", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ card }),
+  });
 
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return;
+  // 401 means not logged in — we’ll fall back to local
+  if (res.status === 401) return { ok: false as const, reason: "unauth" as const };
 
-    for (const item of parsed) {
-      // upsert into your real storage layer
-      upsertCard(item as SportsCard);
-    }
-
-    // remove legacy key so it doesn’t keep re-importing
-    localStorage.removeItem("cards");
-  } catch {
-    // ignore
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false as const, reason: "error" as const, message: data?.message || "Save failed" };
   }
+
+  return { ok: true as const };
 }
 
 function NewCardPageInner() {
@@ -1713,20 +1710,20 @@ function NewCardPageInner() {
   const isWishlist = searchParams.get("wishlist") === "1";
   const isForSaleIntent = searchParams.get("forSale") === "1";
 
-  // ✅ migrate once on first mount
   useEffect(() => {
-    migrateLegacyCardsOnce();
-    try {
-      const cards = loadCards();
-      const set = new Set<string>();
-      for (const c of cards) {
-        const raw = (((c as any).location as string | undefined) ?? "").trim();
-        if (raw) set.add(raw);
+    (async () => {
+      try {
+        const cards = await loadCards();
+        const set = new Set<string>();
+        for (const c of cards) {
+          const raw = (((c as any).location as string | undefined) ?? "").trim();
+          if (raw) set.add(raw);
+        }
+        setLocationOptions(Array.from(set).sort((a, b) => a.localeCompare(b)));
+      } catch {
+        // ignore
       }
-      setLocationOptions(Array.from(set).sort((a, b) => a.localeCompare(b)));
-    } catch {
-      // ignore
-    }
+    })();
   }, []);
 
   const [playerName, setPlayerName] = useState("");
@@ -2158,10 +2155,20 @@ function NewCardPageInner() {
     return card;
   }
 
-  function onSave() {
+  async function onSave() {
     const card = buildCard();
     if (!card) return;
-    upsertCard(card);
+
+    // First: try Supabase
+    const saved = await upsertCardToSupabase(card);
+
+    if (!saved.ok) {
+      // Not logged in (or API error) -> fallback to localStorage
+      upsertCard(card);
+    } else {
+      // If Supabase succeeded, you can optionally ALSO keep a local copy for offline feel:
+      // upsertCard(card);
+    }
     if (
       !isWishlistCard &&
       imageShare &&
@@ -2181,10 +2188,18 @@ function NewCardPageInner() {
     router.push("/cards");
   }
 
-  function onSaveAndAddAnother() {
+  async function onSaveAndAddAnother() {
     const card = buildCard();
     if (!card) return;
-    upsertCard(card);
+
+    const saved = await upsertCardToSupabase(card);
+    if (!saved.ok) {
+      upsertCard(card);
+    } else {
+      // optional local copy:
+      // upsertCard(card);
+    }
+
     if (
       !isWishlistCard &&
       imageShare &&
@@ -2202,6 +2217,7 @@ function NewCardPageInner() {
       });
     }
 
+    // reset form (keep your existing reset block EXACTLY as-is)
     setPlayerName("");
     setCardNumber("");
     setTeam("");
