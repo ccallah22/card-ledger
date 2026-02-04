@@ -296,22 +296,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             (collapsed ? "sm:w-16" : "sm:w-64")
           }
         >
-          {/* Brand row */}
-          <div
-            className={
-              "flex items-center border-b py-4 " +
-              (collapsed ? "justify-center px-0" : "justify-between px-2")
-            }
-          >
-            <div className={"flex items-center " + (collapsed ? "" : "gap-2")}>
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden">
+        {/* Brand row */}
+        <div className="border-b py-4 px-2">
+          {!collapsed ? (
+            <div className="flex items-center justify-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
                 <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
               </div>
-              {!collapsed ? (
-                <div className="text-sm font-semibold tracking-tight">TheBindr</div>
-              ) : null}
+              <div className="text-lg font-semibold tracking-tight text-zinc-900">TheBindr</div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
+                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+              </div>
+            </div>
+          )}
+        </div>
 
           {/* ✅ MID-SIDEBAR COLLAPSE BUTTON */}
           <button
@@ -440,17 +441,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Main */}
       <main className="flex-1">
-        {/* Top bar (all screens) */}
-        <div className="border-b bg-[#2b323a] text-white">
-          <div className="flex items-center justify-center px-4 py-2 gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-              <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+        {/* Top bar */}
+        {isAuthScreen ? (
+          <div className="hidden sm:block border-b bg-[#2b323a] text-white">
+            <div className="flex items-center justify-center px-4 py-2 gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
+                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+              </div>
+              <div className="text-xl font-semibold tracking-tight">TheBindr</div>
             </div>
-            <div className="text-xl font-semibold tracking-tight">TheBindr</div>
-          </div>
 
-          <div className="px-4 pb-1" aria-hidden="true" />
-        </div>
+            <div className="px-4 pb-1" aria-hidden="true" />
+          </div>
+        ) : (
+          <div className="sm:hidden border-b bg-[#2b323a] text-white">
+            <div className="flex items-center justify-center px-4 py-2 gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
+                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+              </div>
+              <div className="text-xl font-semibold tracking-tight">TheBindr</div>
+            </div>
+
+            <div className="px-4 pb-1" aria-hidden="true" />
+          </div>
+        )}
 
         {/* Content container */}
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-6">
