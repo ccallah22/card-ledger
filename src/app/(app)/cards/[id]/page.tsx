@@ -4,7 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SportsCard, CardComp } from "@/lib/types";
-import { dbDeleteCard, dbGetCard, dbUpsertCard } from "@/lib/db/cards";
+import { dbDeleteCard, dbGetCard, dbLoadCards, dbUpsertCard } from "@/lib/db/cards";
 import { newId } from "@/lib/storage";
 import { formatCurrency } from "@/lib/format";
 import { buildCardFingerprint } from "@/lib/fingerprint";
@@ -125,7 +125,12 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     (async () => {
       try {
         setLoading(true);
-        const found = await dbGetCard(String(id));
+        const targetId = String(id);
+        let found = await dbGetCard(targetId);
+        if (!found) {
+          const all = await dbLoadCards();
+          found = all.find((c) => String(c.id) === targetId) ?? null;
+        }
         if (active) setCard(found);
       } catch {
         if (active) setCard(null);

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom";
 
 import type { SportsCard } from "@/lib/types";
-import { dbDeleteCard, dbLoadCards } from "@/lib/db/cards";
+import { dbDeleteCard, dbDeleteCards, dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
@@ -289,6 +289,8 @@ export default function CardsPage() {
   const [cards, setCards] = useState<SportsCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
     Record<string, { reports: number; status?: string }>
@@ -825,6 +827,99 @@ export default function CardsPage() {
     return order.map((key) => ({ key, ...map.get(key)! }));
   }, [filtered]);
 
+  const visibleCardIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groupedBySet) {
+      if (collapsedSets.has(group.key)) continue;
+      const selectedTeam = teamFiltersBySet[group.key] ?? "ALL";
+      const cardsInGroup =
+        selectedTeam === "ALL"
+          ? group.cards
+          : group.cards.filter(
+              (c) => normalize(c.team) === normalize(teamFiltersBySet[group.key] ?? "")
+            );
+      for (const c of cardsInGroup) ids.push(c.id);
+    }
+    return ids;
+  }, [groupedBySet, collapsedSets, teamFiltersBySet]);
+
+  const selectedCount = selectedIds.size;
+  const allVisibleSelected =
+    visibleCardIds.length > 0 && visibleCardIds.every((id) => selectedIds.has(id));
+  const someVisibleSelected = visibleCardIds.some((id) => selectedIds.has(id));
+
+  function toggleSelected(id: string, next?: boolean) {
+    setSelectedIds((prev) => {
+      const copy = new Set(prev);
+      const shouldSelect = next ?? !copy.has(id);
+      if (shouldSelect) copy.add(id);
+      else copy.delete(id);
+      return copy;
+    });
+  }
+
+  function toggleSelectAllVisible() {
+    setSelectedIds((prev) => {
+      const copy = new Set(prev);
+      if (allVisibleSelected) {
+        visibleCardIds.forEach((id) => copy.delete(id));
+      } else {
+        visibleCardIds.forEach((id) => copy.add(id));
+      }
+      return copy;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function applyBulkStatus(nextStatus: SportsCard["status"]) {
+    if (!selectedIds.size || bulkBusy) return;
+    const now = new Date().toISOString();
+    const selectedCards = cards.filter((c) => selectedIds.has(c.id));
+    const updatedCards = selectedCards.map((c) => ({
+      ...c,
+      status: nextStatus,
+      updatedAt: now,
+    }));
+
+    setBulkBusy(true);
+    try {
+      await dbUpsertCards(updatedCards);
+      setCards((prev) =>
+        prev.map((c) => {
+          const updated = selectedIds.has(c.id)
+            ? updatedCards.find((u) => u.id === c.id)
+            : null;
+          return updated ?? c;
+        })
+      );
+      clearSelection();
+    } catch (e: any) {
+      alert(`Bulk update failed: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function applyBulkDelete() {
+    if (!selectedIds.size || bulkBusy) return;
+    const confirmed = window.confirm(`Delete ${selectedIds.size} cards? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setBulkBusy(true);
+    try {
+      await dbDeleteCards(Array.from(selectedIds));
+      setCards((prev) => prev.filter((c) => !selectedIds.has(c.id)));
+      clearSelection();
+    } catch (e: any) {
+      alert(`Bulk delete failed: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   function toggleSetCollapse(key: string) {
     setCollapsedSets((prev) => {
       const next = new Set(prev);
@@ -973,6 +1068,61 @@ export default function CardsPage() {
           </div>
         </div>
       </div>
+
+      {selectedCount > 0 ? (
+        <div className="flex flex-col gap-2 rounded-xl border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-700">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected;
+                }}
+                onChange={toggleSelectAllVisible}
+              />
+              Select all visible
+            </label>
+            <span>
+              Selected: <span className="font-semibold">{selectedCount}</span>
+            </span>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-sm text-zinc-500 underline"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => applyBulkStatus("FOR_SALE")}
+              disabled={bulkBusy}
+              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              Mark For Sale
+            </button>
+            <button
+              type="button"
+              onClick={() => applyBulkStatus("SOLD")}
+              disabled={bulkBusy}
+              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              Mark Sold
+            </button>
+            <button
+              type="button"
+              onClick={applyBulkDelete}
+              disabled={bulkBusy}
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -1417,6 +1567,18 @@ export default function CardsPage() {
 
                       return (
                         <div key={c.id} className="relative">
+                          <div className="absolute left-2 top-2 z-20">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(c.id)}
+                              onChange={(e) => {
+                                toggleSelected(c.id, e.target.checked);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className="h-4 w-4 accent-zinc-900"
+                            />
+                          </div>
                           <Link
                             href={rowHref}
                             className="block rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"

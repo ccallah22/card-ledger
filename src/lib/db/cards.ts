@@ -3,6 +3,12 @@ import type { SportsCard } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 
 const TABLE = "cards_v1";
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown) {
+  return typeof value === "string" && UUID_RE.test(value);
+}
 
 export async function getUserOrThrow() {
   const supabase = createClient();
@@ -68,20 +74,15 @@ export async function dbUpsertCard(card: SportsCard): Promise<void> {
   const supabase = createClient();
   const user = await getUserOrThrow();
 
-  const isUuid =
-    typeof card.id === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      card.id
-    );
-
+  const isUuidValue = isUuid(card.id);
   const id =
-    isUuid
+    isUuidValue
       ? String(card.id)
       : typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : String(card.id);
 
-  if (!isUuid && id === String(card.id)) {
+  if (!isUuidValue && id === String(card.id)) {
     throw new Error("Card id must be a UUID to save to Supabase");
   }
 
@@ -96,6 +97,28 @@ export async function dbUpsertCard(card: SportsCard): Promise<void> {
   if (error) throw error;
 }
 
+export async function dbUpsertCards(cards: SportsCard[]): Promise<void> {
+  if (!cards.length) return;
+
+  const supabase = createClient();
+  const user = await getUserOrThrow();
+
+  const rows = cards.map((card) => {
+    if (!isUuid(card.id)) {
+      throw new Error("Card id must be a UUID to save to Supabase");
+    }
+    const id = String(card.id);
+    return {
+      id,
+      user_id: user.id,
+      card: { ...card, id },
+    };
+  });
+
+  const { error } = await supabase.from(TABLE).upsert(rows, { onConflict: "id" });
+  if (error) throw error;
+}
+
 export async function dbDeleteCard(id: string): Promise<void> {
   const supabase = createClient();
   const user = await getUserOrThrow();
@@ -104,6 +127,21 @@ export async function dbDeleteCard(id: string): Promise<void> {
     .from(TABLE)
     .delete()
     .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) throw error;
+}
+
+export async function dbDeleteCards(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+
+  const supabase = createClient();
+  const user = await getUserOrThrow();
+
+  const { error } = await supabase
+    .from(TABLE)
+    .delete()
+    .in("id", ids)
     .eq("user_id", user.id);
 
   if (error) throw error;
