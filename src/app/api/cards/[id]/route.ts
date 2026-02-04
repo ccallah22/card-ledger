@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fromCardsV1Row, type CardsV1Row } from "@/lib/cardsDbMapper";
 
 export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
   if (!userData?.user) return NextResponse.json({ message: "Not authenticated" }, { status: 401 });
@@ -20,7 +20,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
   if (!userData?.user) return NextResponse.json({ message: "Not authenticated" }, { status: 401 });

@@ -5,7 +5,7 @@ import { fromCardsV1Row, toCardsV1Insert, type CardsV1Row } from "@/lib/cardsDbM
 import type { SportsCard } from "@/lib/types";
 
 export async function GET() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   const user = userData?.user;
@@ -28,7 +28,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   const user = userData?.user;
