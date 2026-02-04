@@ -47,7 +47,8 @@ export async function middleware(request: NextRequest) {
   const isProtected =
     path.startsWith("/cards") ||
     path.startsWith("/account") ||
-    path.startsWith("/debug"); // optional
+    path.startsWith("/debug") ||
+    path.startsWith("/admin"); // optional
 
   const isAuthPage = path.startsWith("/login") || path.startsWith("/signup");
 
