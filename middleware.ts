@@ -30,7 +30,16 @@ async function supabaseProxy(request: NextRequest) {
 }
 
 export async function middleware(request: NextRequest) {
-  const { response, user } = await supabaseProxy(request);
+  let response: NextResponse;
+  let user: unknown;
+  try {
+    const result = await supabaseProxy(request);
+    response = result.response;
+    user = result.user;
+  } catch {
+    // If middleware fails, don't block requests.
+    return NextResponse.next();
+  }
 
   const path = request.nextUrl.pathname;
 
