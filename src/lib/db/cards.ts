@@ -85,3 +85,20 @@ export async function dbDeleteCard(id: string): Promise<void> {
 
   if (error) throw error;
 }
+
+const DEDUPE_FLAG = "card-ledger:dedupe:v1";
+
+export async function dbDedupeCardsOnce(): Promise<{ deleted: number }> {
+  if (typeof window === "undefined") return { deleted: 0 };
+  if (localStorage.getItem(DEDUPE_FLAG) === "1") return { deleted: 0 };
+
+  const res = await fetch("/api/cards/dedupe", { method: "POST" });
+  if (!res.ok) {
+    // If not authenticated or error, don't set the flag
+    return { deleted: 0 };
+  }
+
+  const data = (await res.json().catch(() => ({}))) as { deleted?: number };
+  localStorage.setItem(DEDUPE_FLAG, "1");
+  return { deleted: data.deleted ?? 0 };
+}
