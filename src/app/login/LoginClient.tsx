@@ -157,9 +157,7 @@ export default function LoginClient() {
         )}
       </div>
 
-      <div style={{ marginTop: 14, fontSize: 12, opacity: 0.8 }}>
-        Redirect target: <code>{nextPath}</code>
-      </div>
+      <div style={{ marginTop: 14, fontSize: 12, opacity: 0.8 }} />
     </main>
   );
 }

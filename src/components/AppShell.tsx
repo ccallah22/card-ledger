@@ -206,6 +206,7 @@ function NavLink({
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isAuthScreen = pathname.startsWith("/login") || pathname.startsWith("/signup");
 
   const [collapsed, setCollapsed] = useState(false);
   const [hasLoadedPref, setHasLoadedPref] = useState(false);
@@ -287,159 +288,160 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         } as CSSProperties
       }
     >
-      {/* Sidebar (desktop) */}
-      <aside
-        ref={sidebarRef}
-        className={
-          "relative hidden sm:flex sm:flex-col sm:border-r sm:bg-white transition-all " +
-          (collapsed ? "sm:w-16" : "sm:w-64")
-        }
-      >
-        {/* Brand row */}
-        <div
+      {!isAuthScreen ? (
+        <aside
+          ref={sidebarRef}
           className={
-            "flex items-center border-b py-4 " +
-            (collapsed ? "justify-center px-0" : "justify-between px-2")
+            "relative hidden sm:flex sm:flex-col sm:border-r sm:bg-white transition-all " +
+            (collapsed ? "sm:w-16" : "sm:w-64")
           }
         >
-          <div className={"flex items-center " + (collapsed ? "" : "gap-2")}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden">
-              <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
-            </div>
-            {!collapsed ? (
-              <div className="text-sm font-semibold tracking-tight">TheBindr</div>
-            ) : null}
-          </div>
-        </div>
-
-        {/* ✅ MID-SIDEBAR COLLAPSE BUTTON */}
-        <button
-          type="button"
-          onClick={() => setCollapsed((v) => !v)}
-          className="
-            fixed top-1/2 left-0 z-50 -translate-y-1/2 -translate-x-1/2
-            inline-flex h-9 w-9 items-center justify-center
-            rounded-full border bg-white text-zinc-700 shadow-sm
-            hover:bg-zinc-50
-          "
-          style={{ left: sidebarEdgeLeft ? `${sidebarEdgeLeft}px` : "var(--sidebar-width)" }}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <IconChevronRight /> : <IconChevronLeft />}
-        </button>
-
-        {/* Nav */}
-        <nav className="flex-1 p-2">
-          {!collapsed ? (
-            <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-              Binder
-            </div>
-          ) : null}
-
-          <div className="space-y-1">
-            {NAV.map((item) => (
-              <NavLink
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                icon={item.icon}
-                collapsed={collapsed}
-                active={!!activeMap.get(item.href)}
-              />
-            ))}
-          </div>
-
-          {pathname === "/cards" ? (
-            <div className="mt-6 border-t pt-3">
+          {/* Brand row */}
+          <div
+            className={
+              "flex items-center border-b py-4 " +
+              (collapsed ? "justify-center px-0" : "justify-between px-2")
+            }
+          >
+            <div className={"flex items-center " + (collapsed ? "" : "gap-2")}>
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden">
+                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+              </div>
               {!collapsed ? (
-                <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                  Actions
-                </div>
+                <div className="text-sm font-semibold tracking-tight">TheBindr</div>
               ) : null}
+            </div>
+          </div>
 
-              <div ref={moreRef} className="relative">
-                {(() => {
-                  const button = (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMoreOpen((v) => !v);
-                      }}
-                      className={
-                        "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
-                        (collapsed ? "-ml-0.5 w-full " : "w-full ") +
-                        "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
-                      }
-                    >
-                      <span className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 group-hover:bg-white">
-                        <IconDots />
-                      </span>
-                      {!collapsed ? <span className="font-medium">More</span> : null}
-                    </button>
-                  );
+          {/* ✅ MID-SIDEBAR COLLAPSE BUTTON */}
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="
+              fixed top-1/2 left-0 z-50 -translate-y-1/2 -translate-x-1/2
+              inline-flex h-9 w-9 items-center justify-center
+              rounded-full border bg-white text-zinc-700 shadow-sm
+              hover:bg-zinc-50
+            "
+            style={{ left: sidebarEdgeLeft ? `${sidebarEdgeLeft}px` : "var(--sidebar-width)" }}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <IconChevronRight /> : <IconChevronLeft />}
+          </button>
 
-                  if (!collapsed) return button;
-                  return <Tooltip text="More">{button}</Tooltip>;
-                })()}
+          {/* Nav */}
+          <nav className="flex-1 p-2">
+            {!collapsed ? (
+              <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                Binder
+              </div>
+            ) : null}
 
-                {moreOpen ? (
-                  <div
-                    className="absolute left-2 top-full z-50 mt-2 w-44 overflow-hidden rounded-md border bg-white shadow-sm"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Link
-                      href="/cards/backup"
-                      onClick={() => setMoreOpen(false)}
-                      className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                    >
-                      <IconDatabase />
-                      Backup
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMoreOpen(false);
-                        window.dispatchEvent(new CustomEvent("cards:export"));
-                      }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
-                    >
-                      <IconDownload />
-                      Export CSV
-                    </button>
+            <div className="space-y-1">
+              {NAV.map((item) => (
+                <NavLink
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  icon={item.icon}
+                  collapsed={collapsed}
+                  active={!!activeMap.get(item.href)}
+                />
+              ))}
+            </div>
+
+            {pathname === "/cards" ? (
+              <div className="mt-6 border-t pt-3">
+                {!collapsed ? (
+                  <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                    Actions
                   </div>
                 ) : null}
+
+                <div ref={moreRef} className="relative">
+                  {(() => {
+                    const button = (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMoreOpen((v) => !v);
+                        }}
+                        className={
+                          "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
+                          (collapsed ? "-ml-0.5 w-full " : "w-full ") +
+                          "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
+                        }
+                      >
+                        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 group-hover:bg-white">
+                          <IconDots />
+                        </span>
+                        {!collapsed ? <span className="font-medium">More</span> : null}
+                      </button>
+                    );
+
+                    if (!collapsed) return button;
+                    return <Tooltip text="More">{button}</Tooltip>;
+                  })()}
+
+                  {moreOpen ? (
+                    <div
+                      className="absolute left-2 top-full z-50 mt-2 w-44 overflow-hidden rounded-md border bg-white shadow-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link
+                        href="/cards/backup"
+                        onClick={() => setMoreOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                      >
+                        <IconDatabase />
+                        Backup
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMoreOpen(false);
+                          window.dispatchEvent(new CustomEvent("cards:export"));
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                      >
+                        <IconDownload />
+                        Export CSV
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+
+            {!collapsed ? (
+              <div className="mt-6 border-t pt-4 px-2">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                  Quick Tip
+                </div>
+                <div className="text-xs text-zinc-600 leading-relaxed">
+                  Add a <span className="font-medium">Location</span> to cards so you can filter by
+                  Binder / Box / Safe.
+                </div>
+              </div>
+            ) : null}
+          </nav>
 
           {!collapsed ? (
-            <div className="mt-6 border-t pt-4 px-2">
-              <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                Quick Tip
-              </div>
-              <div className="text-xs text-zinc-600 leading-relaxed">
-                Add a <span className="font-medium">Location</span> to cards so you can filter by
-                Binder / Box / Safe.
-              </div>
+            <div className="border-t p-3 text-xs text-zinc-500">
+              Local storage • No account needed
             </div>
-          ) : null}
-        </nav>
-
-        {!collapsed ? (
-          <div className="border-t p-3 text-xs text-zinc-500">
-            Local storage • No account needed
-          </div>
-        ) : (
-          <div className="border-t p-2 text-[10px] text-zinc-500 text-center">MVP</div>
-        )}
-      </aside>
+          ) : (
+            <div className="border-t p-2 text-[10px] text-zinc-500 text-center">MVP</div>
+          )}
+        </aside>
+      ) : null}
 
       {/* Main */}
       <main className="flex-1">
-        {/* Mobile top bar */}
-        <div className="sm:hidden border-b bg-[#2b323a] text-white">
+        {/* Top bar (all screens) */}
+        <div className="border-b bg-[#2b323a] text-white">
           <div className="flex items-center justify-center px-4 py-2 gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
               <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
@@ -457,7 +459,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 w-screen max-w-full border-t bg-white/95 backdrop-blur overflow-x-hidden">
+      {!isAuthScreen ? (
+        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 w-screen max-w-full border-t bg-white/95 backdrop-blur overflow-x-hidden">
         <div className="w-full max-w-full px-0 overflow-x-hidden">
           <div className="flex w-full max-w-full items-center gap-0 py-2">
             {NAV.map((item) => {
@@ -519,11 +522,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <IconDownload />
                 Export CSV
-              </button>
+                </button>
             </div>
           </div>
         ) : null}
       </nav>
+      ) : null}
     </div>
   );
 }
