@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type NavItem = {
   href: string;
@@ -206,6 +207,7 @@ function NavLink({
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isAuthScreen = pathname.startsWith("/login") || pathname.startsWith("/signup");
 
   const [collapsed, setCollapsed] = useState(false);
@@ -429,13 +431,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </nav>
 
-          {!collapsed ? (
-            <div className="border-t p-3 text-xs text-zinc-500">
-              Local storage • No account needed
-            </div>
-          ) : (
-            <div className="border-t p-2 text-[10px] text-zinc-500 text-center">MVP</div>
-          )}
+          <div className="border-t p-3">
+            {!collapsed ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const supabase = createClient();
+                  await supabase.auth.signOut();
+                  router.replace("/login");
+                  router.refresh();
+                }}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+              >
+                Sign out
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  const supabase = createClient();
+                  await supabase.auth.signOut();
+                  router.replace("/login");
+                  router.refresh();
+                }}
+                className="mx-auto flex h-8 w-8 items-center justify-center rounded-full border border-zinc-300 bg-white text-[10px] text-zinc-700 hover:bg-zinc-50"
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                ⎋
+              </button>
+            )}
+          </div>
         </aside>
       ) : null}
 
