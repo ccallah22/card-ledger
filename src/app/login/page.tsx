@@ -18,20 +18,35 @@ export default function LoginPage() {
     setLoading(true);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
 
-    setLoading(false);
+    try {
+      const timeoutMs = 15000;
+      const result = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Sign-in timed out")), timeoutMs)
+        ),
+      ]);
 
-    if (error) {
-      setError(error.message);
-      return;
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+
+      const sessionRes = await supabase.auth.getSession();
+      if (!sessionRes.data.session) {
+        setError("No session returned after sign-in.");
+        return;
+      }
+
+      router.replace("/cards");
+      router.refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unexpected sign-in error";
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-
-    router.replace("/cards");
-    router.refresh();
   }
 
   return (
