@@ -1674,7 +1674,10 @@ function checklistGroup(section: string) {
 }
 
 function uid() {
-  // good enough for local MVP
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // fallback (may not be accepted by Supabase UUID columns)
   return Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36);
 }
 
