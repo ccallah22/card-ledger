@@ -22,7 +22,7 @@ export default function LoginClient() {
     const supabase = createClient();
     if (!supabase) {
       setError(
-        "Supabase client is not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in Vercel."
+        "Supabase client is not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel."
       );
       setStatus("idle");
       return;
