@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
-import { loadCards, upsertCard } from "@/lib/storage";
+import { dbLoadCards, dbUpsertCard } from "@/lib/db/cards";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { getSharedImage, saveSharedImage } from "@/lib/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
@@ -1686,24 +1686,6 @@ function toNum(v: string): number | undefined {
   return n;
 }
 
-async function upsertCardToSupabase(card: SportsCard) {
-  const res = await fetch("/api/cards", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ card }),
-  });
-
-  // 401 means not logged in — we’ll fall back to local
-  if (res.status === 401) return { ok: false as const, reason: "unauth" as const };
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    return { ok: false as const, reason: "error" as const, message: data?.message || "Save failed" };
-  }
-
-  return { ok: true as const };
-}
-
 function NewCardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1713,7 +1695,7 @@ function NewCardPageInner() {
   useEffect(() => {
     (async () => {
       try {
-        const cards = await loadCards();
+        const cards = await dbLoadCards();
         const set = new Set<string>();
         for (const c of cards) {
           const raw = (((c as any).location as string | undefined) ?? "").trim();
@@ -2158,17 +2140,7 @@ function NewCardPageInner() {
   async function onSave() {
     const card = buildCard();
     if (!card) return;
-
-    // First: try Supabase
-    const saved = await upsertCardToSupabase(card);
-
-    if (!saved.ok) {
-      // Not logged in (or API error) -> fallback to localStorage
-      upsertCard(card);
-    } else {
-      // If Supabase succeeded, you can optionally ALSO keep a local copy for offline feel:
-      // upsertCard(card);
-    }
+    await dbUpsertCard(card);
     if (
       !isWishlistCard &&
       imageShare &&
@@ -2191,14 +2163,7 @@ function NewCardPageInner() {
   async function onSaveAndAddAnother() {
     const card = buildCard();
     if (!card) return;
-
-    const saved = await upsertCardToSupabase(card);
-    if (!saved.ok) {
-      upsertCard(card);
-    } else {
-      // optional local copy:
-      // upsertCard(card);
-    }
+    await dbUpsertCard(card);
 
     if (
       !isWishlistCard &&
