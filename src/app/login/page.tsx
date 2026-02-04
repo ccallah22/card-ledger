@@ -1,17 +1,21 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
-  async function signIn() {
+  async function onLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
     setLoading(true);
-    setError(null);
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -25,12 +29,15 @@ export default function LoginPage() {
       return;
     }
 
-    // successful login
-    window.location.href = "/cards";
+    router.replace("/cards");
+    router.refresh();
   }
 
   return (
-    <div className="mx-auto mt-24 max-w-sm space-y-4 rounded-xl border bg-white p-6">
+    <form
+      onSubmit={onLogin}
+      className="mx-auto mt-24 max-w-sm space-y-4 rounded-xl border bg-white p-6"
+    >
       <h1 className="text-xl font-semibold">Sign in</h1>
 
       <input
@@ -48,15 +55,15 @@ export default function LoginPage() {
         onChange={(e) => setPassword(e.target.value)}
       />
 
-      {error && <div className="text-sm text-red-600">{error}</div>}
+      {error ? <div className="text-sm text-red-600">{error}</div> : null}
 
       <button
-        onClick={signIn}
+        type="submit"
         disabled={loading}
         className="w-full rounded-md bg-black px-3 py-2 text-white disabled:opacity-50"
       >
         {loading ? "Signing in…" : "Sign in"}
       </button>
-    </div>
+    </form>
   );
 }
