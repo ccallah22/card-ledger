@@ -9,6 +9,7 @@ type Entry = {
 };
 
 const TABLE = "checklist_entries";
+const SETS_TABLE = "sets";
 
 function parseAdminEmails(): string[] {
   const raw = process.env.CHECKLIST_ADMIN_EMAILS?.trim();
@@ -43,12 +44,36 @@ export async function POST(req: Request) {
   const setKey = String(body?.setKey ?? "").trim();
   const replace = Boolean(body?.replace);
   const entries = Array.isArray(body?.entries) ? (body.entries as Entry[]) : [];
+  const setMeta = body?.set ?? null;
 
   if (!setKey) {
     return NextResponse.json({ message: "Missing setKey" }, { status: 400 });
   }
   if (!entries.length) {
     return NextResponse.json({ message: "No entries provided" }, { status: 400 });
+  }
+
+  if (setMeta?.year && setMeta?.name) {
+    const year = String(setMeta.year).trim();
+    const name = String(setMeta.name).trim();
+    if (year && name) {
+      const { error: setErr } = await supabase
+        .from(SETS_TABLE)
+        .upsert(
+          {
+            year,
+            name,
+            brand: setMeta.brand ? String(setMeta.brand).trim() : null,
+            sport: setMeta.sport ? String(setMeta.sport).trim() : null,
+            checklist_key: setKey,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "year,name" }
+        );
+      if (setErr) {
+        return NextResponse.json({ message: setErr.message }, { status: 400 });
+      }
+    }
   }
 
   if (replace) {

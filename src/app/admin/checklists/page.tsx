@@ -195,6 +195,10 @@ function parseEntries(raw: string): { entries: Entry[]; error?: string } {
 
 export default function ChecklistAdminPage() {
   const [setKey, setSetKey] = useState("");
+  const [setYear, setSetYear] = useState("");
+  const [setName, setSetName] = useState("");
+  const [setBrand, setSetBrand] = useState("");
+  const [setSport, setSetSport] = useState("");
   const [raw, setRaw] = useState("");
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [status, setStatus] = useState<string>("");
@@ -241,6 +245,12 @@ export default function ChecklistAdminPage() {
           body: JSON.stringify({
             setKey: key,
             replace: replaceExisting && i === 0,
+            set: {
+              year: setYear.trim(),
+              name: setName.trim(),
+              brand: setBrand.trim(),
+              sport: setSport.trim(),
+            },
             entries: chunk,
           }),
         });
@@ -309,6 +319,45 @@ export default function ChecklistAdminPage() {
           {parsed.error}
         </div>
       ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-sm">
+          <span className="text-zinc-700">Year</span>
+          <input
+            value={setYear}
+            onChange={(e) => setSetYear(e.target.value)}
+            placeholder="2024"
+            className="rounded-md border bg-white px-3 py-2"
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span className="text-zinc-700">Set Name</span>
+          <input
+            value={setName}
+            onChange={(e) => setSetName(e.target.value)}
+            placeholder="Panini Contenders"
+            className="rounded-md border bg-white px-3 py-2"
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span className="text-zinc-700">Brand (optional)</span>
+          <input
+            value={setBrand}
+            onChange={(e) => setSetBrand(e.target.value)}
+            placeholder="Panini"
+            className="rounded-md border bg-white px-3 py-2"
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span className="text-zinc-700">Sport (optional)</span>
+          <input
+            value={setSport}
+            onChange={(e) => setSetSport(e.target.value)}
+            placeholder="Football"
+            className="rounded-md border bg-white px-3 py-2"
+          />
+        </label>
+      </div>
 
       <div className="text-sm text-zinc-600">
         Parsed entries: <b>{entries.length}</b>

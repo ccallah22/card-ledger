@@ -12,7 +12,7 @@ import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard } from "@/lib/imageStore";
-import { SET_LIBRARY } from "@/lib/sets";
+import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
 import { createClient } from "@/lib/supabase/client";
 
 const STALE_DAYS = 90;
@@ -531,15 +531,31 @@ export default function CardsPage() {
     clearCollectorFilters();
   }
 
+  const [setEntries, setSetEntries] = useState<SetEntry[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    dbLoadSets()
+      .then((sets) => {
+        if (active) setSetEntries(sets);
+      })
+      .catch(() => {
+        if (active) setSetEntries([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const setSportMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const entry of SET_LIBRARY) {
+    for (const entry of setEntries) {
       if (!entry.sport) continue;
       const key = `${normalize(entry.name)}__${String(entry.year ?? "").trim()}`;
       map.set(key, entry.sport);
     }
     return map;
-  }, []);
+  }, [setEntries]);
 
   function resolveSport(c: SportsCard) {
     const year = String(c.year ?? "").trim();

@@ -9,7 +9,7 @@ import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
-import { SET_LIBRARY } from "@/lib/sets";
+import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
 import { dbLoadChecklistEntries, type ChecklistEntry } from "@/lib/db/checklists";
 
 const INSERT_SECTIONS = new Set([
@@ -1961,14 +1961,30 @@ function NewCardPageInner() {
     return baseOk && cardPhotoConfirm;
   }, [playerName, year, setName, imageUrl, cardPhotoConfirm]);
 
+  const [setEntries, setSetEntries] = useState<SetEntry[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    dbLoadSets()
+      .then((sets) => {
+        if (active) setSetEntries(sets);
+      })
+      .catch(() => {
+        if (active) setSetEntries([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const setResults = useMemo(() => {
     const q = setQuery.trim().toLowerCase();
     const list = q
-      ? SET_LIBRARY.filter((s) => {
+      ? setEntries.filter((s) => {
           const hay = [s.year, s.name, s.brand ?? "", s.sport ?? ""].join(" ").toLowerCase();
           return hay.includes(q);
         })
-      : SET_LIBRARY;
+      : setEntries;
     const scored = list.map((s) => {
       let score = 0;
       if (s.checklistKey) score += 3;
@@ -1986,26 +2002,26 @@ function NewCardPageInner() {
       return a.s.name.localeCompare(b.s.name);
     });
     return scored.map((item) => item.s).slice(0, 12);
-  }, [setQuery]);
+  }, [setQuery, setEntries]);
 
   const checklistKey = useMemo(() => {
     const y = year.trim();
     const name = setName.trim().toLowerCase();
     if (!y || !name) return null;
 
-    const exact = SET_LIBRARY.find(
+    const exact = setEntries.find(
       (s) => s.checklistKey && s.year === y && s.name.toLowerCase() === name
     );
     if (exact?.checklistKey) return exact.checklistKey;
 
-    const fuzzy = SET_LIBRARY.find(
+    const fuzzy = setEntries.find(
       (s) =>
         s.checklistKey &&
         s.year === y &&
         (name.includes(s.name.toLowerCase()) || s.name.toLowerCase().includes(name))
     );
     return fuzzy?.checklistKey ?? null;
-  }, [year, setName]);
+  }, [year, setName, setEntries]);
 
   const [checklistEntries, setChecklistEntries] = useState<ChecklistEntry[]>([]);
   const [checklistLoading, setChecklistLoading] = useState(false);
