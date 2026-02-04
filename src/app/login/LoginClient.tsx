@@ -13,6 +13,7 @@ export default function LoginClient() {
 
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
   const [error, setError] = useState<string>("");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault(); // prevents page reload
@@ -31,7 +32,9 @@ export default function LoginClient() {
     try {
       const timeoutMs = 15000;
       const res = await Promise.race([
-        supabase.auth.signInWithPassword({ email, password }),
+        mode === "signin"
+          ? supabase.auth.signInWithPassword({ email, password })
+          : supabase.auth.signUp({ email, password }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("Sign-in timed out")), timeoutMs)
         ),
@@ -42,6 +45,14 @@ export default function LoginClient() {
       if (res.error) {
         setError(res.error.message);
         setStatus("idle");
+        return;
+      }
+
+      if (mode === "signup") {
+        setStatus("success");
+        setError(
+          "Account created. Check your email to confirm, then sign in."
+        );
         return;
       }
 
@@ -112,9 +123,39 @@ export default function LoginClient() {
             cursor: status === "loading" ? "not-allowed" : "pointer",
           }}
         >
-          {status === "loading" ? "Signing in…" : status === "success" ? "Signed in!" : "Sign in"}
+          {status === "loading"
+            ? mode === "signin"
+              ? "Signing in…"
+              : "Creating account…"
+            : status === "success"
+            ? mode === "signin"
+              ? "Signed in!"
+              : "Account created"
+            : mode === "signin"
+            ? "Sign in"
+            : "Sign up"}
         </button>
       </form>
+
+      <div style={{ marginTop: 10, fontSize: 12 }}>
+        {mode === "signin" ? (
+          <button
+            type="button"
+            onClick={() => setMode("signup")}
+            style={{ textDecoration: "underline" }}
+          >
+            Need an account? Sign up
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMode("signin")}
+            style={{ textDecoration: "underline" }}
+          >
+            Have an account? Sign in
+          </button>
+        )}
+      </div>
 
       <div style={{ marginTop: 14, fontSize: 12, opacity: 0.8 }}>
         Redirect target: <code>{nextPath}</code>

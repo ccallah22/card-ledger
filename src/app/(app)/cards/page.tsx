@@ -7,13 +7,13 @@ import { createPortal } from "react-dom";
 
 import type { SportsCard } from "@/lib/types";
 import { dbDeleteCard, dbLoadCards } from "@/lib/db/cards";
-import { migrateLocalCardsToSupabaseOnce } from "@/lib/db/migrateLocalToSupabase";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard } from "@/lib/imageStore";
 import { SET_LIBRARY } from "@/lib/sets";
+import { createClient } from "@/lib/supabase/client";
 
 const STALE_DAYS = 90;
 
@@ -953,6 +953,18 @@ export default function CardsPage() {
           </div>
 
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                const supabase = createClient();
+                await supabase.auth.signOut();
+                router.replace("/login");
+                router.refresh();
+              }}
+              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
+            >
+              Sign out
+            </button>
             <Link
               href="/cards/new"
               className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
