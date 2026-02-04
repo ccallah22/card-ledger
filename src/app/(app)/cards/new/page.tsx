@@ -10,19 +10,7 @@ import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { SET_LIBRARY } from "@/lib/sets";
-import { SCORE_2025_CHECKLIST, type ChecklistEntry } from "@/lib/checklists/score2025";
-import { SCORE_2025_AUTOGRAPHS } from "@/lib/checklists/score2025_autographs";
-import { SCORE_2025_MEMORABILIA } from "@/lib/checklists/score2025_memorabilia";
-import { SCORE_2025_INSERTS } from "@/lib/checklists/score2025_inserts";
-import { DONRUSS_2025_CHECKLIST } from "@/lib/checklists/donruss2025";
-import { DONRUSS_2025_AUTOGRAPHS } from "@/lib/checklists/donruss2025_autographs";
-import { DONRUSS_2025_MEMORABILIA } from "@/lib/checklists/donruss2025_memorabilia";
-import { DONRUSS_2025_INSERTS } from "@/lib/checklists/donruss2025_inserts";
-import { PRIZM_2025_CHECKLIST } from "@/lib/checklists/prizm2025";
-import { PRIZM_2025_AUTOGRAPHS } from "@/lib/checklists/prizm2025_autographs";
-import { PRIZM_2025_MEMORABILIA } from "@/lib/checklists/prizm2025_memorabilia";
-import { PRIZM_2025_INSERTS } from "@/lib/checklists/prizm2025_inserts";
-import { PRIZM_2025_FIFA_CLUB_WORLD_CUP_CHECKLIST } from "@/lib/checklists/prizm2025_fifa_club_world_cup";
+import { dbLoadChecklistEntries, type ChecklistEntry } from "@/lib/db/checklists";
 
 const INSERT_SECTIONS = new Set([
   "Anniversary Rookies",
@@ -2019,36 +2007,41 @@ function NewCardPageInner() {
     return fuzzy?.checklistKey ?? null;
   }, [year, setName]);
 
-  const activeChecklist = useMemo(() => {
-    if (checklistKey === "donruss-2025") {
-      return [
-        ...expandDonrussChecklist(DONRUSS_2025_CHECKLIST),
-        ...expandDonrussChecklist(DONRUSS_2025_AUTOGRAPHS),
-        ...expandDonrussChecklist(DONRUSS_2025_MEMORABILIA),
-        ...expandDonrussChecklist(DONRUSS_2025_INSERTS),
-      ];
+  const [checklistEntries, setChecklistEntries] = useState<ChecklistEntry[]>([]);
+  const [checklistLoading, setChecklistLoading] = useState(false);
+
+  useEffect(() => {
+    if (!checklistKey) {
+      setChecklistEntries([]);
+      return;
     }
-    if (checklistKey === "prizm-cwc-2025") {
-      return [...expandCwcChecklist(PRIZM_2025_FIFA_CLUB_WORLD_CUP_CHECKLIST)];
-    }
-    if (checklistKey === "prizm-2025") {
-      return [
-        ...expandPrizmChecklist(PRIZM_2025_CHECKLIST),
-        ...expandPrizmChecklist(PRIZM_2025_AUTOGRAPHS),
-        ...expandPrizmChecklist(PRIZM_2025_MEMORABILIA),
-        ...expandPrizmChecklist(PRIZM_2025_INSERTS),
-      ];
-    }
-    if (checklistKey === "score-2025") {
-      return [
-        ...expandScoreChecklist(SCORE_2025_CHECKLIST),
-        ...expandScoreChecklist(SCORE_2025_AUTOGRAPHS),
-        ...expandScoreChecklist(SCORE_2025_MEMORABILIA),
-        ...expandScoreChecklist(SCORE_2025_INSERTS),
-      ];
-    }
-    return [];
+
+    let active = true;
+    setChecklistLoading(true);
+    dbLoadChecklistEntries(checklistKey)
+      .then((entries) => {
+        if (active) setChecklistEntries(entries);
+      })
+      .catch(() => {
+        if (active) setChecklistEntries([]);
+      })
+      .finally(() => {
+        if (active) setChecklistLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [checklistKey]);
+
+  const activeChecklist = useMemo(() => {
+    if (!checklistKey) return [];
+    if (checklistKey === "donruss-2025") return expandDonrussChecklist(checklistEntries);
+    if (checklistKey === "prizm-cwc-2025") return expandCwcChecklist(checklistEntries);
+    if (checklistKey === "prizm-2025") return expandPrizmChecklist(checklistEntries);
+    if (checklistKey === "score-2025") return expandScoreChecklist(checklistEntries);
+    return checklistEntries;
+  }, [checklistKey, checklistEntries]);
 
   const checklistResults = useMemo(() => {
     if (!activeChecklist.length) return [];
@@ -2324,7 +2317,11 @@ function NewCardPageInner() {
           </p>
         </div>
 
-        {activeChecklist.length ? (
+        {checklistLoading ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            Loading checklist…
+          </div>
+        ) : activeChecklist.length ? (
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-zinc-900">Checklist search</label>
             <div className="relative">
