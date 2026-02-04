@@ -100,6 +100,21 @@ function parsePastedChecklist(text: string): Entry[] {
     "here’s the full",
   ];
 
+  const isSectionLine = (line: string) => {
+    const lower = line.toLowerCase();
+    if (/\d/.test(lower)) return false;
+    if (line.includes(",")) return false;
+    if (line.length > 80) return false;
+    if (lower.includes("/")) return false;
+    return true;
+  };
+
+  const stripSuffix = (value: string) =>
+    value
+      .replace(/\s*\(.*\)\s*$/, "")
+      .replace(/\s*\/\d+.*$/, "")
+      .trim();
+
   for (const line of lines) {
     const lower = line.toLowerCase();
 
@@ -108,10 +123,8 @@ function parsePastedChecklist(text: string): Entry[] {
       const number = entryMatch[1];
       const rest = entryMatch[2];
       const [nameRaw, teamRaw] = rest.split(",").map((s) => s.trim());
-      const name = (nameRaw || "")
-        .replace(/\s*\(.*\)\s*$/, "")
-        .trim();
-      const team = teamRaw?.replace(/\s*\(.*\)\s*$/, "").trim() || undefined;
+      const name = stripSuffix(nameRaw || "");
+      const team = teamRaw ? stripSuffix(teamRaw) : undefined;
 
       if (number && name) {
         entries.push({
@@ -126,11 +139,14 @@ function parsePastedChecklist(text: string): Entry[] {
 
     if (ignoreExact.has(lower)) continue;
     if (ignoreContains.some((s) => lower.includes(s))) continue;
-    if (ignoreStartsWith.some((s) => lower.startsWith(s))) continue;
     if (lower.endsWith("cards.") || lower.endsWith("cards")) continue;
 
-    // Treat as section header
-    currentSection = line;
+    if (isSectionLine(line)) {
+      currentSection = line;
+      continue;
+    }
+
+    if (ignoreStartsWith.some((s) => lower.startsWith(s))) continue;
   }
 
   return entries;
@@ -168,13 +184,40 @@ function parseEntries(raw: string): { entries: Entry[]; error?: string } {
     header.includes("name") &&
     header.includes("section");
 
+  let inferredCols: { number: number; name: number; team?: number; section: number } | null = null;
+
+  if (!hasHeader) {
+    const counts = rows.map((r) => r.filter((c) => c.length).length);
+    const maxCount = Math.max(0, ...counts);
+    if (maxCount < 3) return { entries: [] };
+
+    const countByLen = new Map<number, number>();
+    for (const c of counts) countByLen.set(c, (countByLen.get(c) ?? 0) + 1);
+    const [commonLen] =
+      [...countByLen.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+
+    if (!commonLen || commonLen < 3) return { entries: [] };
+
+    const candidates = rows.filter((r) => r.filter((c) => c.length).length === commonLen);
+    const validCandidates = candidates.filter(
+      (r) => /^\d+$/.test(String(r[0] ?? "").trim()) && String(r[1] ?? "").trim()
+    );
+    if (validCandidates.length < 5) return { entries: [] };
+
+    if (commonLen === 3) {
+      inferredCols = { number: 0, name: 1, section: 2 };
+    } else {
+      inferredCols = { number: 0, name: 1, team: 2, section: 3 };
+    }
+  }
+
   const start = hasHeader ? 1 : 0;
   const col = (key: string) => (hasHeader ? header.indexOf(key) : -1);
 
-  const numberIdx = hasHeader ? col("number") : 0;
-  const nameIdx = hasHeader ? col("name") : 1;
-  const teamIdx = hasHeader ? col("team") : 2;
-  const sectionIdx = hasHeader ? col("section") : 3;
+  const numberIdx = hasHeader ? col("number") : inferredCols?.number ?? 0;
+  const nameIdx = hasHeader ? col("name") : inferredCols?.name ?? 1;
+  const teamIdx = hasHeader ? col("team") : inferredCols?.team ?? -1;
+  const sectionIdx = hasHeader ? col("section") : inferredCols?.section ?? 3;
 
   if (hasHeader && (numberIdx < 0 || nameIdx < 0 || sectionIdx < 0)) {
     return { entries: [], error: "CSV header must include number,name,section." };
@@ -185,7 +228,7 @@ function parseEntries(raw: string): { entries: Entry[]; error?: string } {
     const r = rows[i];
     const number = String(r[numberIdx] ?? "").trim();
     const name = String(r[nameIdx] ?? "").trim();
-    const section = String(r[sectionIdx] ?? "").trim();
+    const section = sectionIdx >= 0 ? String(r[sectionIdx] ?? "").trim() : "";
     const team = teamIdx >= 0 ? String(r[teamIdx] ?? "").trim() : "";
     if (!number || !name || !section) continue;
     entries.push({ number, name, section, team: team || undefined });
