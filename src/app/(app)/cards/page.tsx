@@ -485,8 +485,7 @@ export default function CardsPage() {
       setLoading(true);
       setError("");
 
-      // one-time migration (temporarily disabled)
-      // await migrateLocalCardsToSupabaseOnce();
+      // one-time migration removed (Supabase-only)
 
       const data = await dbLoadCards();
       setCards(data);
