@@ -478,8 +478,8 @@ export default function CardsPage() {
       setLoading(true);
       setError("");
 
-      // one-time migration (safe even if you already did it)
-      await migrateLocalCardsToSupabaseOnce();
+      // one-time migration (temporarily disabled)
+      // await migrateLocalCardsToSupabaseOnce();
 
       const data = await dbLoadCards();
       setCards(data);
