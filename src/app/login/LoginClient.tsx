@@ -29,7 +29,13 @@ export default function LoginClient() {
     }
 
     try {
-      const res = await supabase.auth.signInWithPassword({ email, password });
+      const timeoutMs = 15000;
+      const res = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Sign-in timed out")), timeoutMs)
+        ),
+      ]);
 
       console.log("signInWithPassword result:", res);
 
@@ -53,7 +59,8 @@ export default function LoginClient() {
       window.location.assign(nextPath);
     } catch (err) {
       console.error(err);
-      setError("Unexpected error during login. Check console for details.");
+      const message = err instanceof Error ? err.message : "Unexpected error during login.";
+      setError(message);
       setStatus("idle");
     }
   }
