@@ -1,10 +1,11 @@
 // src/lib/db/cards.ts
 import type { SportsCard } from "@/lib/types";
-import { supabase } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 
 const TABLE = "cards_v1";
 
 export async function getUserOrThrow() {
+  const supabase = createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
   if (!data?.user) throw new Error("Not signed in");
@@ -12,6 +13,7 @@ export async function getUserOrThrow() {
 }
 
 export async function dbLoadCards(): Promise<SportsCard[]> {
+  const supabase = createClient();
   const user = await getUserOrThrow();
 
   const { data, error } = await supabase
@@ -40,6 +42,7 @@ export async function dbLoadCards(): Promise<SportsCard[]> {
 }
 
 export async function dbUpsertCard(card: SportsCard): Promise<void> {
+  const supabase = createClient();
   const user = await getUserOrThrow();
 
   const isUuid =
@@ -71,6 +74,7 @@ export async function dbUpsertCard(card: SportsCard): Promise<void> {
 }
 
 export async function dbDeleteCard(id: string): Promise<void> {
+  const supabase = createClient();
   const user = await getUserOrThrow();
 
   const { error } = await supabase
