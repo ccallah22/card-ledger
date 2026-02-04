@@ -19,8 +19,18 @@ type SharedImageRow = {
 const BUCKET = "card-images";
 const TABLE = "shared_images";
 
+function toBase64Url(input: string) {
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  const base64 = btoa(binary);
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 function encodePath(fingerprint: string) {
-  return `shared/${encodeURIComponent(fingerprint)}.webp`;
+  return `shared/${toBase64Url(fingerprint)}.webp`;
 }
 
 function dataUrlToBlob(dataUrl: string) {
