@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginClient() {
   const searchParams = useSearchParams();
@@ -19,9 +19,10 @@ export default function LoginClient() {
     setError("");
     setStatus("loading");
 
+    const supabase = createClient();
     if (!supabase) {
       setError(
-        "Supabase client is not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel."
+        "Supabase client is not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in Vercel."
       );
       setStatus("idle");
       return;
