@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom";
 
 import type { SportsCard } from "@/lib/types";
-import { dbDeleteCard, dbDedupeCardsOnce, dbLoadCards } from "@/lib/db/cards";
+import { dbDeleteCard, dbLoadCards } from "@/lib/db/cards";
 import { migrateLocalCardsToSupabaseOnce } from "@/lib/db/migrateLocalToSupabase";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
@@ -480,9 +480,6 @@ export default function CardsPage() {
 
       // one-time migration (temporarily disabled)
       // await migrateLocalCardsToSupabaseOnce();
-
-      // one-time dedupe (server-side)
-      await dbDedupeCardsOnce();
 
       const data = await dbLoadCards();
       setCards(data);
