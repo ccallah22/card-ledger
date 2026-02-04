@@ -334,13 +334,20 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     upsertCard(next);
     setCard(next);
     if (imageShare && imageOwnerConfirm && nextUrl && fingerprint) {
-      await saveSharedImage({
+      const res = await saveSharedImage({
         fingerprint,
         dataUrl: nextUrl,
         isFront: imageIsFront,
         isSlabbed: imageIsSlabbed,
         createdAt: new Date().toISOString(),
       });
+      if (res.status === "error") {
+        setReportStatusMsg(`Shared image upload failed: ${res.message}`);
+      } else if (res.status === "exists") {
+        setReportStatusMsg("Shared image already exists for this card.");
+      } else {
+        setReportStatusMsg("Shared image saved.");
+      }
     }
     setPendingImageUrl(null);
   }

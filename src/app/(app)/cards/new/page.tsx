@@ -2173,13 +2173,18 @@ function NewCardPageInner() {
       fingerprint &&
       imageUrl.trim().length > 0
     ) {
-      await saveSharedImage({
+      const res = await saveSharedImage({
         fingerprint,
         dataUrl: imageUrl,
         isFront: imageIsFront,
         isSlabbed: imageIsSlabbed,
         createdAt: new Date().toISOString(),
       });
+      if (res.status === "error") {
+        setImageError(`Shared image upload failed: ${res.message}`);
+      } else if (res.status === "exists") {
+        setImageError("Shared image already exists for this card.");
+      }
     }
     router.push("/cards");
   }
@@ -2197,13 +2202,18 @@ function NewCardPageInner() {
       fingerprint &&
       imageUrl.trim().length > 0
     ) {
-      await saveSharedImage({
+      const res = await saveSharedImage({
         fingerprint,
         dataUrl: imageUrl,
         isFront: imageIsFront,
         isSlabbed: imageIsSlabbed,
         createdAt: new Date().toISOString(),
       });
+      if (res.status === "error") {
+        setImageError(`Shared image upload failed: ${res.message}`);
+      } else if (res.status === "exists") {
+        setImageError("Shared image already exists for this card.");
+      }
     }
 
     // reset form (keep your existing reset block EXACTLY as-is)
