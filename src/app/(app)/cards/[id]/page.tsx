@@ -157,6 +157,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       insert: (card as any).insert ?? "",
       variation: (card as any).variation ?? "",
       parallel: (card as any).parallel ?? "",
+      serialTotal: (card as any).serialTotal,
     });
   }, [card]);
 

@@ -1801,8 +1801,9 @@ function NewCardPageInner() {
         insert,
         variation,
         parallel,
+        serialTotal,
       }),
-    [year, setName, cardNumber, playerName, team, insert, variation, parallel]
+    [year, setName, cardNumber, playerName, team, insert, variation, parallel, serialTotal]
   );
 
   const [sharedImage, setSharedImage] = useState<null | {
@@ -2115,6 +2116,9 @@ function NewCardPageInner() {
     if (!canSave) return null;
 
     const now = new Date().toISOString();
+    const derivedSerialTotal =
+      serialTotal.trim() ||
+      (parallel.match(/\/\s*(\d+)\b/) ? parallel.match(/\/\s*(\d+)\b/)?.[1] ?? "" : "");
 
     const card: SportsCard = {
       id: uid(),
@@ -2140,7 +2144,7 @@ function NewCardPageInner() {
       insert: insert.trim() || undefined,
       parallel: parallel.trim() || undefined,
       serialNumber: isWishlistCard ? undefined : toNum(serialNumber),
-      serialTotal: toNum(serialTotal),
+      serialTotal: toNum(derivedSerialTotal),
 
       isRookie: isRookie || undefined,
       isAutograph: isAutograph || undefined,
@@ -2707,17 +2711,16 @@ function NewCardPageInner() {
 
         <Field label="Variation" value={variation} onChange={setVariation} placeholder="Refractor" />
         <Field label="Insert" value={insert} onChange={setInsert} placeholder="Kaboom" />
-        <Field label="Parallel" value={parallel} onChange={setParallel} placeholder="Pink Wave" />
-        {isWishlistCard ? (
-          <Field label="Serial total" value={serialTotal} onChange={setSerialTotal} placeholder="99" />
-        ) : null}
-
-        {!isWishlistCard ? (
-          <>
-            <Field label="Serial #" value={serialNumber} onChange={setSerialNumber} placeholder="12" />
-            <Field label="Serial total" value={serialTotal} onChange={setSerialTotal} placeholder="99" />
-          </>
-        ) : null}
+        <Field
+          label="Parallel"
+          value={parallel}
+          onChange={(v) => {
+            setParallel(v);
+            const match = v.match(/\/\s*(\d+)\b/);
+            if (match) setSerialTotal(match[1]);
+          }}
+          placeholder="Pink Wave /99"
+        />
 
         <div className="sm:col-span-2 grid gap-2 sm:grid-cols-3">
           <Check label="Rookie" checked={isRookie} onChange={setIsRookie} />

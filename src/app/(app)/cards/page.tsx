@@ -366,6 +366,7 @@ export default function CardsPage() {
             insert: (c as any).insert ?? "",
             variation: (c as any).variation ?? "",
             parallel: (c as any).parallel ?? "",
+            serialTotal: (c as any).serialTotal,
           })
         )
       )
@@ -1384,6 +1385,7 @@ export default function CardsPage() {
                         insert,
                         variation,
                         parallel,
+                        serialTotal,
                       });
                       const sharedImage = fingerprint ? sharedImages[fingerprint] : null;
                       const report = fingerprint ? reportMap[fingerprint] : undefined;

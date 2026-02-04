@@ -19,6 +19,13 @@ type SharedImageRow = {
 const BUCKET = "card-images";
 const TABLE = "shared_images";
 
+function normalizeFingerprint(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 function toBase64Url(input: string) {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
@@ -30,7 +37,7 @@ function toBase64Url(input: string) {
 }
 
 function encodePath(fingerprint: string) {
-  return `shared/${toBase64Url(fingerprint)}.webp`;
+  return `shared/${toBase64Url(normalizeFingerprint(fingerprint))}.webp`;
 }
 
 function dataUrlToBlob(dataUrl: string) {
@@ -59,18 +66,34 @@ export async function fetchSharedImagesByFingerprints(
 ): Promise<Record<string, SharedImage>> {
   if (!fingerprints.length) return {};
 
+  const normalized = fingerprints.map((f) => normalizeFingerprint(f));
+  const unique = Array.from(new Set([...fingerprints, ...normalized]));
+
   const supabase = createClient();
   const { data, error } = await supabase
     .from(TABLE)
     .select("fingerprint, image_path, is_front, is_slabbed, created_at")
-    .in("fingerprint", fingerprints);
+    .in("fingerprint", unique);
 
   if (error || !data) return {};
+
+  const normalizedToOriginals = new Map<string, string[]>();
+  for (let i = 0; i < fingerprints.length; i += 1) {
+    const orig = fingerprints[i];
+    const norm = normalized[i];
+    const list = normalizedToOriginals.get(norm);
+    if (list) list.push(orig);
+    else normalizedToOriginals.set(norm, [orig]);
+  }
 
   const map: Record<string, SharedImage> = {};
   for (const row of data as SharedImageRow[]) {
     const publicUrl = supabase.storage.from(BUCKET).getPublicUrl(row.image_path).data.publicUrl;
-    map[row.fingerprint] = toSharedImage(row, publicUrl);
+    const norm = normalizeFingerprint(row.fingerprint);
+    const originals = normalizedToOriginals.get(norm) ?? [row.fingerprint];
+    for (const orig of originals) {
+      map[orig] = toSharedImage(row, publicUrl);
+    }
   }
   return map;
 }
@@ -96,10 +119,11 @@ export async function saveSharedImage(entry: SharedImage): Promise<
   }
 
   // Keep first image only: if exists, bail.
+  const normalizedFingerprint = normalizeFingerprint(entry.fingerprint);
   const { data: existing, error: existErr } = await supabase
     .from(TABLE)
     .select("fingerprint")
-    .eq("fingerprint", entry.fingerprint)
+    .eq("fingerprint", normalizedFingerprint)
     .maybeSingle();
 
   if (existErr) {
@@ -119,7 +143,7 @@ export async function saveSharedImage(entry: SharedImage): Promise<
   }
 
   const { error: insertErr } = await supabase.from(TABLE).insert({
-    fingerprint: entry.fingerprint,
+    fingerprint: normalizedFingerprint,
     image_path: path,
     is_front: entry.isFront,
     is_slabbed: entry.isSlabbed,
