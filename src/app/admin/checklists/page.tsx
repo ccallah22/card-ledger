@@ -317,16 +317,15 @@ export default function ChecklistAdminPage() {
       .filter(Boolean);
     const first = lines[0] ?? "";
 
-    const hasCsvHeader = /(^|,)\s*number\s*(,|$)/i.test(first) &&
+    const hasCsvHeader =
+      /(^|,)\s*number\s*(,|$)/i.test(first) &&
       /(^|,)\s*name\s*(,|$)/i.test(first) &&
       /(^|,)\s*section\s*(,|$)/i.test(first);
 
-    const numericCommaLines = lines
-      .slice(0, 6)
-      .filter((l) => l.includes(","))
-      .filter((l) => /^\d+\s*,/.test(l)).length;
-
-    const looksLikeCsv = hasCsvHeader || numericCommaLines >= 2;
+    const sampled = lines.slice(0, 10).join("\n");
+    const csvRows = parseCsv(sampled);
+    const multiColRows = csvRows.filter((r) => r.filter((c) => c.length).length >= 3).length;
+    const looksLikeCsv = hasCsvHeader || multiColRows >= 3;
 
     if (trimmed.startsWith("[")) return parseEntries(raw);
     if (looksLikeCsv) return parseEntries(raw);
