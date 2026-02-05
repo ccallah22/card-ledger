@@ -191,7 +191,7 @@ function parsePastedChecklist(text: string): ParseResult {
       }
       if (isSectionLine(line)) {
         currentSection = line;
-        collectingParallels = true;
+        collectingParallels = false;
         continue;
       }
       continue;
@@ -199,7 +199,7 @@ function parsePastedChecklist(text: string): ParseResult {
 
     if (isSectionLine(line)) {
       currentSection = line;
-      collectingParallels = true;
+      collectingParallels = false;
       continue;
     }
 
