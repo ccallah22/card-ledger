@@ -308,10 +308,32 @@ export default function ChecklistAdminPage() {
   const [loading, setLoading] = useState(false);
 
   const parsed = useMemo(() => {
-    const base = parseEntries(raw);
-    if (base.entries.length || base.error) return base;
+    const trimmed = raw.trim();
+    if (!trimmed) return { entries: [], sectionParallels: {} };
+
+    const lines = trimmed
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const first = lines[0] ?? "";
+
+    const hasCsvHeader = /(^|,)\s*number\s*(,|$)/i.test(first) &&
+      /(^|,)\s*name\s*(,|$)/i.test(first) &&
+      /(^|,)\s*section\s*(,|$)/i.test(first);
+
+    const numericCommaLines = lines
+      .slice(0, 6)
+      .filter((l) => l.includes(","))
+      .filter((l) => /^\d+\s*,/.test(l)).length;
+
+    const looksLikeCsv = hasCsvHeader || numericCommaLines >= 2;
+
+    if (trimmed.startsWith("[")) return parseEntries(raw);
+    if (looksLikeCsv) return parseEntries(raw);
+
     const pasted = parsePastedChecklist(raw);
-    return pasted;
+    if (pasted.entries.length || pasted.error) return pasted;
+    return parseEntries(raw);
   }, [raw]);
   const entries = parsed.entries;
 
