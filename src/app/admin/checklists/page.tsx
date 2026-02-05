@@ -132,6 +132,8 @@ function parsePastedChecklist(text: string): ParseResult {
     if (ignoreStartsWith.some((s) => lower.startsWith(s))) return true;
     if (lower.includes("ticket") || lower.includes("zone")) return true;
     if (lower.includes("ice") || lower.includes("foil")) return true;
+    if (lower.includes("prizm")) return true;
+    if (lower.includes("velo")) return true;
     if (lower.includes("gold") || lower.includes("silver")) return true;
     if (lower.includes("blue") || lower.includes("green") || lower.includes("red")) return true;
     if (lower.includes("orange") || lower.includes("bronze") || lower.includes("black")) return true;
@@ -182,16 +184,22 @@ function parsePastedChecklist(text: string): ParseResult {
     if (ignoreContains.some((s) => lower.includes(s))) continue;
     if (lower.endsWith("cards.") || lower.endsWith("cards")) continue;
 
-    if (isSectionLine(line)) {
-      currentSection = line;
-      collectingParallels = true;
+    if (collectingParallels) {
+      if (isParallelLine(line)) {
+        addParallel(currentSection, line);
+        continue;
+      }
+      if (isSectionLine(line)) {
+        currentSection = line;
+        collectingParallels = true;
+        continue;
+      }
       continue;
     }
 
-    if (collectingParallels) {
-      if (isParallelLine(line) || line.length <= 80) {
-        addParallel(currentSection, line);
-      }
+    if (isSectionLine(line)) {
+      currentSection = line;
+      collectingParallels = true;
       continue;
     }
 
