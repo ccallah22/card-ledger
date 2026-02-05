@@ -339,6 +339,13 @@ export default function ChecklistAdminPage() {
     return parseEntries(raw);
   }, [raw]);
   const entries = parsed.entries;
+  const sectionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of entries) {
+      counts.set(e.section, (counts.get(e.section) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [entries]);
 
   async function upload() {
     setError("");
@@ -429,6 +436,25 @@ export default function ChecklistAdminPage() {
           />
           Replace existing rows for this set
         </label>
+      </div>
+
+      <div className="rounded-md border bg-white p-3 text-sm text-zinc-700">
+        <div className="font-medium">Parsed Preview</div>
+        <div>Parsed entries: <b>{entries.length}</b></div>
+        {sectionCounts.length ? (
+          <div className="mt-2 grid gap-1">
+            {sectionCounts.slice(0, 8).map(([section, count]) => (
+              <div key={section}>
+                {section}: <b>{count}</b>
+              </div>
+            ))}
+            {sectionCounts.length > 8 ? (
+              <div>…and {sectionCounts.length - 8} more sections</div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="mt-2 text-zinc-500">No sections parsed yet.</div>
+        )}
       </div>
 
       <div className="grid gap-2">
