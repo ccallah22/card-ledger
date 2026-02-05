@@ -10,11 +10,8 @@ import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
-import {
-  dbLoadChecklistEntries,
-  dbLoadChecklistSectionParallels,
-  type ChecklistEntry,
-} from "@/lib/db/checklists";
+import * as checklistDb from "@/lib/db/checklists";
+import type { ChecklistEntry } from "@/lib/db/checklists";
 
 const INSERT_SECTIONS = new Set([
   "Anniversary Rookies",
@@ -2058,8 +2055,8 @@ function NewCardPageInner() {
     let active = true;
     setChecklistLoading(true);
     Promise.all([
-      dbLoadChecklistEntries(checklistKey),
-      dbLoadChecklistSectionParallels(checklistKey),
+      checklistDb.dbLoadChecklistEntries(checklistKey),
+      checklistDb.dbLoadChecklistSectionParallels(checklistKey),
     ])
       .then(([entries, parallels]) => {
         if (!active) return;
