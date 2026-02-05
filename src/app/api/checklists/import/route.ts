@@ -9,6 +9,7 @@ type Entry = {
 };
 
 const TABLE = "checklist_entries";
+const PARALLELS_TABLE = "checklist_section_parallels";
 const SETS_TABLE = "sets";
 
 function parseAdminEmails(): string[] {
@@ -45,6 +46,10 @@ export async function POST(req: Request) {
   const replace = Boolean(body?.replace);
   const entries = Array.isArray(body?.entries) ? (body.entries as Entry[]) : [];
   const setMeta = body?.set ?? null;
+  const sectionParallels =
+    body?.sectionParallels && typeof body.sectionParallels === "object"
+      ? (body.sectionParallels as Record<string, string[]>)
+      : null;
 
   if (!setKey) {
     return NextResponse.json({ message: "Missing setKey" }, { status: 400 });
@@ -84,6 +89,15 @@ export async function POST(req: Request) {
     if (delErr) {
       return NextResponse.json({ message: delErr.message }, { status: 400 });
     }
+    if (sectionParallels) {
+      const { error: delParallelsErr } = await supabase
+        .from(PARALLELS_TABLE)
+        .delete()
+        .eq("set_key", setKey);
+      if (delParallelsErr) {
+        return NextResponse.json({ message: delParallelsErr.message }, { status: 400 });
+      }
+    }
   }
 
   const rows = entries
@@ -103,6 +117,25 @@ export async function POST(req: Request) {
   const { error } = await supabase.from(TABLE).insert(rows);
   if (error) {
     return NextResponse.json({ message: error.message }, { status: 400 });
+  }
+
+  if (sectionParallels) {
+    const parallelRows = Object.entries(sectionParallels)
+      .flatMap(([section, parallels]) =>
+        (parallels ?? []).map((parallel) => ({
+          set_key: setKey,
+          section: String(section).trim(),
+          parallel: String(parallel ?? "").trim(),
+        }))
+      )
+      .filter((r) => r.section && r.parallel);
+
+    if (parallelRows.length) {
+      const { error: parallelErr } = await supabase.from(PARALLELS_TABLE).insert(parallelRows);
+      if (parallelErr) {
+        return NextResponse.json({ message: parallelErr.message }, { status: 400 });
+      }
+    }
   }
 
   return NextResponse.json({

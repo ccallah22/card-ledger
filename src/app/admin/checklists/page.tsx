@@ -9,6 +9,12 @@ type Entry = {
   section: string;
 };
 
+type ParseResult = {
+  entries: Entry[];
+  sectionParallels: Record<string, string[]>;
+  error?: string;
+};
+
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -60,7 +66,7 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function parsePastedChecklist(text: string): Entry[] {
+function parsePastedChecklist(text: string): ParseResult {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -68,12 +74,12 @@ function parsePastedChecklist(text: string): Entry[] {
 
   const entries: Entry[] = [];
   let currentSection = "Base";
-  let activeParallels: string[] = [];
+  let collectingParallels = false;
+  const sectionParallels = new Map<string, Set<string>>();
 
   const ignoreExact = new Set([
     "base set",
     "parallels",
-    "retail",
   ]);
 
   const ignoreStartsWith = [
@@ -116,6 +122,13 @@ function parsePastedChecklist(text: string): Entry[] {
       .replace(/\s*\/\d+.*$/, "")
       .trim();
 
+  const addParallel = (section: string, line: string) => {
+    const cleaned = stripSuffix(line);
+    if (!cleaned || cleaned.toLowerCase() === "parallels") return;
+    if (!sectionParallels.has(section)) sectionParallels.set(section, new Set());
+    sectionParallels.get(section)?.add(cleaned);
+  };
+
   const isParallelLine = (line: string) => {
     const lower = line.toLowerCase();
     if (ignoreExact.has(lower)) return true;
@@ -135,10 +148,23 @@ function parsePastedChecklist(text: string): Entry[] {
   for (const line of lines) {
     const lower = line.toLowerCase();
 
+    if (lower === "parallels") {
+      collectingParallels = true;
+      continue;
+    }
+
+    if (/\s[–-]\s*#\d/.test(line)) {
+      continue;
+    }
+
     const entryMatch = line.match(/^(\d{1,4})\s+(.+)$/);
     if (entryMatch) {
       const number = entryMatch[1];
       const rest = entryMatch[2];
+      const restLower = rest.toLowerCase();
+      if (!rest.includes(",") || restLower.includes("checklist") || restLower.includes("cards")) {
+        continue;
+      }
       const [nameRaw, teamRaw] = rest.split(",").map((s) => s.trim());
       const name = stripSuffix(nameRaw || "");
       const team = teamRaw ? stripSuffix(teamRaw) : undefined;
@@ -150,17 +176,8 @@ function parsePastedChecklist(text: string): Entry[] {
           team,
           section: currentSection,
         });
-        if (activeParallels.length) {
-          for (const parallel of activeParallels) {
-            entries.push({
-              number,
-              name,
-              team,
-              section: `${currentSection} - ${parallel}`,
-            });
-          }
-        }
       }
+      collectingParallels = false;
       continue;
     }
 
@@ -170,28 +187,37 @@ function parsePastedChecklist(text: string): Entry[] {
 
     if (isSectionLine(line)) {
       currentSection = line;
-      activeParallels = [];
+      collectingParallels = true;
       continue;
     }
 
-    if (isParallelLine(line)) {
-      const cleaned = stripSuffix(line);
-      if (cleaned) activeParallels.push(cleaned);
+    if (collectingParallels) {
+      if (isParallelLine(line) || line.length <= 80) {
+        addParallel(currentSection, line);
+      }
       continue;
     }
+
+    if (isParallelLine(line)) continue;
   }
 
-  return entries;
+  const parallelObj: Record<string, string[]> = {};
+  for (const [section, values] of sectionParallels.entries()) {
+    if (values.size) parallelObj[section] = Array.from(values.values());
+  }
+
+  return { entries, sectionParallels: parallelObj };
 }
 
-function parseEntries(raw: string): { entries: Entry[]; error?: string } {
+function parseEntries(raw: string): ParseResult {
   const trimmed = raw.trim();
-  if (!trimmed) return { entries: [] };
+  if (!trimmed) return { entries: [], sectionParallels: {} };
 
   if (trimmed.startsWith("[")) {
     try {
       const parsed = JSON.parse(trimmed);
-      if (!Array.isArray(parsed)) return { entries: [], error: "JSON must be an array." };
+      if (!Array.isArray(parsed))
+        return { entries: [], sectionParallels: {}, error: "JSON must be an array." };
       const entries = parsed
         .map((r) => ({
           number: String(r?.number ?? "").trim(),
@@ -200,15 +226,15 @@ function parseEntries(raw: string): { entries: Entry[]; error?: string } {
           section: String(r?.section ?? "").trim(),
         }))
         .filter((r) => r.number && r.name && r.section);
-      return { entries };
+      return { entries, sectionParallels: {} };
     } catch (e: any) {
-      return { entries: [], error: e?.message || "Invalid JSON." };
+      return { entries: [], sectionParallels: {}, error: e?.message || "Invalid JSON." };
     }
   }
 
   // CSV
   const rows = parseCsv(trimmed);
-  if (!rows.length) return { entries: [] };
+  if (!rows.length) return { entries: [], sectionParallels: {} };
 
   const header = rows[0].map((h) => h.toLowerCase());
   const hasHeader =
@@ -221,20 +247,20 @@ function parseEntries(raw: string): { entries: Entry[]; error?: string } {
   if (!hasHeader) {
     const counts = rows.map((r) => r.filter((c) => c.length).length);
     const maxCount = Math.max(0, ...counts);
-    if (maxCount < 3) return { entries: [] };
+    if (maxCount < 3) return { entries: [], sectionParallels: {} };
 
     const countByLen = new Map<number, number>();
     for (const c of counts) countByLen.set(c, (countByLen.get(c) ?? 0) + 1);
     const [commonLen] =
       [...countByLen.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
 
-    if (!commonLen || commonLen < 3) return { entries: [] };
+    if (!commonLen || commonLen < 3) return { entries: [], sectionParallels: {} };
 
     const candidates = rows.filter((r) => r.filter((c) => c.length).length === commonLen);
     const validCandidates = candidates.filter(
       (r) => /^\d+$/.test(String(r[0] ?? "").trim()) && String(r[1] ?? "").trim()
     );
-    if (validCandidates.length < 5) return { entries: [] };
+    if (validCandidates.length < 5) return { entries: [], sectionParallels: {} };
 
     if (commonLen === 3) {
       inferredCols = { number: 0, name: 1, section: 2 };
@@ -252,7 +278,11 @@ function parseEntries(raw: string): { entries: Entry[]; error?: string } {
   const sectionIdx = hasHeader ? col("section") : inferredCols?.section ?? 3;
 
   if (hasHeader && (numberIdx < 0 || nameIdx < 0 || sectionIdx < 0)) {
-    return { entries: [], error: "CSV header must include number,name,section." };
+    return {
+      entries: [],
+      sectionParallels: {},
+      error: "CSV header must include number,name,section.",
+    };
   }
 
   const entries: Entry[] = [];
@@ -265,7 +295,7 @@ function parseEntries(raw: string): { entries: Entry[]; error?: string } {
     if (!number || !name || !section) continue;
     entries.push({ number, name, section, team: team || undefined });
   }
-  return { entries };
+  return { entries, sectionParallels: {} };
 }
 
 export default function ChecklistAdminPage() {
@@ -284,7 +314,7 @@ export default function ChecklistAdminPage() {
     const base = parseEntries(raw);
     if (base.entries.length || base.error) return base;
     const pasted = parsePastedChecklist(raw);
-    return { entries: pasted };
+    return pasted;
   }, [raw]);
   const entries = parsed.entries;
 
@@ -327,6 +357,7 @@ export default function ChecklistAdminPage() {
               sport: setSport.trim(),
             },
             entries: chunk,
+            sectionParallels: replaceExisting && i === 0 ? parsed.sectionParallels : undefined,
           }),
         });
 
