@@ -10,7 +10,11 @@ import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
-import { dbLoadChecklistEntries, type ChecklistEntry } from "@/lib/db/checklists";
+import {
+  dbLoadChecklistEntries,
+  dbLoadChecklistSectionParallels,
+  type ChecklistEntry,
+} from "@/lib/db/checklists";
 
 const INSERT_SECTIONS = new Set([
   "Anniversary Rookies",
@@ -748,6 +752,7 @@ const DONRUSS_SECTION_VARIANTS: Record<string, string[]> = {
   "Rookie Phenom Jersey Autographs": DONRUSS_ROOKIE_PHENOM_VARIANTS,
 };
 
+
 const DONRUSS_EXCLUDED_SECTION_PREFIXES = ["Action All-Pros", "Action All-Pros Autographs"];
 
 const DONRUSS_EXCLUSIONS: Record<
@@ -1046,6 +1051,20 @@ function expandChecklistVariants<T extends { section: string }>(items: T[]) {
     if (!shouldExpandVariants(item.section)) continue;
     for (const variant of VARIANT_LIST) {
       out.push({ ...item, section: `${item.section} • ${variant.label}` });
+    }
+  }
+  return out;
+}
+
+function expandChecklistWithSectionParallels<
+  T extends { section: string; number: string | number }
+>(items: T[], sectionParallels: Record<string, string[]>) {
+  const out: T[] = [];
+  for (const item of items) {
+    out.push(item);
+    const parallels = sectionParallels[item.section] ?? [];
+    for (const parallel of parallels) {
+      out.push({ ...item, section: `${item.section} • ${parallel}` });
     }
   }
   return out;
@@ -2025,21 +2044,32 @@ function NewCardPageInner() {
 
   const [checklistEntries, setChecklistEntries] = useState<ChecklistEntry[]>([]);
   const [checklistLoading, setChecklistLoading] = useState(false);
+  const [checklistSectionParallels, setChecklistSectionParallels] = useState<
+    Record<string, string[]>
+  >({});
 
   useEffect(() => {
     if (!checklistKey) {
       setChecklistEntries([]);
+      setChecklistSectionParallels({});
       return;
     }
 
     let active = true;
     setChecklistLoading(true);
-    dbLoadChecklistEntries(checklistKey)
-      .then((entries) => {
-        if (active) setChecklistEntries(entries);
+    Promise.all([
+      dbLoadChecklistEntries(checklistKey),
+      dbLoadChecklistSectionParallels(checklistKey),
+    ])
+      .then(([entries, parallels]) => {
+        if (!active) return;
+        setChecklistEntries(entries);
+        setChecklistSectionParallels(parallels);
       })
       .catch(() => {
-        if (active) setChecklistEntries([]);
+        if (!active) return;
+        setChecklistEntries([]);
+        setChecklistSectionParallels({});
       })
       .finally(() => {
         if (active) setChecklistLoading(false);
@@ -2052,12 +2082,15 @@ function NewCardPageInner() {
 
   const activeChecklist = useMemo(() => {
     if (!checklistKey) return [];
+    if (Object.keys(checklistSectionParallels).length) {
+      return expandChecklistWithSectionParallels(checklistEntries, checklistSectionParallels);
+    }
     if (checklistKey === "donruss-2025") return expandDonrussChecklist(checklistEntries);
     if (checklistKey === "prizm-cwc-2025") return expandCwcChecklist(checklistEntries);
     if (checklistKey === "prizm-2025") return expandPrizmChecklist(checklistEntries);
     if (checklistKey === "score-2025") return expandScoreChecklist(checklistEntries);
     return checklistEntries;
-  }, [checklistKey, checklistEntries]);
+  }, [checklistKey, checklistEntries, checklistSectionParallels]);
 
   const checklistResults = useMemo(() => {
     if (!activeChecklist.length) return [];
