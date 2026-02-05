@@ -328,7 +328,11 @@ export default function ChecklistAdminPage() {
     const looksLikeCsv = hasCsvHeader || multiColRows >= 3;
 
     if (trimmed.startsWith("[")) return parseEntries(raw);
-    if (looksLikeCsv) return parseEntries(raw);
+    if (looksLikeCsv) {
+      const csv = parseEntries(raw);
+      if (csv.entries.length || csv.error) return csv;
+      return parsePastedChecklist(raw);
+    }
 
     const pasted = parsePastedChecklist(raw);
     if (pasted.entries.length || pasted.error) return pasted;
