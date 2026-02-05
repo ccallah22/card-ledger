@@ -77,10 +77,7 @@ function parsePastedChecklist(text: string): ParseResult {
   let collectingParallels = false;
   const sectionParallels = new Map<string, Set<string>>();
 
-  const ignoreExact = new Set([
-    "base set",
-    "parallels",
-  ]);
+  const ignoreExact = new Set(["parallels"]);
 
   const ignoreStartsWith = [
     "game ticket",
