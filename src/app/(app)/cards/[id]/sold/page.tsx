@@ -155,6 +155,12 @@ export default function MarkSoldPage({
             onChange={(e) => setSoldDate(e.target.value)}
             type="date"
             className="w-full rounded-md border px-3 py-2 text-sm outline-none ring-zinc-300 focus:ring-2"
+            onClick={(e) => {
+              const el = e.currentTarget;
+              if (typeof (el as HTMLInputElement).showPicker === "function") {
+                (el as HTMLInputElement).showPicker();
+              }
+            }}
           />
         </Field>
 
