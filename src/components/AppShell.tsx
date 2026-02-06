@@ -294,7 +294,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <aside
           ref={sidebarRef}
           className={
-            "relative hidden sm:flex sm:flex-col sm:border-r sm:bg-white transition-all " +
+            "relative hidden sm:flex sm:flex-col sm:border-r sm:bg-white transition-all h-screen " +
             (collapsed ? "sm:w-16" : "sm:w-64")
           }
         >
@@ -334,7 +334,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           {/* Nav */}
-          <nav className="flex-1 p-2">
+          <nav className="flex-1 p-2 overflow-y-auto">
             {!collapsed ? (
               <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                 Binder
@@ -431,7 +431,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </nav>
 
-          <div className="border-t p-3">
+          <div className="border-t p-3 shrink-0">
             {!collapsed ? (
               <button
                 type="button"
