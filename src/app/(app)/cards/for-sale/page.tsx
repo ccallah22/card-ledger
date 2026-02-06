@@ -253,25 +253,58 @@ export default function ForSalePage() {
                       onClick={(e) => e.stopPropagation()}
                       className="mt-1 h-4 w-4 accent-zinc-900"
                     />
-                    <Link
-                      href={`/cards/${c.id}`}
-                      className="flex gap-4 min-w-0 flex-1"
-                    >
-                      <div className="h-[110px] w-[78px] shrink-0 overflow-hidden rounded-md border bg-zinc-50 flex items-center justify-center">
-                        {imageUrl ? (
-                          <img
-                            src={imageUrl}
-                            alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}
-                            className="h-full w-full object-contain"
-                          />
-                        ) : (
-                          <div className="px-2 text-center text-[10px] text-zinc-500">
-                            No image uploaded yet
+                    <div className="flex min-w-0 flex-1 gap-4">
+                      <div className="shrink-0">
+                        <Link href={`/cards/${c.id}`} className="block">
+                          <div className="h-[110px] w-[78px] overflow-hidden rounded-md border bg-zinc-50 flex items-center justify-center">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}
+                                className="h-full w-full object-contain"
+                              />
+                            ) : (
+                              <div className="px-2 text-center text-[10px] text-zinc-500">
+                                No image uploaded yet
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </Link>
+                        <div className="mt-2 flex flex-col gap-2 sm:hidden">
+                          <div className="text-xs font-semibold text-zinc-900">
+                            {typeof asking === "number" ? formatCurrency(asking) : "—"}
+                          </div>
+                          <Link
+                            href={`/cards/${c.id}/sold?return=for-sale`}
+                            className="rounded-md border px-3 py-1.5 text-center text-xs text-zinc-700 hover:bg-zinc-50"
+                          >
+                            Mark Sold
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const confirmed = window.confirm(
+                                `Remove ${c.playerName} from For Sale?`
+                              );
+                              if (!confirmed) return;
+                              const next: SportsCard = { ...c, status: "HAVE" };
+                              try {
+                                await dbUpsertCard(next);
+                                setCards((prev) =>
+                                  prev.map((item) => (item.id === c.id ? next : item))
+                                );
+                              } catch (e: any) {
+                                setError(e?.message ?? "Failed to remove from For Sale.");
+                              }
+                            }}
+                            className="rounded-md border px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="min-w-0 flex-1">
+                      <Link href={`/cards/${c.id}`} className="min-w-0 flex-1">
                         <div className="font-medium text-zinc-900">{c.playerName}</div>
                         <div className="text-xs text-zinc-600">{labelForCard(c)}</div>
                         {c.team ? <div className="text-xs text-zinc-500">{c.team}</div> : null}
@@ -299,10 +332,10 @@ export default function ForSalePage() {
                             {c.notes}
                           </div>
                         ) : null}
-                      </div>
-                    </Link>
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                  <div className="hidden sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:justify-end">
                     <div className="text-xs font-semibold text-zinc-900">
                       {typeof asking === "number" ? formatCurrency(asking) : "—"}
                     </div>
