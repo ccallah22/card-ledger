@@ -25,6 +25,7 @@ export default function MarkSoldPage({
   const [soldDate, setSoldDate] = useState<string>("");
   const [soldFees, setSoldFees] = useState<string>("");
   const [soldNotes, setSoldNotes] = useState<string>("");
+  const [returnTo, setReturnTo] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -45,6 +46,13 @@ export default function MarkSoldPage({
       active = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const value = params.get("return");
+    setReturnTo(value);
+  }, []);
 
   const canSave = useMemo(() => {
     const priceOk = soldPrice.trim() !== "" && Number.isFinite(Number(soldPrice));
@@ -93,7 +101,7 @@ export default function MarkSoldPage({
     };
 
     await dbUpsertCard(next);
-    router.push("/cards/sold");
+    router.push(returnTo === "for-sale" ? "/cards/for-sale" : "/cards/sold");
   }
 
   const paid = card.purchasePrice ?? 0;
