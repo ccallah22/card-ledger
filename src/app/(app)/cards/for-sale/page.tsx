@@ -243,7 +243,7 @@ export default function ForSalePage() {
               return (
                 <div
                   key={c.id}
-                  className="flex items-start justify-between gap-3 px-4 py-3 text-sm hover:bg-zinc-50"
+                  className="flex flex-col gap-3 px-4 py-3 text-sm hover:bg-zinc-50 sm:flex-row sm:items-start sm:justify-between"
                 >
                   <div className="flex items-start gap-3 min-w-0 flex-1">
                     <input
@@ -253,7 +253,10 @@ export default function ForSalePage() {
                       onClick={(e) => e.stopPropagation()}
                       className="mt-1 h-4 w-4 accent-zinc-900"
                     />
-                    <Link href={`/cards/${c.id}`} className="flex gap-4 min-w-0 flex-1">
+                    <Link
+                      href={`/cards/${c.id}`}
+                      className="flex gap-4 min-w-0 flex-1"
+                    >
                       <div className="h-[110px] w-[78px] shrink-0 overflow-hidden rounded-md border bg-zinc-50 flex items-center justify-center">
                         {imageUrl ? (
                           <img
@@ -299,7 +302,7 @@ export default function ForSalePage() {
                       </div>
                     </Link>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3 sm:justify-end">
                     <div className="text-xs font-semibold text-zinc-900">
                       {typeof asking === "number" ? formatCurrency(asking) : "—"}
                     </div>
