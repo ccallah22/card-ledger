@@ -1081,7 +1081,16 @@ export default function CardsPage() {
                 Add to Binder
               </Link>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex gap-2">
+              <Link
+                href="/cards/for-sale"
+                className="rounded-md border bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                Return to For Sale
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
