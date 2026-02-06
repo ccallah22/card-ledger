@@ -291,6 +291,7 @@ export default function CardsPage() {
   const [error, setError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [forSaleMode, setForSaleMode] = useState(false);
+  const [wishlistMode, setWishlistMode] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
@@ -869,6 +870,7 @@ export default function CardsPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     setForSaleMode(params.get("forSale") === "1");
+    setWishlistMode(params.get("wishlist") === "1");
   }, []);
 
   function toggleSelected(id: string, next?: boolean) {
@@ -921,6 +923,9 @@ export default function CardsPage() {
       clearSelection();
       if (forSaleMode && nextStatus === "FOR_SALE") {
         router.push("/cards/for-sale");
+      }
+      if (wishlistMode && nextStatus === "WANT") {
+        router.push("/cards/wishlist");
       }
     } catch (e: any) {
       alert(`Bulk update failed: ${e?.message ?? "unknown error"}`);
@@ -1072,7 +1077,7 @@ export default function CardsPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Binder</h1>
           </div>
 
-          {!forSaleMode ? (
+          {!forSaleMode && !wishlistMode ? (
             <div className="flex gap-2">
               <Link
                 href="/cards/new"
@@ -1081,13 +1086,22 @@ export default function CardsPage() {
                 Add to Binder
               </Link>
             </div>
-          ) : (
+          ) : forSaleMode ? (
             <div className="flex gap-2">
               <Link
                 href="/cards/for-sale"
                 className="rounded-md border bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
               >
                 Return to For Sale
+              </Link>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Link
+                href="/cards/wishlist"
+                className="rounded-md border bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                Return to Wishlist
               </Link>
             </div>
           )}
@@ -1097,7 +1111,7 @@ export default function CardsPage() {
       {selectedCount > 0 ? (
         <div className="flex flex-col gap-2 rounded-xl border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-700">
-            {!forSaleMode ? (
+            {!forSaleMode && !wishlistMode ? (
               <>
                 <label className="inline-flex items-center gap-2">
                   <input
@@ -1129,18 +1143,38 @@ export default function CardsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => applyBulkStatus("FOR_SALE")}
-              disabled={bulkBusy}
-              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
-            >
-              Mark For Sale
-            </button>
+            {!wishlistMode ? (
+              <button
+                type="button"
+                onClick={() => applyBulkStatus("FOR_SALE")}
+                disabled={bulkBusy}
+                className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                Mark For Sale
+              </button>
+            ) : null}
+            {wishlistMode ? (
+              <button
+                type="button"
+                onClick={() => applyBulkStatus("WANT")}
+                disabled={bulkBusy}
+                className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                Mark Want
+              </button>
+            ) : null}
             {forSaleMode ? (
               <button
                 type="button"
                 onClick={() => router.push("/cards/for-sale")}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                Cancel
+              </button>
+            ) : wishlistMode ? (
+              <button
+                type="button"
+                onClick={() => router.push("/cards/wishlist")}
                 className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
               >
                 Cancel
