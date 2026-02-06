@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 
@@ -6,11 +6,14 @@ export const metadata: Metadata = {
   title: "TheBindr",
   description: "Track and manage your binder.",
   manifest: "/manifest.json",
-  themeColor: "#2b323a",
   icons: {
     icon: "/icon.png",
     apple: "/apple-icon.png",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2b323a",
 };
 
 export default function RootLayout({
