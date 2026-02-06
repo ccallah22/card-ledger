@@ -144,7 +144,8 @@ function parsePastedChecklist(text: string): ParseResult {
     return false;
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const lower = line.toLowerCase();
 
     if (lower === "parallels") {
@@ -190,8 +191,14 @@ function parsePastedChecklist(text: string): ParseResult {
         continue;
       }
       if (isSectionLine(line)) {
-        currentSection = line;
-        collectingParallels = false;
+        const next = lines[i + 1] ?? "";
+        const nextIsEntry = /^\d{1,4}\s+.+,/.test(next);
+        if (nextIsEntry) {
+          currentSection = line;
+          collectingParallels = false;
+        } else {
+          addParallel(currentSection, line);
+        }
         continue;
       }
       continue;
