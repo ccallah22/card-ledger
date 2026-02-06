@@ -294,7 +294,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <aside
           ref={sidebarRef}
           className={
-            "relative hidden sm:flex sm:flex-col sm:border-r sm:bg-white transition-all h-screen " +
+            "sticky top-0 hidden sm:flex sm:flex-col sm:border-r sm:bg-white transition-all h-screen " +
             (collapsed ? "sm:w-16" : "sm:w-64")
           }
         >
