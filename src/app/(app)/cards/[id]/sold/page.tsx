@@ -23,7 +23,6 @@ export default function MarkSoldPage({
 
   const [soldPrice, setSoldPrice] = useState<string>("");
   const [soldDate, setSoldDate] = useState<string>("");
-  const [soldFees, setSoldFees] = useState<string>("");
   const [soldNotes, setSoldNotes] = useState<string>("");
   const [returnTo, setReturnTo] = useState<string | null>(null);
 
@@ -38,7 +37,6 @@ export default function MarkSoldPage({
       if (initial) {
         setSoldPrice(typeof initial.soldPrice === "number" ? String(initial.soldPrice) : "");
         setSoldDate(initial.soldDate ?? "");
-        setSoldFees(typeof initial.soldFees === "number" ? String(initial.soldFees) : "");
         setSoldNotes(initial.soldNotes ?? "");
       }
     })();
@@ -95,7 +93,6 @@ export default function MarkSoldPage({
       status: "SOLD",
       soldPrice: Number(soldPrice),
       soldDate: soldDate || now.slice(0, 10),
-      soldFees: soldFees.trim() === "" ? undefined : Number(soldFees),
       soldNotes: soldNotes.trim() || undefined,
       updatedAt: now,
     };
@@ -103,10 +100,6 @@ export default function MarkSoldPage({
     await dbUpsertCard(next);
     router.push(returnTo === "for-sale" ? "/cards/for-sale" : "/cards/sold");
   }
-
-  const paid = card.purchasePrice ?? 0;
-  const sold = Number.isFinite(Number(soldPrice)) ? Number(soldPrice) : 0;
-  const quickNet = sold - paid;
 
   return (
     <div className="space-y-5">
@@ -152,22 +145,6 @@ export default function MarkSoldPage({
             type="date"
             className="w-full rounded-md border px-3 py-2 text-sm outline-none ring-zinc-300 focus:ring-2"
           />
-        </Field>
-
-        <Field label="Fees (optional)">
-          <input
-            value={soldFees}
-            onChange={(e) => setSoldFees(e.target.value)}
-            inputMode="decimal"
-            className="w-full rounded-md border px-3 py-2 text-sm outline-none ring-zinc-300 focus:ring-2"
-            placeholder="e.g., 12.50"
-          />
-        </Field>
-
-        <Field label="Quick net (sold - paid)">
-          <div className="rounded-md border bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
-            {currency(quickNet)}
-          </div>
         </Field>
 
         <Field label="Sold notes (optional)" full>
