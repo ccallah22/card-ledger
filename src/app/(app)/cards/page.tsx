@@ -290,7 +290,6 @@ export default function CardsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const didInitForSaleSelection = useRef(false);
   const [forSaleMode, setForSaleMode] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
@@ -872,13 +871,6 @@ export default function CardsPage() {
     setForSaleMode(params.get("forSale") === "1");
   }, []);
 
-  useEffect(() => {
-    if (!forSaleMode || didInitForSaleSelection.current) return;
-    if (visibleCardIds.length === 0) return;
-    setSelectedIds(new Set(visibleCardIds));
-    didInitForSaleSelection.current = true;
-  }, [forSaleMode, visibleCardIds]);
-
   function toggleSelected(id: string, next?: boolean) {
     setSelectedIds((prev) => {
       const copy = new Set(prev);
@@ -927,6 +919,9 @@ export default function CardsPage() {
         })
       );
       clearSelection();
+      if (forSaleMode && nextStatus === "FOR_SALE") {
+        router.push("/cards/for-sale");
+      }
     } catch (e: any) {
       alert(`Bulk update failed: ${e?.message ?? "unknown error"}`);
     } finally {
@@ -1091,27 +1086,35 @@ export default function CardsPage() {
       {selectedCount > 0 ? (
         <div className="flex flex-col gap-2 rounded-xl border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-700">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={allVisibleSelected}
-                ref={(el) => {
-                  if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected;
-                }}
-                onChange={toggleSelectAllVisible}
-              />
-              Select all visible
-            </label>
-            <span>
-              Selected: <span className="font-semibold">{selectedCount}</span>
-            </span>
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="text-sm text-zinc-500 underline"
-            >
-              Clear
-            </button>
+            {!forSaleMode ? (
+              <>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected;
+                    }}
+                    onChange={toggleSelectAllVisible}
+                  />
+                  Select all visible
+                </label>
+                <span>
+                  Selected: <span className="font-semibold">{selectedCount}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="text-sm text-zinc-500 underline"
+                >
+                  Clear
+                </button>
+              </>
+            ) : (
+              <span>
+                Selected: <span className="font-semibold">{selectedCount}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1123,22 +1126,34 @@ export default function CardsPage() {
             >
               Mark For Sale
             </button>
-            <button
-              type="button"
-              onClick={() => applyBulkStatus("SOLD")}
-              disabled={bulkBusy}
-              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
-            >
-              Mark Sold
-            </button>
-            <button
-              type="button"
-              onClick={applyBulkDelete}
-              disabled={bulkBusy}
-              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 disabled:opacity-50"
-            >
-              Delete
-            </button>
+            {forSaleMode ? (
+              <button
+                type="button"
+                onClick={() => router.push("/cards/for-sale")}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                Cancel
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyBulkStatus("SOLD")}
+                  disabled={bulkBusy}
+                  className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  Mark Sold
+                </button>
+                <button
+                  type="button"
+                  onClick={applyBulkDelete}
+                  disabled={bulkBusy}
+                  className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : null}
