@@ -112,18 +112,29 @@ export default function MarkSoldPage({
         </div>
 
         <div className="flex gap-2">
-          <Link
-            href={`/cards/${id}`}
-            className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-          >
-            Back to card
-          </Link>
-          <Link
-            href="/cards"
-            className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-          >
-            Binder
-          </Link>
+          {returnTo === "for-sale" ? (
+            <Link
+              href="/cards/for-sale"
+              className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+            >
+              Return to For Sale
+            </Link>
+          ) : (
+            <>
+              <Link
+                href={`/cards/${id}`}
+                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+              >
+                Back to card
+              </Link>
+              <Link
+                href="/cards"
+                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+              >
+                Binder
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -165,12 +176,21 @@ export default function MarkSoldPage({
         >
           Save Sold
         </button>
-        <Link
-          href={`/cards/${id}`}
-          className="rounded-md border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
-        >
-          Cancel
-        </Link>
+        {returnTo === "for-sale" ? (
+          <Link
+            href="/cards/for-sale"
+            className="rounded-md border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
+          >
+            Return to For Sale
+          </Link>
+        ) : (
+          <Link
+            href={`/cards/${id}`}
+            className="rounded-md border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </div>
   );
