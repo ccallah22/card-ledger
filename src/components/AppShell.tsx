@@ -299,13 +299,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           }
         >
         {/* Brand row */}
-        <div className="border-b py-4 px-2">
+        <div className="border-b py-4 px-2 bg-[#2b323a] text-white">
           {!collapsed ? (
             <div className="flex items-center justify-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
                 <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
               </div>
-              <div className="text-lg font-semibold tracking-tight text-zinc-900">TheBindr</div>
+              <div className="text-lg font-semibold tracking-tight text-white">TheBindr</div>
             </div>
           ) : (
             <div className="flex items-center justify-center">
