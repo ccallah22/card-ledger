@@ -51,7 +51,7 @@ export default function ForSalePage() {
         </div>
         <div className="flex gap-2">
           <Link
-            href="/cards"
+            href="/cards?forSale=1"
             className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
           >
             Choose From Binder

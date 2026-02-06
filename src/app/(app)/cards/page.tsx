@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
@@ -285,11 +285,13 @@ function isRookie(c: SportsCard) {
 
 export default function CardsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [cards, setCards] = useState<SportsCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const didInitForSaleSelection = useRef(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
@@ -863,6 +865,15 @@ export default function CardsPage() {
   const allVisibleSelected =
     visibleCardIds.length > 0 && visibleCardIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleCardIds.some((id) => selectedIds.has(id));
+
+  const forSaleMode = searchParams.get("forSale") === "1";
+
+  useEffect(() => {
+    if (!forSaleMode || didInitForSaleSelection.current) return;
+    if (visibleCardIds.length === 0) return;
+    setSelectedIds(new Set(visibleCardIds));
+    didInitForSaleSelection.current = true;
+  }, [forSaleMode, visibleCardIds]);
 
   function toggleSelected(id: string, next?: boolean) {
     setSelectedIds((prev) => {
