@@ -5,7 +5,6 @@ import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SportsCard, CardComp } from "@/lib/types";
 import { dbDeleteCard, dbGetCard, dbLoadCards, dbUpsertCard } from "@/lib/db/cards";
-import { newId } from "@/lib/storage";
 import { formatCurrency } from "@/lib/format";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
@@ -45,6 +44,13 @@ function statusLabel(s: string) {
     .replaceAll("_", " ")
     .toLowerCase()
     .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function newId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `comp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function buildEbaySoldUrl(card: SportsCard) {

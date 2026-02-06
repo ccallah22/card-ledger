@@ -4,7 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
-import { loadCards, upsertCard } from "@/lib/storage";
+import { dbGetCard, dbUpsertCard } from "@/lib/db/cards";
 import { loadImageForCard, removeImageForCard } from "@/lib/imageStore";
 import { IMAGE_RULES, processImageFile } from "@/lib/image";
 import { formatCurrency } from "@/lib/format";
@@ -70,53 +70,59 @@ export default function EditCardPage({
   const [imageRemoved, setImageRemoved] = useState(false);
 
   useEffect(() => {
-    const cards = loadCards();
-    const found = cards.find((c) => String(c.id) === String(id)) ?? null;
+    let active = true;
+    (async () => {
+      const found = await dbGetCard(String(id));
+      if (!active) return;
 
-    if (!found) {
-      setNotFound(true);
+      if (!found) {
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+
+      setOriginal(found);
+
+      setPlayerName(found.playerName ?? "");
+      setYear(found.year ?? "");
+      setSetName(found.setName ?? "");
+      setCardNumber(found.cardNumber ?? "");
+      setTeam(found.team ?? "");
+
+      setLocation((found as any).location ?? "");
+
+      setCondition(found.condition ?? "RAW");
+      setGrader(found.grader ?? "");
+      setGrade(found.grade ?? "");
+
+      setStatus(found.status ?? "HAVE");
+      setPurchasePrice(typeof found.purchasePrice === "number" ? String(found.purchasePrice) : "");
+      setPurchaseDate(found.purchaseDate ?? "");
+
+      setVariation((found as any).variation ?? "");
+      setInsert((found as any).insert ?? "");
+      setParallel((found as any).parallel ?? "");
+
+      setSerialNumber(
+        typeof (found as any).serialNumber === "number" ? String((found as any).serialNumber) : ""
+      );
+      setSerialTotal(
+        typeof (found as any).serialTotal === "number" ? String((found as any).serialTotal) : ""
+      );
+
+      setIsRookie(!!(found as any).isRookie);
+      setIsAutograph(!!(found as any).isAutograph);
+      setIsPatch(!!(found as any).isPatch);
+
+      setNotes(found.notes ?? "");
+      setImageUrl(loadImageForCard(String(found.id)));
+      setImageRemoved(false);
+
       setLoading(false);
-      return;
-    }
-
-    setOriginal(found);
-
-    setPlayerName(found.playerName ?? "");
-    setYear(found.year ?? "");
-    setSetName(found.setName ?? "");
-    setCardNumber(found.cardNumber ?? "");
-    setTeam(found.team ?? "");
-
-    setLocation((found as any).location ?? "");
-
-    setCondition(found.condition ?? "RAW");
-    setGrader(found.grader ?? "");
-    setGrade(found.grade ?? "");
-
-    setStatus(found.status ?? "HAVE");
-    setPurchasePrice(typeof found.purchasePrice === "number" ? String(found.purchasePrice) : "");
-    setPurchaseDate(found.purchaseDate ?? "");
-
-    setVariation((found as any).variation ?? "");
-    setInsert((found as any).insert ?? "");
-    setParallel((found as any).parallel ?? "");
-
-    setSerialNumber(
-      typeof (found as any).serialNumber === "number" ? String((found as any).serialNumber) : ""
-    );
-    setSerialTotal(
-      typeof (found as any).serialTotal === "number" ? String((found as any).serialTotal) : ""
-    );
-
-    setIsRookie(!!(found as any).isRookie);
-    setIsAutograph(!!(found as any).isAutograph);
-    setIsPatch(!!(found as any).isPatch);
-
-    setNotes(found.notes ?? "");
-    setImageUrl(loadImageForCard(String(found.id)));
-    setImageRemoved(false);
-
-    setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   const canSave = useMemo(() => {
@@ -130,7 +136,7 @@ export default function EditCardPage({
     return formatCurrency(n);
   }, [purchasePrice]);
 
-  function onSave() {
+  async function onSave() {
     if (!original) return;
     if (!canSave) return;
 
@@ -183,7 +189,7 @@ export default function EditCardPage({
       next.imageShared = undefined;
     }
 
-    upsertCard(next);
+    await dbUpsertCard(next);
     router.push(`/cards/${original.id}`);
   }
 

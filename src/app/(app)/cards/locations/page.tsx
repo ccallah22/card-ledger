@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { SportsCard } from "@/lib/types";
-import { loadCards, saveCards } from "@/lib/storage";
+import { dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
 
 function normalize(s?: string) {
   return (s ?? "").trim().toLowerCase();
@@ -19,9 +19,26 @@ export default function LocationsPage() {
   const [cards, setCards] = useState<SportsCard[]>([]);
   const [edits, setEdits] = useState<Record<string, string>>({}); // key -> new label
   const [notice, setNotice] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    setCards(loadCards());
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const data = await dbLoadCards();
+        if (active) setCards(data);
+      } catch (e: any) {
+        if (active) setError(e?.message ?? "Failed to load cards");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const locations = useMemo<LocRow[]>(() => {
@@ -46,7 +63,7 @@ export default function LocationsPage() {
     setEdits((prev) => ({ ...prev, [key]: value }));
   }
 
-  function renameLocation(oldKey: string) {
+  async function renameLocation(oldKey: string) {
     const oldLabel = locations.find((l) => l.key === oldKey)?.label ?? "";
     const nextLabel = (edits[oldKey] ?? "").trim();
 
@@ -76,8 +93,19 @@ export default function LocationsPage() {
       } as SportsCard;
     });
 
-    saveCards(updated);
-    setCards(updated);
+    try {
+      const changed = updated.filter(
+        (c, idx) => ((cards[idx] as any).location ?? "") !== ((c as any).location ?? "")
+      );
+      if (changed.length) {
+        await dbUpsertCards(changed);
+      }
+      setCards(updated);
+    } catch (e: any) {
+      setNotice("");
+      setError(e?.message ?? "Failed to rename locations.");
+      return;
+    }
 
     // Clear the edit box for that row
     setEdits((prev) => {
@@ -86,10 +114,11 @@ export default function LocationsPage() {
       return copy;
     });
 
+    setError("");
     setNotice(`Renamed "${oldLabel}" → "${nextLabel}".`);
   }
 
-  function clearLocation(oldKey: string) {
+  async function clearLocation(oldKey: string) {
     const oldLabel = locations.find((l) => l.key === oldKey)?.label ?? "";
     if (!oldLabel) return;
 
@@ -108,8 +137,19 @@ export default function LocationsPage() {
       } as SportsCard;
     });
 
-    saveCards(updated);
-    setCards(updated);
+    try {
+      const changed = updated.filter(
+        (c, idx) => ((cards[idx] as any).location ?? "") !== ((c as any).location ?? "")
+      );
+      if (changed.length) {
+        await dbUpsertCards(changed);
+      }
+      setCards(updated);
+    } catch (e: any) {
+      setNotice("");
+      setError(e?.message ?? "Failed to clear locations.");
+      return;
+    }
 
     setEdits((prev) => {
       const copy = { ...prev };
@@ -117,6 +157,7 @@ export default function LocationsPage() {
       return copy;
     });
 
+    setError("");
     setNotice(`Cleared location "${oldLabel}" from matching cards.`);
   }
 
@@ -141,8 +182,15 @@ export default function LocationsPage() {
           {notice}
         </div>
       ) : null}
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
 
-      {locations.length === 0 ? (
+      {loading ? (
+        <div className="rounded-xl border bg-white p-6 text-sm text-zinc-600">Loading…</div>
+      ) : locations.length === 0 ? (
         <div className="rounded-xl border bg-white p-6 text-sm text-zinc-600">
           No locations found yet. Edit a card and add a Location (ex: Binder A / Box 1 / Safe).
         </div>

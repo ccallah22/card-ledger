@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { SportsCard } from "@/lib/types";
-import { loadCards } from "@/lib/storage";
+import { dbLoadCards } from "@/lib/db/cards";
 import { formatCurrency } from "@/lib/format";
 
 function asNumber(v: unknown): number | undefined {
@@ -16,9 +16,26 @@ function labelForCard(c: SportsCard) {
 
 export default function ForSalePage() {
   const [cards, setCards] = useState<SportsCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    setCards(loadCards());
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const data = await dbLoadCards();
+        if (active) setCards(data);
+      } catch (e: any) {
+        if (active) setError(e?.message ?? "Failed to load cards");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const forSaleCards = useMemo(() => {
@@ -74,7 +91,11 @@ export default function ForSalePage() {
 
       <div className="rounded-xl border bg-white">
         <div className="border-b px-4 py-3 text-sm font-semibold text-zinc-900">Listed cards</div>
-        {forSaleCards.length === 0 ? (
+        {loading ? (
+          <div className="px-4 py-10 text-center text-sm text-zinc-600">Loading…</div>
+        ) : error ? (
+          <div className="px-4 py-10 text-center text-sm text-red-600">{error}</div>
+        ) : forSaleCards.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-zinc-600">
             No cards marked For Sale yet.
           </div>

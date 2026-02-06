@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SportsCard } from "@/lib/types";
-import { loadCards, saveCards } from "@/lib/storage";
+import { dbDeleteCards, dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
 import { loadImageMap, replaceImageMap } from "@/lib/imageStore";
 
 type BackupPayload = {
@@ -28,25 +28,44 @@ export default function BackupPage() {
   const [notice, setNotice] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [importing, setImporting] = useState(false);
+  const [cards, setCards] = useState<SportsCard[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await dbLoadCards();
+        if (active) setCards(data);
+      } catch (e: any) {
+        if (active) setError(e?.message ?? "Failed to load cards.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const summary = useMemo(() => {
-    const cards = loadCards();
     const images = loadImageMap();
     return {
       cards: cards.length,
       images: Object.keys(images).length,
     };
-  }, []);
+  }, [cards]);
 
-  function handleExport() {
+  async function handleExport() {
     setError("");
     setNotice("");
-    const cards = loadCards();
+    const data = await dbLoadCards();
     const images = loadImageMap();
     const payload: BackupPayload = {
       version: 1,
       exportedAt: new Date().toISOString(),
-      cards,
+      cards: data,
       images,
     };
     downloadJson(`thebindr-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
@@ -67,15 +86,22 @@ export default function BackupPage() {
         throw new Error("Invalid backup file. Missing cards array.");
       }
 
-      const cards = parsed.cards as SportsCard[];
+      const nextCards = parsed.cards as SportsCard[];
       const images = (parsed.images ?? {}) as Record<string, string>;
 
-      saveCards(cards);
+      const existing = await dbLoadCards();
+      if (existing.length) {
+        await dbDeleteCards(existing.map((c) => c.id));
+      }
+      if (nextCards.length) {
+        await dbUpsertCards(nextCards);
+      }
       const imagesOk = replaceImageMap(images);
 
       const imageMsg = imagesOk ? "" : " Some images were skipped due to storage limits.";
 
-      setNotice(`Backup imported: ${cards.length} cards.${imageMsg}`.trim());
+      setCards(nextCards);
+      setNotice(`Backup imported: ${nextCards.length} cards.${imageMsg}`.trim());
     } catch (err) {
       setError((err as Error).message || "Failed to import backup.");
     } finally {
@@ -95,7 +121,10 @@ export default function BackupPage() {
       <div className="rounded-lg border border-zinc-300 bg-white p-4 shadow-sm">
         <div className="text-sm text-zinc-900">
           Current data:{" "}
-          <span className="font-medium text-zinc-900">{summary.cards}</span> cards,{" "}
+          <span className="font-medium text-zinc-900">
+            {loading ? "Loading…" : summary.cards}
+          </span>{" "}
+          cards,{" "}
           <span className="font-medium text-zinc-900">{summary.images}</span> images.
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -122,7 +151,7 @@ export default function BackupPage() {
           </label>
         </div>
         <p className="mt-2 text-xs text-zinc-600">
-          Import replaces your current local data on this device.
+          Import replaces your current card data.
         </p>
       </div>
 

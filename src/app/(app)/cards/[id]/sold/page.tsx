@@ -4,7 +4,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { SportsCard } from "@/lib/types";
-import { getCard, upsertCard } from "@/lib/storage";
+import { dbGetCard, dbUpsertCard } from "@/lib/db/cards";
 
 function currency(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -27,16 +27,23 @@ export default function MarkSoldPage({
   const [soldNotes, setSoldNotes] = useState<string>("");
 
   useEffect(() => {
-    const initial = getCard(id) ?? null;
-    setCard(initial);
-    setLoading(false);
+    let active = true;
+    (async () => {
+      const initial = await dbGetCard(String(id));
+      if (!active) return;
+      setCard(initial);
+      setLoading(false);
 
-    if (initial) {
-      setSoldPrice(typeof initial.soldPrice === "number" ? String(initial.soldPrice) : "");
-      setSoldDate(initial.soldDate ?? "");
-      setSoldFees(typeof initial.soldFees === "number" ? String(initial.soldFees) : "");
-      setSoldNotes(initial.soldNotes ?? "");
-    }
+      if (initial) {
+        setSoldPrice(typeof initial.soldPrice === "number" ? String(initial.soldPrice) : "");
+        setSoldDate(initial.soldDate ?? "");
+        setSoldFees(typeof initial.soldFees === "number" ? String(initial.soldFees) : "");
+        setSoldNotes(initial.soldNotes ?? "");
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   const canSave = useMemo(() => {
@@ -68,7 +75,7 @@ export default function MarkSoldPage({
     );
   }
 
-  function onSave() {
+  async function onSave() {
     if (!card) return;
     if (!canSave) return;
 
@@ -85,7 +92,7 @@ export default function MarkSoldPage({
       updatedAt: now,
     };
 
-    upsertCard(next);
+    await dbUpsertCard(next);
     router.push("/cards/sold");
   }
 
