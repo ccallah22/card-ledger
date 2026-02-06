@@ -2297,11 +2297,17 @@ function NewCardPageInner() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Add Card</h1>
-          <p className="text-sm text-zinc-600">Add a new card to your binder.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {isWishlist ? "Wishlist Search" : "Add Card"}
+          </h1>
+          <p className="text-sm text-zinc-600">
+            {isWishlist
+              ? "Find a card to add to your wishlist (not added to your binder)."
+              : "Add a new card to your binder."}
+          </p>
         </div>
         <Link
-          href="/cards"
+          href={isWishlist ? "/cards/wishlist" : "/cards"}
           className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
         >
           Back
@@ -2784,7 +2790,7 @@ function NewCardPageInner() {
 
         <div className="sm:col-span-2 flex justify-end gap-2">
           <Link
-            href="/cards"
+            href={isWishlist ? "/cards/wishlist" : "/cards"}
             className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
           >
             Cancel
@@ -2794,14 +2800,14 @@ function NewCardPageInner() {
             disabled={!canSave}
             className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-40"
           >
-            Save + Add Another
+            {isWishlist ? "Add + Another" : "Save + Add Another"}
           </button>
           <button
             onClick={onSave}
             disabled={!canSave}
             className="rounded-md bg-[#242a32] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f242b] sm:bg-[#2b323a] sm:hover:bg-[#242a32] disabled:opacity-40"
           >
-            Save Card
+            {isWishlist ? "Add to Wishlist" : "Save Card"}
           </button>
         </div>
       </div>
