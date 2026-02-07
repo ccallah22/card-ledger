@@ -311,52 +311,65 @@ export default function EditCardPage({
         </div>
 
         <div className="sm:col-span-2 mt-2 border-t pt-4">
-          <div className="text-sm font-medium text-zinc-900">Card image</div>
-          <div className="text-xs text-zinc-500">Upload a new image or remove the current one.</div>
+          <div className="text-sm font-medium text-zinc-900">Edit card image</div>
+          <div className="text-xs text-zinc-500">
+            This is the only place you can change the image for a card.
+          </div>
         </div>
 
-        <div className="sm:col-span-2 grid gap-3 sm:grid-cols-[180px_1fr] items-start">
-          <div className="h-40 w-full rounded-md border bg-zinc-50 flex items-center justify-center overflow-hidden">
-            {imageUrl ? (
-              <img src={imageUrl} alt="Card" className="h-full w-full object-cover" />
-            ) : (
-              <div className="text-xs text-zinc-400">No image</div>
-            )}
-          </div>
-          <div className="space-y-2">
-            <label className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50 cursor-pointer">
-              <input
-                type="file"
-                accept={IMAGE_RULES.allowedTypes.join(",")}
-                className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  setImageError("");
-                  try {
-                    const { dataUrl } = await processImageFile(file);
-                    setImageUrl(dataUrl);
-                    setImageRemoved(false);
-                  } catch (err) {
-                    setImageError((err as Error).message || "Image failed validation.");
-                  }
-                }}
-              />
-              Upload image
-            </label>
-            {imageUrl ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setImageUrl(null);
-                  setImageRemoved(true);
-                }}
-                className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50"
-              >
-                Remove image
-              </button>
-            ) : null}
-            {imageError ? <div className="text-xs text-red-600">{imageError}</div> : null}
+        <div className="sm:col-span-2 rounded-lg border bg-zinc-50/60 p-3">
+          <div className="grid gap-3 sm:grid-cols-[200px_1fr] items-start">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                Current image
+              </div>
+              <div className="mt-2 h-44 w-full rounded-md border bg-white flex items-center justify-center overflow-hidden">
+                {imageUrl ? (
+                  <img src={imageUrl} alt="Card" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="text-xs text-zinc-400">No image</div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50 cursor-pointer">
+                <input
+                  type="file"
+                  accept={IMAGE_RULES.allowedTypes.join(",")}
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setImageError("");
+                    try {
+                      const { dataUrl } = await processImageFile(file);
+                      setImageUrl(dataUrl);
+                      setImageRemoved(false);
+                    } catch (err) {
+                      setImageError((err as Error).message || "Image failed validation.");
+                    }
+                  }}
+                />
+                Change image
+              </label>
+              {imageUrl ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageUrl(null);
+                    setImageRemoved(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50"
+                >
+                  Remove image
+                </button>
+              ) : null}
+              {imageError ? <div className="text-xs text-red-600">{imageError}</div> : null}
+              <div className="text-[11px] text-zinc-500">
+                Allowed: JPG/PNG/WebP/HEIC • Max {Math.round(IMAGE_RULES.maxBytes / 1024 / 1024)}MB
+              </div>
+            </div>
           </div>
         </div>
 
