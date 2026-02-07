@@ -97,12 +97,7 @@ function parsePastedChecklist(text: string): ParseResult {
     "fotl",
   ];
 
-  const ignoreContains = [
-    "cards",
-    "checklist",
-    "master card list",
-    "here’s the full",
-  ];
+  const ignoreContains = ["cards", "master card list", "here’s the full"];
 
   const isSectionLine = (line: string) => {
     const lower = line.toLowerCase();
@@ -113,10 +108,15 @@ function parsePastedChecklist(text: string): ParseResult {
     return true;
   };
 
+  const cleanSection = (line: string) =>
+    line.replace(/\s*checklist\s*$/i, "").trim();
+
   const stripSuffix = (value: string) =>
     value
       .replace(/\s*\(.*\)\s*$/, "")
+      .replace(/\s*[–-]\s*\d+\/\d+.*$/, "")
       .replace(/\s*\/\d+.*$/, "")
+      .replace(/\s*[–-]\s*$/, "")
       .trim();
 
   const addParallel = (section: string, line: string) => {
@@ -148,7 +148,7 @@ function parsePastedChecklist(text: string): ParseResult {
     const line = lines[i];
     const lower = line.toLowerCase();
 
-    if (lower === "parallels") {
+    if (lower === "parallels" || lower.replace(/[:]/g, "") === "parallels") {
       collectingParallels = true;
       continue;
     }
@@ -194,7 +194,7 @@ function parsePastedChecklist(text: string): ParseResult {
         const next = lines[i + 1] ?? "";
         const nextIsEntry = /^\d{1,4}\s+.+,/.test(next);
         if (nextIsEntry) {
-          currentSection = line;
+          currentSection = cleanSection(line);
           collectingParallels = false;
         } else {
           addParallel(currentSection, line);
@@ -205,7 +205,7 @@ function parsePastedChecklist(text: string): ParseResult {
     }
 
     if (isSectionLine(line)) {
-      currentSection = line;
+      currentSection = cleanSection(line);
       collectingParallels = false;
       continue;
     }
