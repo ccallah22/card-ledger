@@ -124,8 +124,15 @@ function parsePastedChecklist(text: string): ParseResult {
       .replace(/\s*[–-]\s*$/, "")
       .trim();
 
+  const cleanParallelLabel = (value: string) =>
+    value
+      .replace(/\s*\(.*\)\s*$/, "")
+      .replace(/\s*[–-]\s*(?=\/\d)/, " ")
+      .replace(/\s*[–-]\s*$/, "")
+      .trim();
+
   const addParallel = (section: string, line: string) => {
-    const cleaned = stripSuffix(line);
+    const cleaned = cleanParallelLabel(line);
     if (!cleaned || cleaned.toLowerCase() === "parallels") return;
     if (!sectionParallels.has(section)) sectionParallels.set(section, new Set());
     sectionParallels.get(section)?.add(cleaned);
