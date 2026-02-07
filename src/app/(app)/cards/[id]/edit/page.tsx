@@ -115,7 +115,11 @@ export default function EditCardPage({
       setIsPatch(!!(found as any).isPatch);
 
       setNotes(found.notes ?? "");
-      setImageUrl(loadImageForCard(String(found.id)));
+      setImageUrl(
+        loadImageForCard(String(found.id)) ??
+          ((found as any).imageUrl as string | undefined) ??
+          null
+      );
       setImageRemoved(false);
 
       setLoading(false);
