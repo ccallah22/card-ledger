@@ -521,11 +521,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : (
           <div className="sm:hidden border-b bg-[#2b323a] text-white">
-            <div className="flex items-center justify-center px-4 py-2 gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+            <div className="flex items-center justify-between px-4 py-2 gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
+                  <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+                </div>
+                <div className="text-xl font-semibold tracking-tight">TheBindr</div>
               </div>
-              <div className="text-xl font-semibold tracking-tight">TheBindr</div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const supabase = createClient();
+                  await supabase.auth.signOut();
+                  router.replace("/login");
+                  router.refresh();
+                }}
+                className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+              >
+                Sign out
+              </button>
             </div>
 
             <div className="px-4 pb-1" aria-hidden="true" />
