@@ -1654,7 +1654,13 @@ export default function CardsPage() {
                                   )}
                                 </div>
 
-                                <div className="h-[112px] overflow-hidden">
+                                <div className="sm:hidden">
+                                  <div className="truncate text-sm font-semibold text-zinc-900">
+                                    {c.playerName}
+                                  </div>
+                                </div>
+
+                                <div className="hidden sm:block h-[112px] overflow-hidden">
                                   <div className="truncate text-[10px] uppercase tracking-wide text-zinc-500">
                                     {c.year} • {c.setName}
                                   </div>
@@ -1695,7 +1701,7 @@ export default function CardsPage() {
                                 </div>
                               </div>
 
-                              <div className="mt-2 flex items-center justify-between text-xs">
+                              <div className="mt-2 hidden sm:flex items-center justify-between text-xs">
                                 <span className="tabular-nums text-zinc-600">{priceLabel}</span>
                               </div>
                             </div>
