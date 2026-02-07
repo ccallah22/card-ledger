@@ -321,6 +321,14 @@ export default function ChecklistAdminPage() {
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string>("");
+  const [storedPreview, setStoredPreview] = useState<{
+    entryCount: number;
+    sectionCounts: [string, number][];
+    parallelCount: number;
+    parallelCounts: [string, number][];
+  } | null>(null);
 
   const parsed = useMemo(() => {
     const trimmed = raw.trim();
@@ -424,6 +432,36 @@ export default function ChecklistAdminPage() {
     }
   }
 
+  async function loadStoredPreview() {
+    setPreviewError("");
+    setStoredPreview(null);
+
+    const key = setKey.trim();
+    if (!key) {
+      setPreviewError("Set key is required to load preview.");
+      return;
+    }
+
+    setPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/checklists/preview?setKey=${encodeURIComponent(key)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || "Failed to load preview.");
+      }
+      setStoredPreview({
+        entryCount: Number(data?.entryCount ?? 0),
+        sectionCounts: Array.isArray(data?.sectionCounts) ? data.sectionCounts : [],
+        parallelCount: Number(data?.parallelCount ?? 0),
+        parallelCounts: Array.isArray(data?.parallelCounts) ? data.parallelCounts : [],
+      });
+    } catch (e: any) {
+      setPreviewError(e?.message || "Failed to load preview.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-6">
       <div>
@@ -469,6 +507,64 @@ export default function ChecklistAdminPage() {
           </div>
         ) : (
           <div className="mt-2 text-zinc-500">No sections parsed yet.</div>
+        )}
+      </div>
+
+      <div className="rounded-md border bg-white p-3 text-sm text-zinc-700">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="font-medium">Stored Preview (Supabase)</div>
+          <button
+            type="button"
+            onClick={loadStoredPreview}
+            disabled={previewLoading}
+            className="rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            {previewLoading ? "Loading…" : "Load Preview"}
+          </button>
+        </div>
+        {previewError ? (
+          <div className="mt-2 text-sm text-red-600">{previewError}</div>
+        ) : storedPreview ? (
+          <div className="mt-2 grid gap-3">
+            <div>
+              Stored entries: <b>{storedPreview.entryCount}</b>
+            </div>
+            {storedPreview.sectionCounts.length ? (
+              <div className="grid gap-1">
+                {storedPreview.sectionCounts.slice(0, 8).map(([section, count]) => (
+                  <div key={section}>
+                    {section}: <b>{count}</b>
+                  </div>
+                ))}
+                {storedPreview.sectionCounts.length > 8 ? (
+                  <div>…and {storedPreview.sectionCounts.length - 8} more sections</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="text-zinc-500">No sections found.</div>
+            )}
+            <div>
+              Stored parallels: <b>{storedPreview.parallelCount}</b>
+            </div>
+            {storedPreview.parallelCounts.length ? (
+              <div className="grid gap-1">
+                {storedPreview.parallelCounts.slice(0, 8).map(([section, count]) => (
+                  <div key={`parallel-${section}`}>
+                    {section}: <b>{count}</b>
+                  </div>
+                ))}
+                {storedPreview.parallelCounts.length > 8 ? (
+                  <div>…and {storedPreview.parallelCounts.length - 8} more sections</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="text-zinc-500">No parallels found.</div>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 text-zinc-500">
+            Enter a set key and click “Load Preview”.
+          </div>
         )}
       </div>
 
