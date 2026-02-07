@@ -1660,24 +1660,24 @@ export default function CardsPage() {
                                   </div>
                                 </div>
 
-                                <div className="hidden sm:block h-[112px] overflow-hidden">
-                                  <div className="truncate text-[10px] uppercase tracking-wide text-zinc-500">
+                                <div className="hidden sm:block space-y-1">
+                                  <div className="text-[10px] uppercase tracking-wide text-zinc-500 break-words">
                                     {c.year} • {c.setName}
                                   </div>
-                                  <div className="mt-1 max-h-[2.6em] overflow-hidden text-sm font-semibold leading-snug text-zinc-900">
+                                  <div className="text-[13px] font-semibold leading-snug text-zinc-900 break-words">
                                     {c.playerName}
                                   </div>
                                   {c.cardNumber ? (
-                                    <div className="text-[11px] text-zinc-500">
+                                    <div className="text-[10px] text-zinc-500">
                                       No. {c.cardNumber}
                                     </div>
                                   ) : null}
                                   {c.team ? (
-                                    <div className="truncate text-[11px] text-zinc-500">
+                                    <div className="text-[10px] text-zinc-500 break-words">
                                       {c.team}
                                     </div>
                                   ) : null}
-                                  <div className="mt-2 max-h-[46px] overflow-hidden flex flex-wrap gap-1 text-[11px]">
+                                  <div className="flex flex-wrap gap-1 text-[10px]">
                                     {variation ? <MiniBadge>{variation}</MiniBadge> : null}
                                     {insert ? <MiniBadge>{insert}</MiniBadge> : null}
                                     {parallel ? (
