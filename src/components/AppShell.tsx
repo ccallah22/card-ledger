@@ -338,23 +338,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             (collapsed ? "sm:w-16" : "sm:w-64")
           }
         >
-        {/* Brand row */}
-        <div className="border-b py-4 px-2 bg-[#2b323a] text-white">
-          {!collapsed ? (
-            <div className="flex items-center justify-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
-              </div>
-              <div className="text-lg font-semibold tracking-tight text-white">TheBindr</div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Brand row removed to keep sidebar clean */}
 
           {/* ✅ MID-SIDEBAR COLLAPSE BUTTON */}
           <button
@@ -521,13 +505,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : (
           <div className="sm:hidden border-b bg-[#2b323a] text-white">
-            <div className="flex items-center justify-between px-4 py-2 gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                  <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
-                </div>
-                <div className="text-xl font-semibold tracking-tight">TheBindr</div>
-              </div>
+            <div className="flex items-center justify-end px-4 py-2 gap-3">
               <button
                 type="button"
                 onClick={async () => {
@@ -541,8 +519,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 Sign out
               </button>
             </div>
-
-            <div className="px-4 pb-1" aria-hidden="true" />
           </div>
         )}
 
