@@ -98,6 +98,11 @@ function parsePastedChecklist(text: string): ParseResult {
   ];
 
   const ignoreContains = ["cards", "master card list", "here’s the full"];
+  const allowNoCommaSections = new Set([
+    "Team Badges",
+    "The Logo",
+    "The Trophy",
+  ]);
 
   const isSectionLine = (line: string) => {
     const lower = line.toLowerCase();
@@ -162,10 +167,19 @@ function parsePastedChecklist(text: string): ParseResult {
       const number = entryMatch[1];
       const rest = entryMatch[2];
       const restLower = rest.toLowerCase();
-      if (!rest.includes(",") || restLower.includes("checklist") || restLower.includes("cards")) {
+      if (restLower.includes("checklist") || restLower.includes("cards")) {
         continue;
       }
-      const [nameRaw, teamRaw] = rest.split(",").map((s) => s.trim());
+
+      const hasComma = rest.includes(",");
+      const allowNoComma = allowNoCommaSections.has(currentSection);
+      if (!hasComma && !allowNoComma) {
+        continue;
+      }
+
+      const [nameRaw, teamRaw] = hasComma
+        ? rest.split(",").map((s) => s.trim())
+        : [rest.trim(), ""];
       const name = stripSuffix(nameRaw || "");
       const team = teamRaw ? stripSuffix(teamRaw) : undefined;
 
