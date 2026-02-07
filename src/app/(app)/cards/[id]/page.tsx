@@ -933,8 +933,8 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
 
               return (
                 <div key={row.label} className="flex items-start justify-between gap-4">
-                  <div className="text-gray-600">{row.label}</div>
-                  <div className="text-right font-medium">{display}</div>
+                  <div className="text-sm text-zinc-700">{row.label}</div>
+                  <div className="text-right text-sm font-medium text-zinc-900">{display}</div>
                 </div>
               );
             })}
