@@ -1555,12 +1555,13 @@ export default function CardsPage() {
                   ) : null}
                 </div>
                 {!collapsedSets.has(group.key) ? (
-                  <div className="grid grid-cols-3 gap-4 p-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  <div className="grid grid-cols-3 gap-4 p-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {teamFilteredCards.map((c) => {
                       const status = c.status ?? "HAVE";
 
                       const variation = (c as any).variation as string | undefined;
                       const parallel = (c as any).parallel as string | undefined;
+                      const parallelHasSerial = /\/\d+/.test(parallel ?? "");
 
                       const serialNumber = (c as any).serialNumber as number | undefined;
                       const serialTotal = (c as any).serialTotal as number | undefined;
@@ -1632,9 +1633,9 @@ export default function CardsPage() {
                           </div>
                           <Link
                             href={rowHref}
-                            className="block rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                            className="block h-full rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                           >
-                            <div className="p-3">
+                            <div className="p-3 h-full flex flex-col">
                               <div className="aspect-[2.5/3.5] flex flex-col gap-2 rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2">
                                 <div className="aspect-[2.5/3.5] w-full rounded-md border border-zinc-200 bg-white/70 flex items-center justify-center overflow-hidden">
                                   {displayImage ? (
@@ -1685,7 +1686,9 @@ export default function CardsPage() {
                                         {parallel}
                                       </MiniBadge>
                                     ) : null}
-                                    {serial ? <MiniBadge>#{serial}</MiniBadge> : null}
+                                    {serial && !parallelHasSerial ? (
+                                      <MiniBadge>#{serial}</MiniBadge>
+                                    ) : null}
                                     {(c as any).isRookie ? (
                                       <MiniBadge>
                                         <span className="uppercase tracking-wider">Rookie</span>
