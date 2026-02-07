@@ -637,7 +637,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="rounded-xl border bg-white p-4">
-        <div className="font-semibold">Card image</div>
+        <div className="font-semibold text-zinc-900">Card image</div>
         <div className="mt-3 grid gap-4 sm:grid-cols-[180px_1fr]">
           <div className="relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden">
             {displayImage ? (
@@ -878,7 +878,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="rounded-xl border p-4 space-y-2 bg-white">
-        <div className="font-semibold">Card summary</div>
+        <div className="font-semibold text-zinc-900">Card summary</div>
 
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <div>
@@ -919,7 +919,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="rounded-xl border bg-white">
-        <div className="border-b px-4 py-3 font-semibold">Details</div>
+        <div className="border-b px-4 py-3 font-semibold text-zinc-900">Details</div>
         <div className="p-4 grid gap-3">
           {primaryRows
             .filter((r) => r.value !== undefined && r.value !== null && String(r.value).trim() !== "")
@@ -943,14 +943,14 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
 
       {card.notes ? (
         <div className="rounded-xl border bg-white p-4">
-          <div className="font-semibold mb-2">Notes</div>
+          <div className="font-semibold text-zinc-900 mb-2">Notes</div>
           <div className="text-gray-700 whitespace-pre-wrap">{card.notes}</div>
         </div>
       ) : null}
 
       <div className="rounded-xl border bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-          <div className="font-semibold">Comps</div>
+          <div className="font-semibold text-zinc-900">Comps</div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -1054,7 +1054,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
 
       {extraEntries.length > 0 ? (
         <div className="rounded-xl border bg-white">
-          <div className="border-b px-4 py-3 font-semibold">More details</div>
+          <div className="border-b px-4 py-3 font-semibold text-zinc-900">More details</div>
           <div className="p-4 grid gap-3">
             {extraEntries.map(([k, v]) => (
               <div key={k} className="flex items-start justify-between gap-4">
