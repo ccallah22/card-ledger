@@ -559,8 +559,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           ref={mobileNavRef}
           className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
         >
-        <div className="w-full max-w-full px-0 overflow-x-hidden">
-          <div className="flex w-full max-w-full items-center gap-0 py-2">
+        <div className="w-full max-w-full px-2 overflow-x-hidden">
+          <div className="flex w-full max-w-full items-center gap-1 py-2">
             {NAV.map((item) => {
               const active = !!activeMap.get(item.href);
               return (
@@ -568,7 +568,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={
-                    "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-0 py-1 text-[9px] transition touch-manipulation " +
+                    "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
                     (active
                       ? "text-white bg-[#2b323a]"
                       : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
@@ -593,7 +593,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               }}
               onPointerDown={(e) => e.stopPropagation()}
               className={
-                "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-0 py-1 text-[9px] transition touch-manipulation " +
+                "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
                 (moreOpen ? "text-white bg-[#2b323a]" : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
               }
             >
