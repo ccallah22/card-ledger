@@ -561,6 +561,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 e.stopPropagation();
                 setMoreOpen((v) => !v);
               }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                setMoreOpen((v) => !v);
+              }}
               onPointerDown={(e) => e.stopPropagation()}
               className={
                 "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-0 py-1 text-[9px] transition touch-manipulation " +
