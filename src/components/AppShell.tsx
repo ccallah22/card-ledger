@@ -533,7 +533,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile bottom nav */}
       {!isAuthScreen ? (
         <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-x-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto">
-        <div className="w-full max-w-full px-2 overflow-x-hidden">
+        <div className="w-full max-w-full px-0 overflow-x-hidden">
           <div className="flex w-full max-w-full items-center gap-0 py-2">
             {NAV.map((item) => {
               const active = !!activeMap.get(item.href);
