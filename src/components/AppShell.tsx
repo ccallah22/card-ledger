@@ -218,6 +218,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const moreRef = useRef<HTMLDivElement | null>(null);
+  const mobileMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
@@ -305,10 +306,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     function onDocClick(event: MouseEvent) {
-      if (!moreRef.current) return;
-      if (!moreRef.current.contains(event.target as Node)) {
-        setMoreOpen(false);
-      }
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (moreRef.current?.contains(target)) return;
+      if (mobileMoreRef.current?.contains(target)) return;
+      setMoreOpen(false);
     }
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
@@ -559,6 +561,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 e.stopPropagation();
                 setMoreOpen((v) => !v);
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               className={
                 "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-0 py-1 text-[9px] transition " +
                 (moreOpen ? "text-white bg-[#2b323a]" : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
@@ -572,7 +575,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         {moreOpen ? (
-          <div className="border-t bg-white" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={mobileMoreRef}
+            className="border-t bg-white"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
             <div className="mx-auto max-w-6xl px-4 py-3 space-y-2">
               <Link
                 href="/cards/backup"
