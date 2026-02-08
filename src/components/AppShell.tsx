@@ -532,8 +532,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom nav */}
       {!isAuthScreen ? (
-        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-x-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto relative">
-        <div className="w-full max-w-full px-0 overflow-x-hidden">
+        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-x-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto">
+        <div className="relative w-full max-w-full px-0 overflow-visible">
           <div className="flex w-full max-w-full items-center gap-0 py-2">
             {NAV.map((item) => {
               const active = !!activeMap.get(item.href);
@@ -577,37 +577,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="w-full truncate text-center font-medium leading-none">More</span>
             </button>
           </div>
-        </div>
-        {moreOpen ? (
-          <div
-            ref={mobileMoreRef}
-            className="absolute bottom-full left-0 right-0 border-t bg-white"
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <div className="mx-auto max-w-6xl px-4 py-3 space-y-2">
-              <Link
-                href="/cards/backup"
-                onClick={() => setMoreOpen(false)}
-                className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-              >
-                <IconDatabase />
-                Backup
-              </Link>
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreOpen(false);
-                  window.dispatchEvent(new CustomEvent("cards:export"));
-                }}
-                className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
-              >
-                <IconDownload />
-                Export CSV
-                </button>
+          {moreOpen ? (
+            <div
+              ref={mobileMoreRef}
+              className="absolute bottom-full left-0 right-0 border-t bg-white"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <div className="mx-auto max-w-6xl px-4 py-3 space-y-2">
+                <Link
+                  href="/cards/backup"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                >
+                  <IconDatabase />
+                  Backup
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    window.dispatchEvent(new CustomEvent("cards:export"));
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                >
+                  <IconDownload />
+                  Export CSV
+                  </button>
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </nav>
       ) : null}
     </div>
