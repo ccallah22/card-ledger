@@ -1636,8 +1636,8 @@ export default function CardsPage() {
                             className="block h-full rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                           >
                             <div className="p-3 h-full flex flex-col">
-                              <div className="aspect-[2.5/3.5] flex flex-col gap-2 rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2">
-                                <div className="aspect-[2.5/3.5] w-full rounded-md border border-zinc-200 bg-white/70 flex items-center justify-center overflow-hidden">
+                              <div className="flex flex-1 min-h-0 flex-col gap-2 rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2 sm:aspect-[2.5/3.5] overflow-hidden">
+                                <div className="flex-1 min-h-0 w-full rounded-md border border-zinc-200 bg-white/70 flex items-center justify-center overflow-hidden sm:aspect-[2.5/3.5]">
                                   {displayImage ? (
                                     <img
                                       src={displayImage}
