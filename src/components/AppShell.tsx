@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
 
@@ -219,6 +220,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const sidebarRef = useRef<HTMLElement | null>(null);
   const moreRef = useRef<HTMLDivElement | null>(null);
   const mobileMoreRef = useRef<HTMLDivElement | null>(null);
+  const mobileNavRef = useRef<HTMLElement | null>(null);
+  const [mobileNavHeight, setMobileNavHeight] = useState(56);
 
   useEffect(() => {
     try {
@@ -230,6 +233,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     } finally {
       setHasLoadedPref(true);
     }
+  }, []);
+
+  useEffect(() => {
+    const el = mobileNavRef.current;
+    if (!el) return;
+    const update = () => setMobileNavHeight(el.offsetHeight || 56);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
   }, []);
 
   useEffect(() => {
@@ -532,8 +549,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom nav */}
       {!isAuthScreen ? (
-        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto">
-        <div className="relative w-full max-w-full px-0 overflow-x-hidden">
+        <nav
+          ref={mobileNavRef}
+          className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
+        >
+        <div className="w-full max-w-full px-0 overflow-x-hidden">
           <div className="flex w-full max-w-full items-center gap-0 py-2">
             {NAV.map((item) => {
               const active = !!activeMap.get(item.href);
@@ -577,10 +597,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="w-full truncate text-center font-medium leading-none">More</span>
             </button>
           </div>
-          {moreOpen ? (
+        </div>
+      </nav>
+      ) : null}
+      {moreOpen && typeof document !== "undefined"
+        ? createPortal(
             <div
               ref={mobileMoreRef}
-              className="absolute bottom-full left-0 right-0 z-[1001] border-t bg-white shadow-lg"
+              className="sm:hidden fixed left-0 right-0 z-[1001] border-t bg-white shadow-lg"
+              style={{
+                bottom: `calc(${Math.max(mobileNavHeight, 56)}px + env(safe-area-inset-bottom))`,
+              }}
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
@@ -603,13 +630,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <IconDownload />
                   Export CSV
-                  </button>
+                </button>
               </div>
-            </div>
-          ) : null}
-        </div>
-      </nav>
-      ) : null}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
