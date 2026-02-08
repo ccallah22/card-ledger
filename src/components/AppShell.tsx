@@ -504,14 +504,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="px-4 pb-1" aria-hidden="true" />
           </div>
         ) : (
-          <div className="border-b bg-[#2b323a] text-white">
-            <div className="flex items-center justify-between px-4 py-2 gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                  <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
-                </div>
-                <div className="text-lg font-semibold tracking-tight">TheBindr</div>
-              </div>
+          <div className="sm:hidden border-b bg-[#2b323a] text-white">
+            <div className="flex items-center justify-end px-4 py-2 gap-3">
               <button
                 type="button"
                 onClick={async () => {
