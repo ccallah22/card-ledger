@@ -29,20 +29,16 @@
 }
 
 @layer components {
-  .btn {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
-  }
-
   .btn-primary {
-    @apply btn bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-strong)];
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-strong)];
   }
 
   .btn-secondary {
-    @apply btn border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50;
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50;
   }
 
   .btn-destructive {
-    @apply btn border border-red-200 bg-red-50 text-red-700 hover:bg-red-100;
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-red-200 bg-red-50 text-red-700 hover:bg-red-100;
   }
 
   .btn-link {
