@@ -1,15 +1,18 @@
+import MarketingShell from "@/components/MarketingShell";
+
 export default function DemoPage() {
   return (
-    <main className="min-h-screen bg-white">
-      <div className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
-        <header className="flex flex-col gap-4">
-          <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">Sample Collection</h1>
-          <p className="text-base text-zinc-600">
-            A quick look at how a collection feels inside TheBinder.
-          </p>
-        </header>
+    <MarketingShell>
+      <header className="flex flex-col gap-3">
+        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 font-display">
+          Sample Collection
+        </h1>
+        <p className="text-base text-zinc-600">
+          A quick look at how a collection feels inside TheBinder.
+        </p>
+      </header>
 
-        <section className="mt-10 grid gap-6 lg:grid-cols-3">
+      <section className="mt-10 grid gap-6 lg:grid-cols-3">
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
               <div className="text-xs font-semibold text-zinc-500">Collection</div>
@@ -38,17 +41,13 @@ export default function DemoPage() {
               <div className="mt-6 h-16 rounded bg-white shadow-sm" />
             </div>
           </div>
-        </section>
+      </section>
 
-        <div className="mt-10">
-          <a
-            href="/login"
-            className="rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--brand-primary-strong)]"
-          >
-            Create free account
-          </a>
-        </div>
+      <div className="mt-10">
+        <a href="/login" className="btn-primary">
+          Create free account
+        </a>
       </div>
-    </main>
+    </MarketingShell>
   );
 }

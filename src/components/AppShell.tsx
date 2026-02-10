@@ -358,7 +358,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return map;
   }, [pathname]);
 
-  const isHome = pathname === "/";
+  const isMarketing =
+    pathname === "/" ||
+    pathname === "/demo" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    pathname === "/contact" ||
+    pathname === "/pricing" ||
+    pathname === "/about" ||
+    pathname === "/changelog" ||
+    pathname === "/status";
 
   return (
     <div
@@ -369,7 +378,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         } as CSSProperties
       }
     >
-      {!isAuthScreen && !isHome ? (
+      {!isAuthScreen && !isMarketing ? (
         <aside
           ref={sidebarRef}
           className={
@@ -574,7 +583,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile bottom nav */}
-      {!isAuthScreen && !isHome ? (
+      {!isAuthScreen && !isMarketing ? (
         <nav
           ref={mobileNavRef}
           className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
@@ -628,7 +637,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
       ) : null}
-      {moreOpen && !isHome && typeof document !== "undefined"
+      {moreOpen && !isMarketing && typeof document !== "undefined"
         ? createPortal(
             <div
               ref={mobileMoreRef}
