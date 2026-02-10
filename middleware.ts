@@ -51,6 +51,7 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/admin"); // optional
 
   const isAuthPage = path.startsWith("/login") || path.startsWith("/signup");
+  const isHome = path === "/";
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
@@ -60,6 +61,12 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isAuthPage && user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/cards";
+    return NextResponse.redirect(url);
+  }
+
+  if (isHome && user) {
     const url = request.nextUrl.clone();
     url.pathname = "/cards";
     return NextResponse.redirect(url);
