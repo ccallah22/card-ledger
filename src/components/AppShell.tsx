@@ -340,6 +340,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return map;
   }, [pathname]);
 
+  const isHome = pathname === "/";
+
   return (
     <div
       className="min-h-screen sm:flex"
@@ -349,7 +351,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         } as CSSProperties
       }
     >
-      {!isAuthScreen ? (
+      {!isAuthScreen && !isHome ? (
         <aside
           ref={sidebarRef}
           className={
@@ -554,7 +556,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile bottom nav */}
-      {!isAuthScreen ? (
+      {!isAuthScreen && !isHome ? (
         <nav
           ref={mobileNavRef}
           className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
@@ -606,7 +608,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
       ) : null}
-      {moreOpen && typeof document !== "undefined"
+      {moreOpen && !isHome && typeof document !== "undefined"
         ? createPortal(
             <div
               ref={mobileMoreRef}
