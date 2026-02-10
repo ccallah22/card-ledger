@@ -505,7 +505,7 @@ export default function CardsPage() {
 
   function exportCsv() {
     const csv = cardsToCsv(cards);
-    downloadCsv(`thebindr-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    downloadCsv(`thebinder-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   }
 
   useEffect(() => {

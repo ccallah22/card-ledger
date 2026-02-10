@@ -1,6 +1,6 @@
 {
-  "name": "Card Ledger",
-  "short_name": "Card Ledger",
+  "name": "TheBinder",
+  "short_name": "TheBinder",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

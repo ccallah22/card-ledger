@@ -1,4 +1,4 @@
-const CACHE_NAME = "thebindr-shell-v1";
+const CACHE_NAME = "thebinder-shell-v1";
 const APP_SHELL = [
   "/",
   "/cards",

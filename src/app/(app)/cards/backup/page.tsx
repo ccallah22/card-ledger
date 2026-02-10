@@ -68,7 +68,7 @@ export default function BackupPage() {
       cards: data,
       images,
     };
-    downloadJson(`thebindr-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
+    downloadJson(`thebinder-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
     setNotice("Backup exported.");
   }
 

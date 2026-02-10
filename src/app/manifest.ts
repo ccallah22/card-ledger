@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Card Ledger",
-    short_name: "Card Ledger",
+    name: "TheBinder",
+    short_name: "TheBinder",
     start_url: "/",
     scope: "/",
     display: "standalone",

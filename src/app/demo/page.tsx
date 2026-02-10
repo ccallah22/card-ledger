@@ -5,7 +5,7 @@ export default function DemoPage() {
         <header className="flex flex-col gap-4">
           <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">Sample Collection</h1>
           <p className="text-base text-zinc-600">
-            A quick look at how a collection feels inside TheBindr.
+            A quick look at how a collection feels inside TheBinder.
           </p>
         </header>
 

@@ -3,7 +3,7 @@ import "./globals.css";
 import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
-  title: "TheBindr",
+  title: "TheBinder",
   description: "Track and manage your binder.",
   manifest: "/manifest.json",
   icons: {

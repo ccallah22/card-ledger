@@ -1,4 +1,5 @@
-const KEY = "card-ledger:images:v1";
+const KEY = "thebinder:images:v1";
+const LEGACY_KEY = "card-ledger:images:v1";
 
 function safeParse<T>(value: string | null): T | null {
   if (!value) return null;
@@ -12,7 +13,18 @@ function safeParse<T>(value: string | null): T | null {
 function loadMap(): Record<string, string> {
   if (typeof window === "undefined") return {};
   const parsed = safeParse<Record<string, string>>(localStorage.getItem(KEY));
-  return parsed && typeof parsed === "object" ? parsed : {};
+  if (parsed && typeof parsed === "object") return parsed;
+  const legacy = safeParse<Record<string, string>>(localStorage.getItem(LEGACY_KEY));
+  if (legacy && typeof legacy === "object") {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(legacy));
+      localStorage.removeItem(LEGACY_KEY);
+    } catch {
+      // ignore migration failures
+    }
+    return legacy;
+  }
+  return {};
 }
 
 function saveMap(map: Record<string, string>) {

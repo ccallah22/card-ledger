@@ -13,8 +13,10 @@ type NavItem = {
   icon: React.ReactNode;
 };
 
-const SIDEBAR_KEY = "card-ledger:ui:sidebar-collapsed:v1";
-const SOLD_FEES_CLEANUP_KEY = "card-ledger:cleanup:sold-fees:v1";
+const SIDEBAR_KEY = "thebinder:ui:sidebar-collapsed:v1";
+const SOLD_FEES_CLEANUP_KEY = "thebinder:cleanup:sold-fees:v1";
+const LEGACY_SIDEBAR_KEY = "card-ledger:ui:sidebar-collapsed:v1";
+const LEGACY_SOLD_FEES_CLEANUP_KEY = "card-ledger:cleanup:sold-fees:v1";
 
 function IconGrid() {
   return (
@@ -228,6 +230,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const raw = localStorage.getItem(SIDEBAR_KEY);
       if (raw === "true") setCollapsed(true);
       if (raw === "false") setCollapsed(false);
+      if (raw === null) {
+        const legacy = localStorage.getItem(LEGACY_SIDEBAR_KEY);
+        if (legacy === "true") setCollapsed(true);
+        if (legacy === "false") setCollapsed(false);
+        if (legacy !== null) {
+          localStorage.setItem(SIDEBAR_KEY, legacy);
+          localStorage.removeItem(LEGACY_SIDEBAR_KEY);
+        }
+      }
     } catch {
       // ignore
     } finally {
@@ -255,6 +266,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       try {
         if (typeof window === "undefined") return;
         if (localStorage.getItem(SOLD_FEES_CLEANUP_KEY) === "1") return;
+        if (localStorage.getItem(LEGACY_SOLD_FEES_CLEANUP_KEY) === "1") {
+          localStorage.setItem(SOLD_FEES_CLEANUP_KEY, "1");
+          localStorage.removeItem(LEGACY_SOLD_FEES_CLEANUP_KEY);
+          return;
+        }
 
         const supabase = createClient();
         const { data } = await supabase.auth.getUser();
@@ -264,6 +280,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         const toFix = cards.filter((c) => (c as any).soldFees !== undefined);
         if (!toFix.length) {
           localStorage.setItem(SOLD_FEES_CLEANUP_KEY, "1");
+          localStorage.removeItem(LEGACY_SOLD_FEES_CLEANUP_KEY);
           return;
         }
 
@@ -277,6 +294,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         await dbUpsertCards(updated);
         if (active) {
           localStorage.setItem(SOLD_FEES_CLEANUP_KEY, "1");
+          localStorage.removeItem(LEGACY_SOLD_FEES_CLEANUP_KEY);
         }
       } catch {
         // Ignore cleanup errors; it will retry next load.
@@ -517,9 +535,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="hidden sm:block border-b bg-[#2b323a] text-white">
             <div className="flex items-center justify-center px-4 py-2 gap-3">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+                <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
               </div>
-              <div className="text-xl font-semibold tracking-tight">TheBindr</div>
+              <div className="text-xl font-semibold tracking-tight">TheBinder</div>
             </div>
 
             <div className="px-4 pb-1" aria-hidden="true" />
@@ -529,9 +547,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-between px-4 py-2 gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
-                  <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
+                  <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
                 </div>
-                <div className="text-sm font-semibold tracking-tight">TheBindr</div>
+                <div className="text-sm font-semibold tracking-tight">TheBinder</div>
               </div>
               <button
                 type="button"
