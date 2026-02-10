@@ -3,11 +3,19 @@ export default function Home() {
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
         <header className="flex flex-col items-start gap-6">
-          <div className="flex items-center gap-3">
+          <div className="flex w-full items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#2b323a] ring-1 ring-black/10">
               <img src="/icon.png" alt="TheBindr" className="h-full w-full object-cover" />
             </div>
             <span className="text-xl font-semibold tracking-tight text-zinc-900">TheBindr</span>
+            </div>
+            <a
+              href="/login"
+              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+            >
+              Sign in
+            </a>
           </div>
 
           <div className="max-w-2xl space-y-4">
