@@ -153,7 +153,7 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
       <div
         className="
           pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2
-          whitespace-nowrap rounded-md border border-zinc-800 bg-[#2b323a] px-2 py-1 text-xs text-white
+          whitespace-nowrap rounded-md border border-zinc-800 bg-[var(--brand-primary)] px-2 py-1 text-xs text-white
           opacity-0 shadow-sm transition group-hover:opacity-100
         "
       >
@@ -161,7 +161,7 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
         <div
           className="
             absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2
-            h-2 w-2 rotate-45 bg-[#2b323a]
+            h-2 w-2 rotate-45 bg-[var(--brand-primary)]
             border-l border-b border-zinc-800
           "
         />
@@ -189,7 +189,7 @@ function NavLink({
       className={
         "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
         (active
-          ? "bg-[#2b323a] text-white"
+          ? "bg-[var(--brand-primary)] text-white"
           : "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900")
       }
     >
@@ -532,24 +532,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1">
         {/* Top bar */}
         {isAuthScreen ? (
-          <div className="hidden sm:block border-b bg-[#2b323a] text-white">
+          <div className="hidden sm:block border-b bg-[var(--brand-primary)] text-white">
             <div className="flex items-center justify-center px-4 py-2 gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-primary)] text-white overflow-hidden ring-1 ring-white/15">
                 <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
               </div>
-              <div className="text-xl font-semibold tracking-tight">TheBinder</div>
+              <div className="text-xl font-semibold tracking-tight font-display">TheBinder</div>
             </div>
 
             <div className="px-4 pb-1" aria-hidden="true" />
           </div>
         ) : (
-          <div className="sm:hidden border-b bg-[#2b323a] text-white">
+          <div className="sm:hidden border-b bg-[var(--brand-primary)] text-white">
             <div className="flex items-center justify-between px-4 py-2 gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2b323a] text-white overflow-hidden ring-1 ring-white/15">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand-primary)] text-white overflow-hidden ring-1 ring-white/15">
                   <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
                 </div>
-                <div className="text-sm font-semibold tracking-tight">TheBinder</div>
+                <div className="text-sm font-semibold tracking-tight font-display">TheBinder</div>
               </div>
               <button
                 type="button"
@@ -559,7 +559,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   router.replace("/login");
                   router.refresh();
                 }}
-                className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+              className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
               >
                 Sign out
               </button>
@@ -590,8 +590,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   className={
                     "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
                     (active
-                      ? "text-white bg-[#2b323a]"
-                      : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
+                      ? "text-white bg-[var(--brand-primary)]"
+                      : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
                   }
                 >
                   <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">{item.icon}</span>
@@ -614,7 +614,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               onPointerDown={(e) => e.stopPropagation()}
               className={
                 "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
-                (moreOpen ? "text-white bg-[#2b323a]" : "text-zinc-600 hover:text-[#2b323a] hover:bg-zinc-100")
+                (moreOpen
+                  ? "text-white bg-[var(--brand-primary)]"
+                  : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
               }
             >
               <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">

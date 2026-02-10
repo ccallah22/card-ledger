@@ -620,7 +620,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             <button
               type="button"
               onClick={() => router.push(`/cards/${String(id)}/sold`)}
-              className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
+              className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
             >
               Mark as Sold
             </button>
@@ -755,7 +755,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             <button
               type="button"
               onClick={() => setShowCompForm((v) => !v)}
-              className="rounded-md bg-[#2b323a] px-3 py-2 text-xs font-medium text-white hover:bg-[#242a32]"
+              className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--brand-primary-strong)]"
             >
               {showCompForm ? "Cancel" : "Add comp"}
             </button>
@@ -806,7 +806,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                   type="button"
                   onClick={handleAddComp}
                   disabled={!Number.isFinite(Number(compPrice))}
-                  className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32] disabled:opacity-50"
+                  className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)] disabled:opacity-50"
                 >
                   Save comp
                 </button>
@@ -1011,7 +1011,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                     setImageError(err.message || "Image failed validation.");
                   });
                 }}
-                className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
+                className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
               >
                 Use Crop
               </button>

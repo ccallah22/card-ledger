@@ -178,7 +178,7 @@ export default function MarkSoldPage({
         <button
           onClick={onSave}
           disabled={!canSave}
-          className="rounded-md bg-[#2b323a] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           Save Sold
         </button>

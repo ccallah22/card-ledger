@@ -2442,7 +2442,7 @@ function NewCardPageInner() {
                 className={
                   "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
                   (checklistSection === "ALL"
-                    ? "border-zinc-900 bg-[#2b323a] text-white"
+                    ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
                     : "border-zinc-400 bg-white text-zinc-900 hover:bg-zinc-50")
                 }
               >
@@ -2458,7 +2458,7 @@ function NewCardPageInner() {
                 className={
                   "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
                   (checklistSection === g.label
-                    ? "border-zinc-900 bg-[#2b323a] text-white"
+                    ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
                     : "border-zinc-400 bg-white text-zinc-900 hover:bg-zinc-50")
                 }
               >
@@ -2805,7 +2805,7 @@ function NewCardPageInner() {
           <button
             onClick={onSave}
             disabled={!canSave}
-            className="rounded-md bg-[#242a32] px-3 py-2 text-sm font-medium text-white hover:bg-[#1f242b] sm:bg-[#2b323a] sm:hover:bg-[#242a32] disabled:opacity-40"
+            className="rounded-md bg-[var(--brand-primary-strong)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)] sm:bg-[var(--brand-primary)] sm:hover:bg-[var(--brand-primary-strong)] disabled:opacity-40"
           >
             {isWishlist ? "Add to Wishlist" : "Save Card"}
           </button>
@@ -2964,7 +2964,7 @@ function NewCardPageInner() {
                     setImageError(err.message || "Image failed validation.");
                   });
                 }}
-                className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
+                className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
               >
                 Use Crop
               </button>

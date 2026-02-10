@@ -1082,7 +1082,7 @@ export default function CardsPage() {
             <div className="flex gap-2">
               <Link
                 href="/cards/new"
-                className="rounded-md bg-[#2b323a] px-3 py-2 text-sm font-medium text-white hover:bg-[#242a32]"
+                className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
               >
                 Add to Binder
               </Link>
@@ -1481,7 +1481,7 @@ export default function CardsPage() {
                     }
                   }}
                   className={
-                    "flex w-full items-center gap-3 px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-white bg-[#2b323a] cursor-pointer " +
+                    "flex w-full items-center gap-3 px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-white bg-[var(--brand-primary)] cursor-pointer " +
                     (collapsedSets.has(group.key) && index === groupedBySet.length - 1
                       ? "rounded-b-xl"
                       : "")
@@ -1890,7 +1890,7 @@ function Tab({
         ? "border border-zinc-900 bg-white text-black shadow-[0_0_0_1px_rgba(24,24,27,0.35)]"
         : "border border-zinc-900 bg-white text-black hover:bg-zinc-50"
       : active
-      ? "bg-[#2b323a] text-white"
+      ? "bg-[var(--brand-primary)] text-white"
       : "bg-zinc-100 text-zinc-800 hover:bg-zinc-200";
 
   return (
@@ -1916,7 +1916,7 @@ function Chip({
       className={
         "inline-flex whitespace-nowrap items-center rounded-full border px-3 py-1 text-xs font-medium transition " +
         (active
-          ? "border-zinc-900 bg-[#2b323a] text-white"
+          ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
           : "border-zinc-400 bg-white text-zinc-800 hover:bg-zinc-50")
       }
     >
@@ -1975,7 +1975,7 @@ function MiniBadge({
       : tone === "lava"
       ? "border-orange-300 bg-orange-100 text-red-700"
       : tone === "black"
-      ? "border-zinc-800 bg-[#2b323a] text-white"
+      ? "border-zinc-800 bg-[var(--brand-primary)] text-white"
       : tone === "white"
       ? "border-zinc-200 bg-white text-zinc-900"
       : tone === "silver"

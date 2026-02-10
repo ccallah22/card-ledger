@@ -103,7 +103,7 @@ export default function ModerationPage() {
                   <button
                     type="button"
                     onClick={() => act(item.fingerprint, "block")}
-                    className="rounded-md bg-[#2b323a] px-3 py-2 text-xs font-medium text-white hover:bg-[#242a32]"
+                    className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--brand-primary-strong)]"
                   >
                     Block
                   </button>

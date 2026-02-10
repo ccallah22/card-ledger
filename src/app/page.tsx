@@ -5,10 +5,12 @@ export default function Home() {
         <header className="flex flex-col items-start gap-6">
           <div className="flex w-full items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#2b323a] ring-1 ring-black/10">
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[var(--brand-primary)] ring-1 ring-black/10">
               <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
             </div>
-            <span className="text-xl font-semibold tracking-tight text-zinc-900">TheBinder</span>
+            <span className="text-xl font-semibold tracking-tight text-zinc-900 font-display">
+              TheBinder
+            </span>
           </div>
             <a
               href="/login"
@@ -19,7 +21,7 @@ export default function Home() {
           </div>
 
           <div className="max-w-2xl space-y-4">
-            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl">
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl font-display">
               TheBinder helps collectors track, value, and protect their collection—without messy
               spreadsheets.
             </h1>
@@ -31,7 +33,7 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-3">
             <a
               href="/login"
-              className="rounded-md bg-[#2b323a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#242a32]"
+              className="rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--brand-primary-strong)]"
             >
               Create free account
             </a>
@@ -90,6 +92,15 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        <footer className="mt-16 border-t pt-8 text-sm text-zinc-600">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-[var(--brand-primary)] ring-1 ring-black/10">
+              <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
+            </div>
+            <div className="font-display text-base font-semibold text-zinc-900">TheBinder</div>
+          </div>
+        </footer>
       </div>
     </main>
   );

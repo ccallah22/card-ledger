@@ -43,7 +43,7 @@ export default function DemoPage() {
         <div className="mt-10">
           <a
             href="/login"
-            className="rounded-md bg-[#2b323a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#242a32]"
+            className="rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--brand-primary-strong)]"
           >
             Create free account
           </a>
