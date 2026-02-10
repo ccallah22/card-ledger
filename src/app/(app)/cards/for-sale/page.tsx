@@ -144,16 +144,13 @@ export default function ForSalePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">For Sale</h1>
           <p className="text-sm text-zinc-600">Cards currently listed for sale.</p>
         </div>
         <div className="flex gap-2">
-          <Link
-            href="/cards?forSale=1"
-            className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
-          >
+          <Link href="/cards?forSale=1" className="btn-primary">
             Choose From Binder
           </Link>
         </div>
@@ -205,7 +202,7 @@ export default function ForSalePage() {
                   });
                 }}
                 disabled={bulkBusy}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                className="btn-secondary text-xs"
               >
                 Mark Sold Selected
               </button>
@@ -213,7 +210,7 @@ export default function ForSalePage() {
                 type="button"
                 onClick={removeSelectedFromForSale}
                 disabled={bulkBusy}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                className="btn-destructive text-xs"
               >
                 Remove Selected
               </button>
@@ -221,13 +218,11 @@ export default function ForSalePage() {
           </div>
         ) : null}
         {loading ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-600">Loading…</div>
+          <div className="loading-state">Loading your for-sale list…</div>
         ) : error ? (
-          <div className="px-4 py-10 text-center text-sm text-red-600">{error}</div>
+          <div className="error-state">We couldn’t load your for-sale cards. {error}</div>
         ) : forSaleCards.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-600">
-            No cards marked For Sale yet.
-          </div>
+          <div className="empty-state">No cards marked for sale yet.</div>
         ) : (
           <div className="divide-y">
             {forSaleCards.map((c) => {
@@ -276,7 +271,7 @@ export default function ForSalePage() {
                           </div>
                           <Link
                             href={`/cards/${c.id}/sold?return=for-sale`}
-                            className="rounded-md border px-3 py-1.5 text-center text-xs text-zinc-700 hover:bg-zinc-50"
+                            className="btn-secondary text-xs"
                           >
                             Mark Sold
                           </Link>
@@ -297,7 +292,7 @@ export default function ForSalePage() {
                                 setError(e?.message ?? "Failed to remove from For Sale.");
                               }
                             }}
-                            className="rounded-md border px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                            className="btn-destructive text-xs"
                           >
                             Remove
                           </button>

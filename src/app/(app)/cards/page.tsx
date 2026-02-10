@@ -1072,27 +1072,21 @@ export default function CardsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Binder</h1>
           </div>
 
           {!forSaleMode ? (
             <div className="flex gap-2">
-              <Link
-                href="/cards/new"
-                className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
-              >
+              <Link href="/cards/new" className="btn-primary">
                 Add to Binder
               </Link>
             </div>
           ) : (
             <div className="flex gap-2">
-              <Link
-                href="/cards/for-sale"
-                className="rounded-md border bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-              >
+              <Link href="/cards/for-sale" className="btn-secondary">
                 Return to For Sale
               </Link>
             </div>
@@ -1119,11 +1113,7 @@ export default function CardsPage() {
                 <span>
                   Selected: <span className="font-semibold">{selectedCount}</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={clearSelection}
-                  className="text-sm text-zinc-500 underline"
-                >
+                <button type="button" onClick={clearSelection} className="btn-link">
                   Clear
                 </button>
               </>
@@ -1135,38 +1125,19 @@ export default function CardsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => applyBulkStatus("FOR_SALE")}
-              disabled={bulkBusy}
-              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
-            >
+            <button type="button" onClick={() => applyBulkStatus("FOR_SALE")} disabled={bulkBusy} className="btn-secondary">
               Mark For Sale
             </button>
             {forSaleMode ? (
-              <button
-                type="button"
-                onClick={() => router.push("/cards/for-sale")}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-              >
+              <button type="button" onClick={() => router.push("/cards/for-sale")} className="btn-secondary">
                 Cancel
               </button>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={() => applyBulkStatus("SOLD")}
-                  disabled={bulkBusy}
-                  className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
-                >
+                <button type="button" onClick={() => applyBulkStatus("SOLD")} disabled={bulkBusy} className="btn-secondary">
                   Mark Sold
                 </button>
-                <button
-                  type="button"
-                  onClick={applyBulkDelete}
-                  disabled={bulkBusy}
-                  className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100 disabled:opacity-50"
-                >
+                <button type="button" onClick={applyBulkDelete} disabled={bulkBusy} className="btn-destructive">
                   Delete
                 </button>
               </>
@@ -1176,14 +1147,10 @@ export default function CardsPage() {
       ) : null}
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
+        <div className="error-state">Something went wrong while loading your binder. {error}</div>
       ) : null}
 
-      {loading ? (
-        <div className="rounded-xl border bg-white p-3 text-sm text-zinc-700">Loading…</div>
-      ) : null}
+      {loading ? <div className="loading-state">Loading your binder…</div> : null}
 
       {/* ✅ Clean control card */}
       <div className="rounded-xl border bg-white p-3 space-y-3">
@@ -1408,7 +1375,7 @@ export default function CardsPage() {
                   clearCollectorFilters();
                   setShowFilters(false);
                 }}
-                className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
+                className="btn-secondary"
               >
                 Clear filters
               </button>
@@ -1416,7 +1383,7 @@ export default function CardsPage() {
               <button
                 type="button"
                 onClick={() => setShowFilters(false)}
-              className="text-sm text-zinc-300 underline"
+                className="btn-link"
               >
                 Done
               </button>
@@ -1450,9 +1417,7 @@ export default function CardsPage() {
       {/* Binder */}
       <div className="rounded-xl border border-black bg-zinc-50 overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-600">
-            Your Binder is empty. Add your first card.
-          </div>
+          <div className="empty-state">No cards yet—add your first one.</div>
         ) : (
           <div className="space-y-3">
             {groupedBySet.map((group, index) => {

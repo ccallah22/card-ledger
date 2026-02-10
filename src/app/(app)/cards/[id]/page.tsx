@@ -479,16 +479,16 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     setShowCompForm(false);
   }
 
-  if (loading) return <div className="p-4">Loading...</div>;
+  if (loading) return <div className="loading-state">Loading card details…</div>;
 
   if (!card || !computed) {
     return (
-      <div className="p-4 space-y-4">
-        <h1 className="text-xl font-bold">Card not found</h1>
-        <div className="text-xs text-gray-500">
+      <div className="error-state space-y-2">
+        <div className="text-base font-semibold">Card not found</div>
+        <div className="text-xs text-zinc-600">
           ID in URL: <span className="font-mono">{String(id)}</span>
         </div>
-        <Link href="/cards" className="text-zinc-300 underline">
+        <Link href="/cards" className="btn-link">
           Back to Binder
         </Link>
       </div>
@@ -570,7 +570,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="p-4 space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold leading-tight">
             {card.playerName}
@@ -601,17 +601,14 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* ✅ Horizontal actions (no URL style, no Sold History button, Delete stays) */}
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <Link
-            href="/cards"
-            className="rounded-md border bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-          >
+          <Link href="/cards" className="btn-secondary">
             Back
           </Link>
 
           <button
             type="button"
             onClick={() => router.push(`/cards/${String(id)}/edit`)}
-            className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+            className="btn-secondary"
           >
             Edit
           </button>
@@ -620,7 +617,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             <button
               type="button"
               onClick={() => router.push(`/cards/${String(id)}/sold`)}
-              className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
+              className="btn-primary"
             >
               Mark as Sold
             </button>
@@ -629,7 +626,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           <button
             type="button"
             onClick={handleDelete}
-            className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+            className="btn-destructive"
           >
             Delete
           </button>
@@ -748,14 +745,14 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             <button
               type="button"
               onClick={() => window.open(buildEbaySoldUrl(card), "_blank", "noopener,noreferrer")}
-              className="rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              className="btn-secondary text-xs"
             >
               Search eBay sold
             </button>
             <button
               type="button"
               onClick={() => setShowCompForm((v) => !v)}
-              className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--brand-primary-strong)]"
+              className="btn-primary text-xs"
             >
               {showCompForm ? "Cancel" : "Add comp"}
             </button>
@@ -806,7 +803,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                   type="button"
                   onClick={handleAddComp}
                   disabled={!Number.isFinite(Number(compPrice))}
-                  className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)] disabled:opacity-50"
+                  className="btn-primary"
                 >
                   Save comp
                 </button>
@@ -815,7 +812,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           ) : null}
 
           {comps.length === 0 ? (
-            <div className="text-sm text-zinc-500">No comps yet.</div>
+            <div className="text-sm text-zinc-600">No comps yet—add your first one.</div>
           ) : (
             <div className="space-y-2 text-sm">
               {comps.map((comp) => (
@@ -830,7 +827,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                       href={comp.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs text-zinc-300 underline"
+                      className="btn-link text-xs"
                     >
                       Link
                     </a>
@@ -999,7 +996,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                   setCropSource(null);
                   setImageCheckStatus("idle");
                 }}
-                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+                className="btn-secondary"
               >
                 Cancel
               </button>
@@ -1011,7 +1008,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                     setImageError(err.message || "Image failed validation.");
                   });
                 }}
-                className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
+                className="btn-primary"
               >
                 Use Crop
               </button>

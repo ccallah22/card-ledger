@@ -28,6 +28,40 @@
   }
 }
 
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-strong)];
+  }
+
+  .btn-secondary {
+    @apply btn border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50;
+  }
+
+  .btn-destructive {
+    @apply btn border border-red-200 bg-red-50 text-red-700 hover:bg-red-100;
+  }
+
+  .btn-link {
+    @apply inline-flex items-center text-sm font-semibold text-[var(--brand-primary)] hover:text-[var(--brand-primary-strong)];
+  }
+
+  .empty-state {
+    @apply rounded-xl border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-600;
+  }
+
+  .loading-state {
+    @apply rounded-xl border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-600;
+  }
+
+  .error-state {
+    @apply rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

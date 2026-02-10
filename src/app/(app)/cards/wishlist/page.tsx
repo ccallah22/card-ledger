@@ -76,16 +76,13 @@ export default function WishlistPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Wishlist</h1>
           <p className="text-sm text-zinc-600">Cards you want to add to the binder.</p>
         </div>
         <div className="flex gap-2">
-          <Link
-            href="/cards/wishlist/search"
-            className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
-          >
+          <Link href="/cards/wishlist/search" className="btn-primary">
             Add to Wishlist
           </Link>
         </div>
@@ -101,13 +98,11 @@ export default function WishlistPage() {
       <div className="rounded-xl border bg-white">
         <div className="border-b px-4 py-3 text-sm font-semibold text-zinc-900">Wanted cards</div>
         {loading ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-600">Loading…</div>
+          <div className="loading-state">Loading your wishlist…</div>
         ) : error ? (
-          <div className="px-4 py-10 text-center text-sm text-red-600">{error}</div>
+          <div className="error-state">We couldn’t load your wishlist. {error}</div>
         ) : wishCards.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-600">
-            No wishlist cards yet. Mark a card as Want from the binder.
-          </div>
+          <div className="empty-state">No wishlist cards yet—add your first one.</div>
         ) : (
           <div className="divide-y">
             {wishCards.map((c) => {

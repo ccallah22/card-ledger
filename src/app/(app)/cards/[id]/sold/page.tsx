@@ -61,20 +61,17 @@ export default function MarkSoldPage({
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold tracking-tight">Mark as Sold</h1>
-        <p className="text-sm text-zinc-600">Loading…</p>
+        <div className="loading-state">Loading card details…</div>
       </div>
     );
   }
 
   if (!card) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Card not found</h1>
-        <p className="text-sm text-zinc-600">This card may have been deleted.</p>
-        <Link
-          href="/cards"
-          className="inline-block rounded-md border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
-        >
+      <div className="error-state space-y-2">
+        <div className="text-base font-semibold">Card not found</div>
+        <div className="text-sm text-zinc-600">This card may have been deleted.</div>
+        <Link href="/cards" className="btn-link">
           Back to Binder
         </Link>
       </div>
@@ -113,24 +110,15 @@ export default function MarkSoldPage({
 
         <div className="flex gap-2">
           {returnTo === "for-sale" ? (
-            <Link
-              href="/cards/for-sale"
-              className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-            >
+            <Link href="/cards/for-sale" className="btn-secondary">
               Return to For Sale
             </Link>
           ) : (
             <>
-              <Link
-                href={`/cards/${id}`}
-                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-              >
+              <Link href={`/cards/${id}`} className="btn-secondary">
                 Back to card
               </Link>
-              <Link
-                href="/cards"
-                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-              >
+              <Link href="/cards" className="btn-secondary">
                 Binder
               </Link>
             </>
@@ -178,22 +166,16 @@ export default function MarkSoldPage({
         <button
           onClick={onSave}
           disabled={!canSave}
-          className="rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          className="btn-primary"
         >
           Save Sold
         </button>
         {returnTo === "for-sale" ? (
-          <Link
-            href="/cards/for-sale"
-            className="rounded-md border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
-          >
+          <Link href="/cards/for-sale" className="btn-secondary">
             Return to For Sale
           </Link>
         ) : (
-          <Link
-            href={`/cards/${id}`}
-            className="rounded-md border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
-          >
+          <Link href={`/cards/${id}`} className="btn-secondary">
             Cancel
           </Link>
         )}

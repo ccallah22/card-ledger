@@ -2791,21 +2791,21 @@ function NewCardPageInner() {
         <div className="sm:col-span-2 flex justify-end gap-2">
           <Link
             href={isWishlist ? "/cards/wishlist" : "/cards"}
-            className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
+            className="btn-secondary"
           >
             Cancel
           </Link>
           <button
             onClick={onSaveAndAddAnother}
             disabled={!canSave}
-            className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 disabled:opacity-40"
+            className="btn-secondary"
           >
             {isWishlist ? "Add + Another" : "Save + Add Another"}
           </button>
           <button
             onClick={onSave}
             disabled={!canSave}
-            className="rounded-md bg-[var(--brand-primary-strong)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)] sm:bg-[var(--brand-primary)] sm:hover:bg-[var(--brand-primary-strong)] disabled:opacity-40"
+            className="btn-primary"
           >
             {isWishlist ? "Add to Wishlist" : "Save Card"}
           </button>
@@ -2952,7 +2952,7 @@ function NewCardPageInner() {
                   setCropSource(null);
                   setImageCheckStatus("idle");
                 }}
-                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+                className="btn-secondary"
               >
                 Cancel
               </button>
@@ -2964,7 +2964,7 @@ function NewCardPageInner() {
                     setImageError(err.message || "Image failed validation.");
                   });
                 }}
-                className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--brand-primary-strong)]"
+                className="btn-primary"
               >
                 Use Crop
               </button>
