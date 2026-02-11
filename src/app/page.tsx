@@ -46,6 +46,41 @@ export default function Home() {
         <div className="text-xs text-zinc-500">No credit card required. Set up in under 2 minutes.</div>
       </section>
 
+      <section className="mt-16 space-y-6">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            How It Works
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
+            Get organized in minutes.
+          </h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold text-zinc-500">1. Add your cards</div>
+            <p className="mt-3 text-sm text-zinc-600">
+              Quick manual entry built for speed and clarity.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold text-zinc-500">
+              2. Attach the details that matter
+            </div>
+            <p className="mt-3 text-sm text-zinc-600">
+              Condition, parallel, serial number, purchase price, location.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold text-zinc-500">
+              3. Track your collection like a pro
+            </div>
+            <p className="mt-3 text-sm text-zinc-600">
+              See totals, trends, and opportunities instantly.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section id="product" className="mt-16 space-y-6">
         <div className="space-y-2">
           <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
