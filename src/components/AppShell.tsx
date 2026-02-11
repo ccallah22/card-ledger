@@ -219,6 +219,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [hasLoadedPref, setHasLoadedPref] = useState(false);
   const [sidebarEdgeLeft, setSidebarEdgeLeft] = useState<number | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>("");
   const sidebarRef = useRef<HTMLElement | null>(null);
   const moreRef = useRef<HTMLDivElement | null>(null);
   const mobileMoreRef = useRef<HTMLDivElement | null>(null);
@@ -313,6 +314,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       // ignore
     }
   }, [collapsed, hasLoadedPref]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+        if (!active) return;
+        setUserEmail(data?.user?.email ?? "");
+      } catch {
+        if (active) setUserEmail("");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const el = sidebarRef.current;
@@ -466,6 +484,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Link
+                        href="/account"
+                        onClick={() => setMoreOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                      >
+                        <span className="text-xs">👤</span>
+                        Account
+                      </Link>
+                      <Link
                         href="/cards/backup"
                         onClick={() => setMoreOpen(false)}
                         className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
@@ -505,25 +531,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="border-t p-3 shrink-0">
             {!collapsed ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  const supabase = createClient();
-                  await supabase.auth.signOut();
-                  router.replace("/login");
-                  router.refresh();
-                }}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
-              >
-                Sign out
-              </button>
+              <div className="space-y-2">
+                {userEmail ? (
+                  <div className="text-[11px] text-zinc-500">
+                    You’re signed in as <span className="font-medium text-zinc-700">{userEmail}</span>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const supabase = createClient();
+                    await supabase.auth.signOut();
+                    router.replace("/login?signed_out=1");
+                    router.refresh();
+                  }}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+                >
+                  Sign out
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
                 onClick={async () => {
                   const supabase = createClient();
                   await supabase.auth.signOut();
-                  router.replace("/login");
+                  router.replace("/login?signed_out=1");
                   router.refresh();
                 }}
                 className="mx-auto flex h-8 w-8 items-center justify-center rounded-full border border-zinc-300 bg-white text-[10px] text-zinc-700 hover:bg-zinc-50"
@@ -565,7 +598,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={async () => {
                   const supabase = createClient();
                   await supabase.auth.signOut();
-                  router.replace("/login");
+                  router.replace("/login?signed_out=1");
                   router.refresh();
                 }}
               className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
@@ -649,6 +682,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               onPointerDown={(e) => e.stopPropagation()}
             >
               <div className="mx-auto max-w-6xl px-4 py-3 space-y-2">
+                {userEmail ? (
+                  <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+                    You’re signed in as <span className="font-medium text-zinc-800">{userEmail}</span>
+                  </div>
+                ) : null}
+                <Link
+                  href="/account"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                >
+                  <span className="text-xs">👤</span>
+                  Account
+                </Link>
                 <Link
                   href="/cards/backup"
                   onClick={() => setMoreOpen(false)}

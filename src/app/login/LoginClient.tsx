@@ -1,23 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginClient() {
   const searchParams = useSearchParams();
   const nextPath = useMemo(() => searchParams.get("next") || "/cards", [searchParams]);
+  const signedOut = useMemo(() => searchParams.get("signed_out") === "1", [searchParams]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
   const [error, setError] = useState<string>("");
+  const [info, setInfo] = useState<string>("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+
+  useEffect(() => {
+    if (signedOut) setInfo("You’ve been signed out.");
+  }, [signedOut]);
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault(); // prevents page reload
     setError("");
+    setInfo("");
     setStatus("loading");
 
     const supabase = createClient();
@@ -43,16 +50,18 @@ export default function LoginClient() {
       console.log("signInWithPassword result:", res);
 
       if (res.error) {
-        setError(res.error.message);
+        const message =
+          res.error.message === "Email not confirmed"
+            ? "Check your email to confirm your account, then sign in."
+            : res.error.message;
+        setError(message);
         setStatus("idle");
         return;
       }
 
       if (mode === "signup") {
         setStatus("success");
-        setError(
-          "Account created. Check your email to confirm, then sign in."
-        );
+        setInfo("Account created. Check your email to confirm, then sign in.");
         return;
       }
 
@@ -104,6 +113,17 @@ export default function LoginClient() {
             style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ccc" }}
           />
         </label>
+        {mode === "signup" ? (
+          <div style={{ fontSize: 12, opacity: 0.8 }}>
+            We’ll email a confirmation link before you can sign in.
+          </div>
+        ) : null}
+
+        {info ? (
+          <div style={{ padding: 10, borderRadius: 10, border: "1px solid #86efac" }}>
+            {info}
+          </div>
+        ) : null}
 
         {error ? (
           <div style={{ padding: 10, borderRadius: 10, border: "1px solid #fca5a5" }}>
