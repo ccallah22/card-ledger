@@ -1,4 +1,18 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — Privacy Policy",
+  description: "How TheBinder handles your data and protects your privacy.",
+  openGraph: {
+    title: "TheBinder — Privacy Policy",
+    description: "How TheBinder handles your data and protects your privacy.",
+  },
+  twitter: {
+    title: "TheBinder — Privacy Policy",
+    description: "How TheBinder handles your data and protects your privacy.",
+  },
+};
 
 export default function PrivacyPolicyPage() {
   return (

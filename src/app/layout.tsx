@@ -16,6 +16,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://thebinder.app"),
   title: "TheBinder",
   description:
     "TheBinder helps collectors track, value, and protect their collection—without messy spreadsheets.",

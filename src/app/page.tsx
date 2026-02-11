@@ -1,4 +1,21 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — Track and protect your collection",
+  description:
+    "TheBinder helps collectors track, value, and protect their collection—without messy spreadsheets.",
+  openGraph: {
+    title: "TheBinder — Track and protect your collection",
+    description:
+      "TheBinder helps collectors track, value, and protect their collection—without messy spreadsheets.",
+  },
+  twitter: {
+    title: "TheBinder — Track and protect your collection",
+    description:
+      "TheBinder helps collectors track, value, and protect their collection—without messy spreadsheets.",
+  },
+};
 
 export default function Home() {
   return (

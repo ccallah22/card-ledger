@@ -1,4 +1,18 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — Sample collection",
+  description: "Preview how a collection feels inside TheBinder.",
+  openGraph: {
+    title: "TheBinder — Sample collection",
+    description: "Preview how a collection feels inside TheBinder.",
+  },
+  twitter: {
+    title: "TheBinder — Sample collection",
+    description: "Preview how a collection feels inside TheBinder.",
+  },
+};
 
 export default function DemoPage() {
   return (

@@ -1,4 +1,18 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — Pricing",
+  description: "Simple pricing with a free plan and a Pro tier coming soon.",
+  openGraph: {
+    title: "TheBinder — Pricing",
+    description: "Simple pricing with a free plan and a Pro tier coming soon.",
+  },
+  twitter: {
+    title: "TheBinder — Pricing",
+    description: "Simple pricing with a free plan and a Pro tier coming soon.",
+  },
+};
 
 export default function PricingPage() {
   return (

@@ -1,4 +1,18 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — Changelog",
+  description: "Product updates and improvements for TheBinder.",
+  openGraph: {
+    title: "TheBinder — Changelog",
+    description: "Product updates and improvements for TheBinder.",
+  },
+  twitter: {
+    title: "TheBinder — Changelog",
+    description: "Product updates and improvements for TheBinder.",
+  },
+};
 
 const ENTRIES = [
   {

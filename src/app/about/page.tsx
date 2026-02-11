@@ -1,4 +1,18 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — About",
+  description: "Why TheBinder exists and who it’s built for.",
+  openGraph: {
+    title: "TheBinder — About",
+    description: "Why TheBinder exists and who it’s built for.",
+  },
+  twitter: {
+    title: "TheBinder — About",
+    description: "Why TheBinder exists and who it’s built for.",
+  },
+};
 
 export default function AboutPage() {
   return (

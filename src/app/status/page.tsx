@@ -1,4 +1,18 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — Status",
+  description: "Live system status for TheBinder.",
+  openGraph: {
+    title: "TheBinder — Status",
+    description: "Live system status for TheBinder.",
+  },
+  twitter: {
+    title: "TheBinder — Status",
+    description: "Live system status for TheBinder.",
+  },
+};
 
 export default function StatusPage() {
   return (

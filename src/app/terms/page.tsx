@@ -1,4 +1,18 @@
 import MarketingShell from "@/components/MarketingShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "TheBinder — Terms of Service",
+  description: "The terms for using TheBinder.",
+  openGraph: {
+    title: "TheBinder — Terms of Service",
+    description: "The terms for using TheBinder.",
+  },
+  twitter: {
+    title: "TheBinder — Terms of Service",
+    description: "The terms for using TheBinder.",
+  },
+};
 
 export default function TermsPage() {
   return (
