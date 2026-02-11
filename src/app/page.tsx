@@ -46,11 +46,16 @@ export default function Home() {
         <div className="text-xs text-zinc-500">No credit card required. Set up in under 2 minutes.</div>
       </section>
 
-      <section id="product" className="mt-12">
+      <section id="product" className="mt-16 space-y-6">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
+            See your collection the way it should look.
+          </h2>
+        </div>
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
-              <div className="text-xs font-semibold text-zinc-500">Collection</div>
+              <div className="text-xs font-semibold text-zinc-500">Collection View</div>
               <div className="mt-3 h-3 w-2/3 rounded bg-zinc-200" />
               <div className="mt-2 h-3 w-1/2 rounded bg-zinc-200" />
               <div className="mt-6 grid grid-cols-3 gap-2">
@@ -59,22 +64,34 @@ export default function Home() {
                 <div className="h-20 rounded bg-white shadow-sm" />
               </div>
             </div>
+            <p className="mt-4 text-sm text-zinc-600">
+              Your entire collection. Instantly searchable. Filter by player, set, year, condition,
+              value, location, or status.
+            </p>
           </div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
-              <div className="text-xs font-semibold text-zinc-500">Card detail</div>
+              <div className="text-xs font-semibold text-zinc-500">Card Detail</div>
               <div className="mt-3 h-24 rounded bg-white shadow-sm" />
               <div className="mt-3 h-3 w-3/4 rounded bg-zinc-200" />
               <div className="mt-2 h-3 w-2/3 rounded bg-zinc-200" />
             </div>
+            <p className="mt-4 text-sm text-zinc-600">
+              Every card has a home. Photos, purchase info, notes, history, and valuation — all in
+              one place.
+            </p>
           </div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
-              <div className="text-xs font-semibold text-zinc-500">Analytics & Valuations</div>
+              <div className="text-xs font-semibold text-zinc-500">Analytics / Valuation</div>
               <div className="mt-4 h-3 w-1/2 rounded bg-zinc-200" />
               <div className="mt-2 h-3 w-2/3 rounded bg-zinc-200" />
               <div className="mt-6 h-16 rounded bg-white shadow-sm" />
             </div>
+            <p className="mt-4 text-sm text-zinc-600">
+              Understand your collection at a glance. Total invested. Estimated value. Portfolio
+              breakdown.
+            </p>
           </div>
         </div>
       </section>
