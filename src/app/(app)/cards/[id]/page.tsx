@@ -11,6 +11,7 @@ import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD, REPORT_REASONS } from "@/lib/reporting";
 import { loadImageForCard, removeImageForCard, saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
+import { startTrace, captureError } from "@/lib/sentry";
 
 function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
@@ -131,14 +132,17 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     (async () => {
       try {
         setLoading(true);
+        const endTrace = startTrace("load-card-detail");
         const targetId = String(id);
         let found = await dbGetCard(targetId);
         if (!found) {
           const all = await dbLoadCards();
           found = all.find((c) => String(c.id) === targetId) ?? null;
         }
+        if (endTrace) endTrace();
         if (active) setCard(found);
-      } catch {
+      } catch (e) {
+        captureError(e, { area: "card-detail-load", id: String(id) });
         if (active) setCard(null);
       } finally {
         if (active) setLoading(false);

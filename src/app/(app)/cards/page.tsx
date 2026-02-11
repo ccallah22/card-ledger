@@ -14,6 +14,7 @@ import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
 import { createClient } from "@/lib/supabase/client";
+import { startTrace, captureError } from "@/lib/sentry";
 
 const STALE_DAYS = 90;
 
@@ -343,9 +344,12 @@ export default function CardsPage() {
 
         // one-time migration removed (Supabase-only)
 
+        const endTrace = startTrace("load-binder-cards");
         const data = await dbLoadCards();
+        if (endTrace) endTrace();
         if (mounted) setCards(data);
       } catch (e: any) {
+        captureError(e, { area: "binder-load" });
         if (mounted) setError(e?.message || "Failed to load cards");
       } finally {
         if (mounted) setLoading(false);
@@ -496,9 +500,12 @@ export default function CardsPage() {
 
       // one-time migration removed (Supabase-only)
 
+      const endTrace = startTrace("refresh-binder-cards");
       const data = await dbLoadCards();
+      if (endTrace) endTrace();
       setCards(data);
     } catch (e: any) {
+      captureError(e, { area: "binder-refresh" });
       setError(e?.message || "Failed to load cards");
     } finally {
       setLoading(false);

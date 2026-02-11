@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 
@@ -57,6 +58,12 @@ export default function RootLayout({
       <body
         className={`min-h-screen bg-zinc-50 text-zinc-900 antialiased ${inter.variable} ${spaceGrotesk.variable} font-sans`}
       >
+        <Script
+          defer
+          data-domain="thebinder.app"
+          src="https://plausible.io/js/script.js"
+          strategy="afterInteractive"
+        />
         <AppShell>{children}</AppShell>
       </body>
     </html>

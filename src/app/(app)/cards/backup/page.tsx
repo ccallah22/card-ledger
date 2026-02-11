@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { SportsCard } from "@/lib/types";
 import { dbDeleteCards, dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
 import { loadImageMap, loadThumbnailMap, replaceImageMap, replaceThumbnailMap } from "@/lib/imageStore";
+import { startTrace, captureError } from "@/lib/sentry";
 
 type BackupPayload = {
   version: 1;
@@ -37,9 +38,12 @@ export default function BackupPage() {
     (async () => {
       try {
         setLoading(true);
+        const endTrace = startTrace("load-backup-cards");
         const data = await dbLoadCards();
+        if (endTrace) endTrace();
         if (active) setCards(data);
       } catch (e: any) {
+        captureError(e, { area: "backup-load" });
         if (active) setError(e?.message ?? "Failed to load cards.");
       } finally {
         if (active) setLoading(false);
@@ -63,7 +67,9 @@ export default function BackupPage() {
   async function handleExport() {
     setError("");
     setNotice("");
+    const endTrace = startTrace("export-backup");
     const data = await dbLoadCards();
+    if (endTrace) endTrace();
     const images = loadImageMap();
     const thumbnails = loadThumbnailMap();
     const payload: BackupPayload = {
@@ -84,6 +90,7 @@ export default function BackupPage() {
     setImporting(true);
 
     try {
+      const endTrace = startTrace("import-backup");
       const text = await file.text();
       const parsed = JSON.parse(text) as Partial<BackupPayload>;
 
@@ -110,7 +117,9 @@ export default function BackupPage() {
 
       setCards(nextCards);
       setNotice(`Backup imported: ${nextCards.length} cards.${imageMsg}${thumbMsg}`.trim());
+      if (endTrace) endTrace();
     } catch (err) {
+      captureError(err, { area: "backup-import" });
       setError((err as Error).message || "Failed to import backup.");
     } finally {
       setImporting(false);

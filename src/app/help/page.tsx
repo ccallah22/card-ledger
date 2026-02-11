@@ -1,5 +1,6 @@
 import MarketingShell from "@/components/MarketingShell";
 import type { Metadata } from "next";
+import SupportFormClient from "./SupportFormClient";
 
 export const metadata: Metadata = {
   title: "TheBinder — Help",
@@ -55,6 +56,8 @@ export default function HelpPage() {
             .
           </p>
         </div>
+
+        <SupportFormClient />
 
         <div className="space-y-3">
           {FAQS.map((item) => (
