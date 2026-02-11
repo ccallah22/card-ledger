@@ -48,6 +48,9 @@ export default function PricingPage() {
             <p className="mt-1 text-sm text-zinc-600">Advanced insights for serious collectors.</p>
             <div className="mt-4 text-3xl font-semibold text-zinc-900">$9</div>
             <p className="text-xs text-zinc-500">per month, estimated</p>
+            <p className="mt-2 text-xs text-zinc-500">
+              Pro is in active development—join now and you’ll be notified when it launches.
+            </p>
             <ul className="mt-4 space-y-2 text-sm text-zinc-700">
               <li>Valuations history</li>
               <li>Advanced analytics</li>

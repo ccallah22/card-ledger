@@ -47,8 +47,6 @@ export default function LoginClient() {
         ),
       ]);
 
-      console.log("signInWithPassword result:", res);
-
       if (res.error) {
         const message =
           res.error.message === "Email not confirmed"
@@ -67,7 +65,6 @@ export default function LoginClient() {
 
       // Double-check session exists
       const sessionRes = await supabase.auth.getSession();
-      console.log("session after login:", sessionRes);
 
       if (!sessionRes.data.session) {
         setError("Login returned no session. Check Supabase Auth settings (email confirmed?).");
@@ -78,7 +75,6 @@ export default function LoginClient() {
       setStatus("success");
       window.location.assign(nextPath);
     } catch (err) {
-      console.error(err);
       const message = err instanceof Error ? err.message : "Unexpected error during login.";
       setError(message);
       setStatus("idle");

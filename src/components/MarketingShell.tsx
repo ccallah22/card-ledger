@@ -56,8 +56,9 @@ export default function MarketingShell({
               ))}
             </div>
           </div>
-          <div className="mt-4 text-xs text-zinc-500">
-            © {new Date().getFullYear()} TheBinder. All rights reserved.
+          <div className="mt-3 text-xs text-zinc-500">Made for collectors.</div>
+          <div className="mt-2 text-xs text-zinc-500">
+            © 2026 TheBinder. All rights reserved.
           </div>
         </footer>
       </div>
