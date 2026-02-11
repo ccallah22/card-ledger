@@ -28,13 +28,29 @@ export default function MarketingShell({
               TheBinder
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link href="/login" className="btn-secondary">
-              Sign in
-            </Link>
-            <Link href="/login" className="btn-primary">
-              Create free account
-            </Link>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-600">
+            <div className="flex flex-wrap items-center gap-4">
+              <Link href="/#product" className="hover:text-zinc-900">
+                Product
+              </Link>
+              <Link href="/pricing" className="hover:text-zinc-900">
+                Pricing
+              </Link>
+              <Link href="/demo" className="hover:text-zinc-900">
+                Demo
+              </Link>
+              <Link href="/help" className="hover:text-zinc-900">
+                FAQ
+              </Link>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href="/login" className="btn-secondary">
+                Sign in
+              </Link>
+              <Link href="/login" className="btn-primary">
+                Create free account
+              </Link>
+            </div>
           </div>
         </header>
 
