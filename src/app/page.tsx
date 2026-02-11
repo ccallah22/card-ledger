@@ -20,39 +20,33 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <MarketingShell>
-      <section className="max-w-2xl space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl font-display">
-          TheBinder helps collectors track, value, and protect their collection—without messy
-          spreadsheets.
+      <section className="max-w-3xl space-y-5">
+        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 sm:text-5xl font-display">
+          Track, value, and protect your collection — without spreadsheets.
         </h1>
         <p className="text-base text-zinc-600 sm:text-lg">
-          Know what you own, where it lives, and what it’s worth at a glance.
+          TheBinder helps collectors organize, understand, and protect their collection — without
+          messy spreadsheets.
         </p>
+        <ul className="space-y-2 text-sm text-zinc-700">
+          <li>Know exactly what you own — instantly searchable and organized</li>
+          <li>Make smarter buying and selling decisions with clear value tracking</li>
+          <li>Stay organized across binders, boxes, safes, and cases</li>
+          <li>Protect your collection with detailed records and photos</li>
+          <li>Feel in control of your collection at all times</li>
+        </ul>
         <div className="flex flex-wrap items-center gap-3">
           <a href="/login" className="btn-primary">
-            Create free account
+            Create Free Account
           </a>
           <a href="/demo" className="btn-secondary">
-            View sample collection
+            See Demo
           </a>
         </div>
+        <div className="text-xs text-zinc-500">No credit card required. Set up in under 2 minutes.</div>
       </section>
 
-      <section className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {[
-          "Stay organized even as your collection grows.",
-          "Make confident decisions with clear, current values.",
-          "Protect your collection with a clean, searchable record.",
-          "Spend less time tracking and more time collecting.",
-          "See your collection the way serious collectors do.",
-        ].map((text) => (
-          <div key={text} className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
-            {text}
-          </div>
-        ))}
-      </section>
-
-      <section className="mt-12">
+      <section id="product" className="mt-12">
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
