@@ -5,6 +5,7 @@ const BASE_URL = "https://thebinder.app";
 const routes = [
   "/",
   "/demo",
+  "/help",
   "/pricing",
   "/about",
   "/contact",

@@ -379,6 +379,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isMarketing =
     pathname === "/" ||
     pathname === "/demo" ||
+    pathname === "/help" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     pathname === "/contact" ||
@@ -490,6 +491,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       >
                         <span className="text-xs">👤</span>
                         Account
+                      </Link>
+                      <Link
+                        href="/help"
+                        onClick={() => setMoreOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                      >
+                        <span className="text-xs">❓</span>
+                        Help
                       </Link>
                       <Link
                         href="/cards/backup"
@@ -694,6 +703,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <span className="text-xs">👤</span>
                   Account
+                </Link>
+                <Link
+                  href="/help"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                >
+                  <span className="text-xs">❓</span>
+                  Help
                 </Link>
                 <Link
                   href="/cards/backup"

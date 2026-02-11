@@ -4,6 +4,7 @@ const FOOTER_LINKS = [
   { href: "/privacy", label: "Privacy Policy" },
   { href: "/terms", label: "Terms of Service" },
   { href: "/contact", label: "Contact" },
+  { href: "/help", label: "Help" },
   { href: "/pricing", label: "Pricing" },
   { href: "/about", label: "About" },
   { href: "/changelog", label: "Changelog" },
