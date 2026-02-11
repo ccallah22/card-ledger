@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SportsCard } from "@/lib/types";
 import { dbDeleteCards, dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
-import { loadImageMap, replaceImageMap } from "@/lib/imageStore";
+import { loadImageMap, loadThumbnailMap, replaceImageMap, replaceThumbnailMap } from "@/lib/imageStore";
 
 type BackupPayload = {
   version: 1;
   exportedAt: string;
   cards: SportsCard[];
   images: Record<string, string>;
+  thumbnails?: Record<string, string>;
 };
 
 function downloadJson(filename: string, data: unknown) {
@@ -51,9 +52,11 @@ export default function BackupPage() {
 
   const summary = useMemo(() => {
     const images = loadImageMap();
+    const thumbs = loadThumbnailMap();
     return {
       cards: cards.length,
       images: Object.keys(images).length,
+      thumbnails: Object.keys(thumbs).length,
     };
   }, [cards]);
 
@@ -62,11 +65,13 @@ export default function BackupPage() {
     setNotice("");
     const data = await dbLoadCards();
     const images = loadImageMap();
+    const thumbnails = loadThumbnailMap();
     const payload: BackupPayload = {
       version: 1,
       exportedAt: new Date().toISOString(),
       cards: data,
       images,
+      thumbnails,
     };
     downloadJson(`thebinder-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
     setNotice("Backup exported.");
@@ -88,6 +93,7 @@ export default function BackupPage() {
 
       const nextCards = parsed.cards as SportsCard[];
       const images = (parsed.images ?? {}) as Record<string, string>;
+      const thumbnails = (parsed.thumbnails ?? {}) as Record<string, string>;
 
       const existing = await dbLoadCards();
       if (existing.length) {
@@ -97,11 +103,13 @@ export default function BackupPage() {
         await dbUpsertCards(nextCards);
       }
       const imagesOk = replaceImageMap(images);
+      const thumbsOk = replaceThumbnailMap(thumbnails);
 
       const imageMsg = imagesOk ? "" : " Some images were skipped due to storage limits.";
+      const thumbMsg = thumbnails && !thumbsOk ? " Some thumbnails were skipped due to storage limits." : "";
 
       setCards(nextCards);
-      setNotice(`Backup imported: ${nextCards.length} cards.${imageMsg}`.trim());
+      setNotice(`Backup imported: ${nextCards.length} cards.${imageMsg}${thumbMsg}`.trim());
     } catch (err) {
       setError((err as Error).message || "Failed to import backup.");
     } finally {
@@ -125,7 +133,8 @@ export default function BackupPage() {
             {loading ? "Loading…" : summary.cards}
           </span>{" "}
           cards,{" "}
-          <span className="font-medium text-zinc-900">{summary.images}</span> images.
+          <span className="font-medium text-zinc-900">{summary.images}</span> images,{" "}
+          <span className="font-medium text-zinc-900">{summary.thumbnails}</span> thumbnails.
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button

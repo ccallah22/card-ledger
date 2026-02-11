@@ -10,6 +10,7 @@ import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
+import { saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 import * as checklistDb from "@/lib/db/checklists.client";
 import type { ChecklistEntry } from "@/lib/db/checklists.client";
 
@@ -2208,6 +2209,10 @@ function NewCardPageInner() {
     const card = buildCard();
     if (!card) return;
     await dbUpsertCard(card);
+    if (!isWishlistCard && imageUrl) {
+      saveImageForCard(String(card.id), imageUrl);
+      await saveThumbnailForCard(String(card.id), imageUrl);
+    }
     if (
       !isWishlistCard &&
       imageShare &&
@@ -2236,6 +2241,10 @@ function NewCardPageInner() {
     const card = buildCard();
     if (!card) return;
     await dbUpsertCard(card);
+    if (!isWishlistCard && imageUrl) {
+      saveImageForCard(String(card.id), imageUrl);
+      await saveThumbnailForCard(String(card.id), imageUrl);
+    }
 
     if (
       !isWishlistCard &&

@@ -309,7 +309,23 @@ export default function SoldHistoryPage() {
         </div>
 
         {loading ? (
-          <div className="loading-state">Loading sold history…</div>
+          <div className="divide-y">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={`sold-skel-${i}`} className="px-4 py-3 animate-pulse">
+                <div className="grid grid-cols-12 gap-2 text-sm">
+                  <div className="col-span-4 space-y-2">
+                    <div className="h-3 w-3/4 rounded bg-zinc-200/70" />
+                    <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+                  </div>
+                  <div className="col-span-2 h-3 w-3/4 rounded bg-zinc-200/70" />
+                  <div className="col-span-1 h-3 w-2/3 rounded bg-zinc-200/70" />
+                  <div className="col-span-2 h-3 w-3/4 rounded bg-zinc-200/70" />
+                  <div className="col-span-2 h-3 w-3/4 rounded bg-zinc-200/70" />
+                  <div className="col-span-1 h-3 w-2/3 rounded bg-zinc-200/70" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : error ? (
           <div className="error-state">We couldn’t load your sold history. {error}</div>
         ) : soldCards.length === 0 ? (

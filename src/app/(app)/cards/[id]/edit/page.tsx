@@ -5,7 +5,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
 import { dbGetCard, dbUpsertCard } from "@/lib/db/cards";
-import { loadImageForCard, removeImageForCard } from "@/lib/imageStore";
+import { loadImageForCard, removeImageForCard, saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 import { IMAGE_RULES, processImageFile } from "@/lib/image";
 import { formatCurrency } from "@/lib/format";
 
@@ -194,10 +194,24 @@ export default function EditCardPage({
     }
 
     await dbUpsertCard(next);
+    if (!imageRemoved && imageUrl) {
+      saveImageForCard(String(original.id), imageUrl);
+      await saveThumbnailForCard(String(original.id), imageUrl);
+    }
     router.push(`/cards/${original.id}`);
   }
 
-  if (loading) return <div className="loading-state">Loading card editor…</div>;
+  if (loading)
+    return (
+      <div className="space-y-4 animate-pulse">
+        <div className="h-4 w-1/3 rounded bg-zinc-200/70" />
+        <div className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={`edit-skel-${i}`} className="h-10 rounded bg-zinc-200/70" />
+          ))}
+        </div>
+      </div>
+    );
 
   if (notFound) {
     return (

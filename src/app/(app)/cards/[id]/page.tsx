@@ -10,7 +10,7 @@ import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD, REPORT_REASONS } from "@/lib/reporting";
-import { loadImageForCard, removeImageForCard } from "@/lib/imageStore";
+import { loadImageForCard, removeImageForCard, saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 
 function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
@@ -357,6 +357,12 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     };
     await dbUpsertCard(next);
     setCard(next);
+    if (nextUrl) {
+      saveImageForCard(card.id, nextUrl);
+      await saveThumbnailForCard(card.id, nextUrl);
+    } else {
+      removeImageForCard(card.id);
+    }
     if (imageShare && imageOwnerConfirm && nextUrl && fingerprint) {
       const res = await saveSharedImage({
         fingerprint,
@@ -479,7 +485,22 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     setShowCompForm(false);
   }
 
-  if (loading) return <div className="loading-state">Loading card details…</div>;
+  if (loading)
+    return (
+      <div className="grid gap-4 sm:grid-cols-[260px_1fr] animate-pulse">
+        <div className="rounded-xl border border-zinc-200 bg-white p-3">
+          <div className="aspect-[2.5/3.5] rounded-md bg-zinc-200/70" />
+          <div className="mt-3 h-3 w-3/4 rounded bg-zinc-200/70" />
+          <div className="mt-2 h-3 w-1/2 rounded bg-zinc-200/70" />
+        </div>
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 space-y-3">
+          <div className="h-4 w-1/3 rounded bg-zinc-200/70" />
+          <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+          <div className="h-3 w-2/3 rounded bg-zinc-200/70" />
+          <div className="h-3 w-1/3 rounded bg-zinc-200/70" />
+        </div>
+      </div>
+    );
 
   if (!card || !computed) {
     return (

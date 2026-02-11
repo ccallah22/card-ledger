@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { SportsCard } from "@/lib/types";
 import { dbLoadCards } from "@/lib/db/cards";
-import { loadImageForCard } from "@/lib/imageStore";
+import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 
 function labelForCard(c: SportsCard) {
   return `${c.playerName} • ${c.year} • ${c.setName}${c.cardNumber ? ` #${c.cardNumber}` : ""}`;
@@ -98,7 +98,18 @@ export default function WishlistPage() {
       <div className="rounded-xl border bg-white">
         <div className="border-b px-4 py-3 text-sm font-semibold text-zinc-900">Wanted cards</div>
         {loading ? (
-          <div className="loading-state">Loading your wishlist…</div>
+          <div className="divide-y">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={`wish-skel-${i}`} className="flex gap-4 px-4 py-3 animate-pulse">
+                <div className="h-[110px] w-[78px] shrink-0 rounded-md border bg-zinc-200/70" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+                  <div className="h-3 w-2/3 rounded bg-zinc-200/70" />
+                  <div className="h-3 w-1/3 rounded bg-zinc-200/70" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : error ? (
           <div className="error-state">We couldn’t load your wishlist. {error}</div>
         ) : wishCards.length === 0 ? (
@@ -111,6 +122,7 @@ export default function WishlistPage() {
               const parallel = (c as any).parallel as string | undefined;
               const serial = serialLabel(c);
               const imageUrl =
+                loadThumbnailForCard(String(c.id)) ??
                 loadImageForCard(String(c.id)) ??
                 ((c as any).imageUrl as string | undefined) ??
                 "";
@@ -126,6 +138,8 @@ export default function WishlistPage() {
                         src={imageUrl}
                         alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}
                         className="h-full w-full object-contain"
+                        loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <div className="px-2 text-center text-[10px] text-zinc-500">

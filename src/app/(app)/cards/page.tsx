@@ -11,7 +11,7 @@ import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
-import { loadImageForCard } from "@/lib/imageStore";
+import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
 import { createClient } from "@/lib/supabase/client";
 
@@ -297,6 +297,7 @@ export default function CardsPage() {
     Record<string, { reports: number; status?: string }>
   >({});
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [sportFilter, setSportFilter] = useState<string>("ALL");
 
   // Filters panel (collapsible)
@@ -355,6 +356,11 @@ export default function CardsPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 150);
+    return () => clearTimeout(t);
+  }, [q]);
 
   useEffect(() => {
     const fingerprints = Array.from(
@@ -753,7 +759,7 @@ export default function CardsPage() {
 
   // ✅ search + status
   const searched = useMemo(() => {
-    const query = q.trim().toLowerCase();
+    const query = debouncedQ.trim().toLowerCase();
 
     return afterNumbered.filter((c) => {
       if (!query) return true;
@@ -778,7 +784,7 @@ export default function CardsPage() {
 
       return hay.includes(query);
     });
-  }, [afterNumbered, q]);
+  }, [afterNumbered, debouncedQ]);
 
   // ✅ sorting
   const filtered = useMemo(() => {
@@ -1150,7 +1156,22 @@ export default function CardsPage() {
         <div className="error-state">Something went wrong while loading your binder. {error}</div>
       ) : null}
 
-      {loading ? <div className="loading-state">Loading your binder…</div> : null}
+      {loading ? (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={`binder-skel-${i}`}
+              className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm animate-pulse"
+            >
+              <div className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 sm:aspect-[2.5/3.5]">
+                <div className="flex-1 rounded-md border border-zinc-200 bg-zinc-200/70" />
+                <div className="h-3 w-3/4 rounded bg-zinc-200/70" />
+                <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {/* ✅ Clean control card */}
       <div className="rounded-xl border bg-white p-3 space-y-3">
@@ -1560,14 +1581,14 @@ export default function CardsPage() {
                         !!report &&
                         (report.status === "blocked" ||
                           (report.reports ?? 0) >= REPORT_HIDE_THRESHOLD);
+                      const storedThumb = loadThumbnailForCard(c.id);
                       const storedImage = loadImageForCard(c.id);
-                      const thumbUrl = (c as any).thumbUrl as string | undefined;
                       const displayImage = hideImage
                         ? ""
-                        : storedImage ??
+                        : storedThumb ??
+                          storedImage ??
                           ((c as any).imageUrl as string | undefined) ??
                           sharedImage?.dataUrl ??
-                          thumbUrl ??
                           "";
 
                       const rowHref = `/cards/${c.id}`;
@@ -1608,6 +1629,8 @@ export default function CardsPage() {
                                       src={displayImage}
                                       alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}
                                       className="h-full w-full object-contain"
+                                      loading="lazy"
+                                      decoding="async"
                                     />
                                   ) : hideImage ? (
                                     <div className="text-[10px] text-zinc-500 text-center px-2">

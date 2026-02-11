@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { SportsCard } from "@/lib/types";
 import { dbLoadCards, dbUpsertCard } from "@/lib/db/cards";
 import { formatCurrency } from "@/lib/format";
-import { loadImageForCard } from "@/lib/imageStore";
+import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 
 function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
@@ -218,7 +218,18 @@ export default function ForSalePage() {
           </div>
         ) : null}
         {loading ? (
-          <div className="loading-state">Loading your for-sale list…</div>
+          <div className="divide-y">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={`sale-skel-${i}`} className="flex gap-4 px-4 py-3 animate-pulse">
+                <div className="h-[110px] w-[78px] shrink-0 rounded-md border bg-zinc-200/70" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+                  <div className="h-3 w-2/3 rounded bg-zinc-200/70" />
+                  <div className="h-3 w-1/3 rounded bg-zinc-200/70" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : error ? (
           <div className="error-state">We couldn’t load your for-sale cards. {error}</div>
         ) : forSaleCards.length === 0 ? (
@@ -232,6 +243,7 @@ export default function ForSalePage() {
               const parallel = (c as any).parallel as string | undefined;
               const serial = serialLabel(c);
               const imageUrl =
+                loadThumbnailForCard(String(c.id)) ??
                 loadImageForCard(String(c.id)) ??
                 ((c as any).imageUrl as string | undefined) ??
                 "";
@@ -257,6 +269,8 @@ export default function ForSalePage() {
                                 src={imageUrl}
                                 alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}
                                 className="h-full w-full object-contain"
+                                loading="lazy"
+                                decoding="async"
                               />
                             ) : (
                               <div className="px-2 text-center text-[10px] text-zinc-500">
