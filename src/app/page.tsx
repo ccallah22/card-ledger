@@ -81,6 +81,48 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="mt-16 space-y-6">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
+            Everything you need. Nothing you don’t.
+          </h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Clarity
+            </div>
+            <p className="mt-3 text-sm text-zinc-600">
+              Stop guessing what you own. Find anything instantly.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Confidence
+            </div>
+            <p className="mt-3 text-sm text-zinc-600">
+              Know your numbers before you buy or sell.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Control
+            </div>
+            <p className="mt-3 text-sm text-zinc-600">
+              Track where every card lives — binder, box, vault.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Peace of Mind
+            </div>
+            <p className="mt-3 text-sm text-zinc-600">
+              Export your collection anytime. Your data stays yours.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section id="product" className="mt-16 space-y-6">
         <div className="space-y-2">
           <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
