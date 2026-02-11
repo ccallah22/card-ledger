@@ -34,8 +34,8 @@ export default function PricingPage() {
             <div className="mt-4 text-3xl font-semibold text-zinc-900">$0</div>
             <ul className="mt-4 space-y-2 text-sm text-zinc-700">
               <li>Track your collection</li>
-              <li>Wishlist, For Sale, Sold History</li>
-              <li>Backup and export</li>
+              <li>CSV export/import</li>
+              <li>Basic stats</li>
             </ul>
           </div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -49,9 +49,11 @@ export default function PricingPage() {
             <div className="mt-4 text-3xl font-semibold text-zinc-900">$9</div>
             <p className="text-xs text-zinc-500">per month, estimated</p>
             <ul className="mt-4 space-y-2 text-sm text-zinc-700">
-              <li>Valuation tracking</li>
-              <li>Market trends and analytics</li>
-              <li>Priority support</li>
+              <li>Valuations history</li>
+              <li>Advanced analytics</li>
+              <li>Unlimited image storage</li>
+              <li>Insurance reports</li>
+              <li>Shareable showcases</li>
             </ul>
           </div>
         </div>
