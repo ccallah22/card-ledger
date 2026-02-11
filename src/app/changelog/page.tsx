@@ -16,14 +16,18 @@ export const metadata: Metadata = {
 
 const ENTRIES = [
   {
-    date: "February 10, 2026",
-    title: "UI polish pass",
-    items: ["Consistent buttons and spacing", "Improved empty and loading states"],
+    date: "February 2026",
+    title: "v0.9.2",
+    items: [
+      "Added card image uploads",
+      "Improved login stability",
+      "Fixed valuation calculations",
+    ],
   },
   {
-    date: "February 7, 2026",
-    title: "Mobile navigation updates",
-    items: ["Sticky bottom nav", "Safer tap targets on mobile"],
+    date: "February 2026",
+    title: "v0.9.1",
+    items: ["Added delete card feature", "Improved mobile layout"],
   },
 ];
 

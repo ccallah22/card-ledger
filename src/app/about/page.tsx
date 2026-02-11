@@ -18,15 +18,20 @@ export default function AboutPage() {
   return (
     <MarketingShell>
       <section className="space-y-4 max-w-3xl">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 font-display">About</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 font-display">
+          Why TheBinder Exists
+        </h1>
+        <p className="text-base text-zinc-700">Spreadsheets work… until they don’t.</p>
         <p className="text-base text-zinc-700">
-          TheBinder was built by a collector who wanted a calm, reliable way to track cards without
-          messy spreadsheets. It’s for hobbyists who care about organization, value, and protecting
-          their collection.
+          Collectors deserve a system built for tracking, valuing, protecting, and actually
+          understanding their collection.
         </p>
         <p className="text-base text-zinc-700">
-          The goal is simple: make it effortless to know what you own, what you want next, and what
-          you’ve sold—on any device.
+          TheBinder was built by a collector who wanted full ownership, clean organization, and
+          real portfolio clarity.
+        </p>
+        <p className="text-base text-zinc-700">
+          Not a marketplace. Not a scanner gimmick. A binder — but smarter.
         </p>
       </section>
     </MarketingShell>

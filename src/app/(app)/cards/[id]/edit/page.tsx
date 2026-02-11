@@ -68,6 +68,7 @@ export default function EditCardPage({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState("");
   const [imageRemoved, setImageRemoved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -143,6 +144,8 @@ export default function EditCardPage({
   async function onSave() {
     if (!original) return;
     if (!canSave) return;
+    setIsSaving(true);
+    try {
 
     const now = new Date().toISOString();
     const derivedSerialTotal =
@@ -193,12 +196,15 @@ export default function EditCardPage({
       next.imageShared = undefined;
     }
 
-    await dbUpsertCard(next);
-    if (!imageRemoved && imageUrl) {
-      saveImageForCard(String(original.id), imageUrl);
-      await saveThumbnailForCard(String(original.id), imageUrl);
+      await dbUpsertCard(next);
+      if (!imageRemoved && imageUrl) {
+        saveImageForCard(String(original.id), imageUrl);
+        await saveThumbnailForCard(String(original.id), imageUrl);
+      }
+      router.push(`/cards/${original.id}`);
+    } finally {
+      setIsSaving(false);
     }
-    router.push(`/cards/${original.id}`);
   }
 
   if (loading)
@@ -394,10 +400,10 @@ export default function EditCardPage({
           </Link>
           <button
             onClick={onSave}
-            disabled={!canSave}
+            disabled={!canSave || isSaving}
             className="btn-primary"
           >
-            Save Changes
+            {isSaving ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </div>

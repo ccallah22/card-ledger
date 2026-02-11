@@ -25,6 +25,7 @@ export default function MarkSoldPage({
   const [soldDate, setSoldDate] = useState<string>("");
   const [soldNotes, setSoldNotes] = useState<string>("");
   const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -81,6 +82,8 @@ export default function MarkSoldPage({
   async function onSave() {
     if (!card) return;
     if (!canSave) return;
+    setIsSaving(true);
+    try {
 
     const now = new Date().toISOString();
 
@@ -94,8 +97,11 @@ export default function MarkSoldPage({
       updatedAt: now,
     };
 
-    await dbUpsertCard(next);
-    router.push(returnTo === "for-sale" ? "/cards/for-sale" : "/cards/sold");
+      await dbUpsertCard(next);
+      router.push(returnTo === "for-sale" ? "/cards/for-sale" : "/cards/sold");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -165,10 +171,10 @@ export default function MarkSoldPage({
       <div className="flex items-center gap-3">
         <button
           onClick={onSave}
-          disabled={!canSave}
+          disabled={!canSave || isSaving}
           className="btn-primary"
         >
-          Save Sold
+          {isSaving ? "Saving…" : "Save Sold"}
         </button>
         {returnTo === "for-sale" ? (
           <Link href="/cards/for-sale" className="btn-secondary">

@@ -98,22 +98,30 @@ export default function WishlistPage() {
       <div className="rounded-xl border bg-white">
         <div className="border-b px-4 py-3 text-sm font-semibold text-zinc-900">Wanted cards</div>
         {loading ? (
-          <div className="divide-y">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={`wish-skel-${i}`} className="flex gap-4 px-4 py-3 animate-pulse">
-                <div className="h-[110px] w-[78px] shrink-0 rounded-md border bg-zinc-200/70" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
-                  <div className="h-3 w-2/3 rounded bg-zinc-200/70" />
-                  <div className="h-3 w-1/3 rounded bg-zinc-200/70" />
+          <div className="space-y-3">
+            <div className="px-4 text-sm text-zinc-600">Loading your collection…</div>
+            <div className="divide-y">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={`wish-skel-${i}`} className="flex gap-4 px-4 py-3 animate-pulse">
+                  <div className="h-[110px] w-[78px] shrink-0 rounded-md border bg-zinc-200/70" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+                    <div className="h-3 w-2/3 rounded bg-zinc-200/70" />
+                    <div className="h-3 w-1/3 rounded bg-zinc-200/70" />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : error ? (
           <div className="error-state">We couldn’t load your wishlist. {error}</div>
         ) : wishCards.length === 0 ? (
-          <div className="empty-state">No wishlist cards yet—add your first one.</div>
+          <div className="empty-state space-y-3">
+            <div>No cards in your wishlist yet.</div>
+            <Link href="/cards/wishlist/search" className="btn-primary">
+              Add to wishlist
+            </Link>
+          </div>
         ) : (
           <div className="divide-y">
             {wishCards.map((c) => {

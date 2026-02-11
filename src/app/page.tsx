@@ -21,7 +21,7 @@ export default function Home() {
   return (
     <MarketingShell>
       <section className="max-w-3xl space-y-5">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 sm:text-5xl font-display">
+        <h1 className="font-display text-zinc-900">
           Track, value, and protect your collection — without spreadsheets.
         </h1>
         <p className="text-base text-zinc-600 sm:text-lg">
@@ -46,23 +46,23 @@ export default function Home() {
         <div className="text-xs text-zinc-500">No credit card required. Set up in under 2 minutes.</div>
       </section>
 
-      <section className="mt-16 space-y-6">
+      <section className="mt-20 space-y-6">
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
             How It Works
           </p>
-          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
+          <h2 className="font-display text-zinc-900">
             Get organized in minutes.
           </h2>
         </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-6 sm:grid-cols-3">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold text-zinc-500">1. Add your cards</div>
             <p className="mt-3 text-sm text-zinc-600">
               Quick manual entry built for speed and clarity.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold text-zinc-500">
               2. Attach the details that matter
             </div>
@@ -70,7 +70,7 @@ export default function Home() {
               Condition, parallel, serial number, purchase price, location.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold text-zinc-500">
               3. Track your collection like a pro
             </div>
@@ -81,14 +81,14 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mt-16 space-y-6">
+      <section className="mt-20 space-y-6">
         <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
+          <h2 className="font-display text-zinc-900">
             Everything you need. Nothing you don’t.
           </h2>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Clarity
             </div>
@@ -96,7 +96,7 @@ export default function Home() {
               Stop guessing what you own. Find anything instantly.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Confidence
             </div>
@@ -104,7 +104,7 @@ export default function Home() {
               Know your numbers before you buy or sell.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Control
             </div>
@@ -112,7 +112,7 @@ export default function Home() {
               Track where every card lives — binder, box, vault.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Peace of Mind
             </div>
@@ -123,29 +123,29 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mt-16 space-y-6">
+      <section className="mt-20 space-y-6">
         <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
+          <h2 className="font-display text-zinc-900">
             Your collection data stays yours.
           </h2>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Private by default
             </div>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Secure authentication
             </div>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Export anytime
             </div>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               No lock-in
             </div>
@@ -153,14 +153,70 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="product" className="mt-16 space-y-6">
+      <section id="faq" className="mt-20 space-y-6">
         <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 font-display">
+          <h2 className="font-display text-zinc-900">FAQ</h2>
+          <p className="text-sm text-zinc-600">Quick answers to common questions.</p>
+        </div>
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-semibold text-zinc-900">Is TheBinder free?</div>
+            <p className="mt-2 text-sm text-zinc-600">
+              Yes. Start free. Upgrade only if you want advanced tools.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-semibold text-zinc-900">Do I need to scan cards?</div>
+            <p className="mt-2 text-sm text-zinc-600">
+              No. Built for clean, accurate manual tracking first.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-semibold text-zinc-900">
+              Can I track location like binder or safe?
+            </div>
+            <p className="mt-2 text-sm text-zinc-600">Yes. Location tracking is core.</p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-semibold text-zinc-900">
+              Can I export my collection?
+            </div>
+            <p className="mt-2 text-sm text-zinc-600">Yes. Anytime.</p>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-semibold text-zinc-900">Who is this for?</div>
+            <p className="mt-2 text-sm text-zinc-600">
+              Collectors who want clarity and control.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-20">
+        <div className="rounded-3xl border border-zinc-200 bg-zinc-50 p-8 text-center shadow-sm sm:p-10">
+          <h2 className="font-display text-zinc-900">
+            Build the collection tracker you’ll actually use.
+          </h2>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <a href="/login" className="btn-primary">
+              Create Free Account
+            </a>
+            <a href="/demo" className="btn-secondary">
+              See Demo
+            </a>
+          </div>
+          <div className="mt-3 text-xs text-zinc-500">No credit card required.</div>
+        </div>
+      </section>
+
+      <section id="product" className="mt-20 space-y-6">
+        <div className="space-y-2">
+          <h2 className="font-display text-zinc-900">
             See your collection the way it should look.
           </h2>
         </div>
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
               <div className="text-xs font-semibold text-zinc-500">Collection View</div>
               <div className="mt-3 h-3 w-2/3 rounded bg-zinc-200" />
@@ -176,7 +232,7 @@ export default function Home() {
               value, location, or status.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
               <div className="text-xs font-semibold text-zinc-500">Card Detail</div>
               <div className="mt-3 h-24 rounded bg-white shadow-sm" />
@@ -188,7 +244,7 @@ export default function Home() {
               one place.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="aspect-[3/2] rounded-lg border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-4">
               <div className="text-xs font-semibold text-zinc-500">Analytics / Valuation</div>
               <div className="mt-4 h-3 w-1/2 rounded bg-zinc-200" />

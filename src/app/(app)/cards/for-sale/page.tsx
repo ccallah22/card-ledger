@@ -218,17 +218,20 @@ export default function ForSalePage() {
           </div>
         ) : null}
         {loading ? (
-          <div className="divide-y">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={`sale-skel-${i}`} className="flex gap-4 px-4 py-3 animate-pulse">
-                <div className="h-[110px] w-[78px] shrink-0 rounded-md border bg-zinc-200/70" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
-                  <div className="h-3 w-2/3 rounded bg-zinc-200/70" />
-                  <div className="h-3 w-1/3 rounded bg-zinc-200/70" />
+          <div className="space-y-3">
+            <div className="px-4 text-sm text-zinc-600">Loading your collection…</div>
+            <div className="divide-y">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={`sale-skel-${i}`} className="flex gap-4 px-4 py-3 animate-pulse">
+                  <div className="h-[110px] w-[78px] shrink-0 rounded-md border bg-zinc-200/70" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+                    <div className="h-3 w-2/3 rounded bg-zinc-200/70" />
+                    <div className="h-3 w-1/3 rounded bg-zinc-200/70" />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : error ? (
           <div className="error-state">We couldn’t load your for-sale cards. {error}</div>

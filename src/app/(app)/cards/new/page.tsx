@@ -1764,6 +1764,7 @@ function NewCardPageInner() {
     "idle" | "checking" | "accept" | "review" | "block"
   >("idle");
   const [cardPhotoConfirm, setCardPhotoConfirm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [reportInfo, setReportInfo] = useState<{ reports: number; status?: string } | null>(
     null
   );
@@ -2208,98 +2209,108 @@ function NewCardPageInner() {
   async function onSave() {
     const card = buildCard();
     if (!card) return;
-    await dbUpsertCard(card);
-    if (!isWishlistCard && imageUrl) {
-      saveImageForCard(String(card.id), imageUrl);
-      await saveThumbnailForCard(String(card.id), imageUrl);
-    }
-    if (
-      !isWishlistCard &&
-      imageShare &&
-      imageOwnerConfirm &&
-      imageUrl &&
-      fingerprint &&
-      imageUrl.trim().length > 0
-    ) {
-      const res = await saveSharedImage({
-        fingerprint,
-        dataUrl: imageUrl,
-        isFront: imageIsFront,
-        isSlabbed: imageIsSlabbed,
-        createdAt: new Date().toISOString(),
-      });
-      if (res.status === "error") {
-        setImageError(`Shared image upload failed: ${res.message}`);
-      } else if (res.status === "exists") {
-        setImageError("Shared image already exists for this card.");
+    setIsSaving(true);
+    try {
+      await dbUpsertCard(card);
+      if (!isWishlistCard && imageUrl) {
+        saveImageForCard(String(card.id), imageUrl);
+        await saveThumbnailForCard(String(card.id), imageUrl);
       }
+      if (
+        !isWishlistCard &&
+        imageShare &&
+        imageOwnerConfirm &&
+        imageUrl &&
+        fingerprint &&
+        imageUrl.trim().length > 0
+      ) {
+        const res = await saveSharedImage({
+          fingerprint,
+          dataUrl: imageUrl,
+          isFront: imageIsFront,
+          isSlabbed: imageIsSlabbed,
+          createdAt: new Date().toISOString(),
+        });
+        if (res.status === "error") {
+          setImageError(`Shared image upload failed: ${res.message}`);
+        } else if (res.status === "exists") {
+          setImageError("Shared image already exists for this card.");
+        }
+      }
+      router.push("/cards");
+    } finally {
+      setIsSaving(false);
     }
-    router.push("/cards");
   }
 
   async function onSaveAndAddAnother() {
     const card = buildCard();
     if (!card) return;
-    await dbUpsertCard(card);
-    if (!isWishlistCard && imageUrl) {
-      saveImageForCard(String(card.id), imageUrl);
-      await saveThumbnailForCard(String(card.id), imageUrl);
-    }
-
-    if (
-      !isWishlistCard &&
-      imageShare &&
-      imageOwnerConfirm &&
-      imageUrl &&
-      fingerprint &&
-      imageUrl.trim().length > 0
-    ) {
-      const res = await saveSharedImage({
-        fingerprint,
-        dataUrl: imageUrl,
-        isFront: imageIsFront,
-        isSlabbed: imageIsSlabbed,
-        createdAt: new Date().toISOString(),
-      });
-      if (res.status === "error") {
-        setImageError(`Shared image upload failed: ${res.message}`);
-      } else if (res.status === "exists") {
-        setImageError("Shared image already exists for this card.");
+    setIsSaving(true);
+    try {
+      await dbUpsertCard(card);
+      if (!isWishlistCard && imageUrl) {
+        saveImageForCard(String(card.id), imageUrl);
+        await saveThumbnailForCard(String(card.id), imageUrl);
       }
-    }
 
-    // reset form (keep your existing reset block EXACTLY as-is)
-    setPlayerName("");
-    setCardNumber("");
-    setTeam("");
-    setLocation("");
-    setCondition("RAW");
-    setGrader("");
-    setGrade("");
-    setStatus("HAVE");
-    setPurchasePrice("");
-    setPurchaseDate("");
-    setVariation("");
-    setInsert("");
-    setParallel("");
-    setSerialNumber("");
-    setSerialTotal("");
-    setIsRookie(false);
-    setIsAutograph(false);
-    setIsPatch(false);
-    setNotes("");
-    setImageUrl(null);
-    setImageIsFront(true);
-    setImageIsSlabbed(false);
-    setImageShare(false);
-    setImageOwnerConfirm(false);
-    setImageType("front");
-    setImageError("");
-    setImageCheckStatus("idle");
-    setCardPhotoConfirm(false);
-    setChecklistQuery("");
-    setChecklistSection("ALL");
-    setShowChecklistResults(true);
+      if (
+        !isWishlistCard &&
+        imageShare &&
+        imageOwnerConfirm &&
+        imageUrl &&
+        fingerprint &&
+        imageUrl.trim().length > 0
+      ) {
+        const res = await saveSharedImage({
+          fingerprint,
+          dataUrl: imageUrl,
+          isFront: imageIsFront,
+          isSlabbed: imageIsSlabbed,
+          createdAt: new Date().toISOString(),
+        });
+        if (res.status === "error") {
+          setImageError(`Shared image upload failed: ${res.message}`);
+        } else if (res.status === "exists") {
+          setImageError("Shared image already exists for this card.");
+        }
+      }
+
+      // reset form (keep your existing reset block EXACTLY as-is)
+      setPlayerName("");
+      setCardNumber("");
+      setTeam("");
+      setLocation("");
+      setCondition("RAW");
+      setGrader("");
+      setGrade("");
+      setStatus("HAVE");
+      setPurchasePrice("");
+      setPurchaseDate("");
+      setVariation("");
+      setInsert("");
+      setParallel("");
+      setSerialNumber("");
+      setSerialTotal("");
+      setIsRookie(false);
+      setIsAutograph(false);
+      setIsPatch(false);
+      setNotes("");
+      setImageUrl(null);
+      setImageIsFront(true);
+      setImageIsSlabbed(false);
+      setImageShare(false);
+      setImageOwnerConfirm(false);
+      setImageType("front");
+      setImageError("");
+      setImageCheckStatus("idle");
+      setCardPhotoConfirm(false);
+      setChecklistQuery("");
+      setChecklistSection("ALL");
+      setShowChecklistResults(true);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -2806,17 +2817,17 @@ function NewCardPageInner() {
           </Link>
           <button
             onClick={onSaveAndAddAnother}
-            disabled={!canSave}
+            disabled={!canSave || isSaving}
             className="btn-secondary"
           >
-            {isWishlist ? "Add + Another" : "Save + Add Another"}
+            {isSaving ? "Saving…" : isWishlist ? "Add + Another" : "Save + Add Another"}
           </button>
           <button
             onClick={onSave}
-            disabled={!canSave}
+            disabled={!canSave || isSaving}
             className="btn-primary"
           >
-            {isWishlist ? "Add to Wishlist" : "Save Card"}
+            {isSaving ? "Saving…" : isWishlist ? "Add to Wishlist" : "Save Card"}
           </button>
         </div>
       </div>

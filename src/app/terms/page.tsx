@@ -21,23 +21,48 @@ export default function TermsPage() {
         <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 font-display">
           Terms of Service
         </h1>
-        <p className="text-sm text-zinc-600">Last updated: February 10, 2026</p>
-        <div className="space-y-3 text-sm text-zinc-700">
-          <p>
-            By using TheBinder, you agree to use the service responsibly and to keep your account
-            secure. You retain ownership of your collection data.
-          </p>
-          <p>
-            We provide the service as-is and work hard to keep it available, but we can’t guarantee
-            uninterrupted access.
-          </p>
-          <p>
-            If you have questions, contact{" "}
-            <a className="btn-link" href="mailto:support@thebinder.app">
-              support@thebinder.app
-            </a>
-            .
-          </p>
+        <p className="text-sm text-zinc-600">Effective Date: February 11, 2026</p>
+        <div className="space-y-5 text-sm text-zinc-700">
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-zinc-900">1. Acceptance</div>
+            <p>By using TheBinder, you agree to these terms.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-zinc-900">2. Accounts</div>
+            <p>Users are responsible for keeping login credentials secure.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-zinc-900">3. Collection Data</div>
+            <p>Users own their uploaded data.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-zinc-900">4. Valuations Disclaimer</div>
+            <p>Any price estimates are informational only.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-zinc-900">5. Termination</div>
+            <p>We reserve the right to suspend abusive accounts.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-zinc-900">6. Changes</div>
+            <p>We may update these terms over time.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-zinc-900">Contact</div>
+            <p>
+              Email{" "}
+              <a className="btn-link" href="mailto:support@thebinder.app">
+                support@thebinder.app
+              </a>
+              .
+            </p>
+          </div>
         </div>
       </section>
     </MarketingShell>

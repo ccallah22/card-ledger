@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --brand-primary: #2b323a;
-  --brand-primary-strong: #242a32;
-  --brand-accent: #f59e0b;
+  --background: #f8fafc;
+  --foreground: #111827;
+  --brand-primary: #111827;
+  --brand-primary-strong: #0f172a;
+  --brand-accent: #2563eb;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-body);
-  --font-display: var(--font-brand);
+  --font-display: var(--font-body);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,19 +30,19 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary-strong)];
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[var(--brand-accent)] text-white hover:bg-[#1d4ed8];
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50;
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-zinc-200;
   }
 
   .btn-destructive {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-red-200 bg-red-50 text-red-700 hover:bg-red-100;
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-red-600 text-white hover:bg-red-700;
   }
 
   .btn-link {
-    @apply inline-flex items-center text-sm font-semibold text-[var(--brand-primary)] hover:text-[var(--brand-primary-strong)];
+    @apply inline-flex items-center text-sm font-semibold text-[var(--brand-accent)] hover:text-[#1d4ed8] hover:underline;
   }
 
   .empty-state {
@@ -63,8 +63,35 @@ body {
   color: var(--foreground);
   font-family: var(--font-body), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
+  font-size: 16px;
 }
 
 .font-display {
-  font-family: var(--font-brand), var(--font-body), system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+@layer base {
+  h1 {
+    font-size: 44px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  h2 {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  small {
+    font-size: 14px;
+  }
 }

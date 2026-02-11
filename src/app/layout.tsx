@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Space_Grotesk } from "next/font/google";
+import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
@@ -10,11 +10,6 @@ const inter = Inter({
   display: "swap",
 });
 
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-brand",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://thebinder.app"),
@@ -56,7 +51,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
       </head>
       <body
-        className={`min-h-screen bg-zinc-50 text-zinc-900 antialiased ${inter.variable} ${spaceGrotesk.variable} font-sans`}
+        className={`min-h-screen bg-[var(--background)] text-[var(--foreground)] antialiased ${inter.variable} font-sans`}
       >
         <Script
           defer

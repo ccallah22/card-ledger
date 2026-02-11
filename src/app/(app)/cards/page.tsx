@@ -1164,19 +1164,22 @@ export default function CardsPage() {
       ) : null}
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={`binder-skel-${i}`}
-              className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm animate-pulse"
-            >
-              <div className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 sm:aspect-[2.5/3.5]">
-                <div className="flex-1 rounded-md border border-zinc-200 bg-zinc-200/70" />
-                <div className="h-3 w-3/4 rounded bg-zinc-200/70" />
-                <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+        <div className="space-y-3">
+          <div className="text-sm text-zinc-600">Loading your collection…</div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={`binder-skel-${i}`}
+                className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm animate-pulse"
+              >
+                <div className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 sm:aspect-[2.5/3.5]">
+                  <div className="flex-1 rounded-md border border-zinc-200 bg-zinc-200/70" />
+                  <div className="h-3 w-3/4 rounded bg-zinc-200/70" />
+                  <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -1445,7 +1448,12 @@ export default function CardsPage() {
       {/* Binder */}
       <div className="rounded-xl border border-black bg-zinc-50 overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="empty-state">No cards yet—add your first one.</div>
+          <div className="empty-state space-y-3">
+            <div>No cards yet — add your first one to get started.</div>
+            <Link href="/cards/new" className="btn-primary">
+              Add your first card
+            </Link>
+          </div>
         ) : (
           <div className="space-y-3">
             {groupedBySet.map((group, index) => {
