@@ -1008,6 +1008,18 @@ export default function CardsPage() {
       return s !== "SOLD" && s !== "WANT";
     });
 
+    const totalPortfolioValue = inventory.reduce(
+      (sum, c) => sum + (asNumber((c as any).marketValue) ?? 0),
+      0
+    );
+
+    const totalNetGain = inventory.reduce((sum, c) => {
+      const marketValue = asNumber((c as any).marketValue);
+      if (typeof marketValue !== "number") return sum;
+      const paid = asNumber(c.purchasePrice) ?? 0;
+      return sum + (marketValue - paid);
+    }, 0);
+
     const graded = inventory.filter((c) => c.condition === "GRADED").length;
     const raw = Math.max(0, inventory.length - graded);
 
@@ -1036,6 +1048,8 @@ export default function CardsPage() {
       totalSpent,
       totalSold,
       netPosition,
+      totalPortfolioValue,
+      totalNetGain,
       forSaleValue,
       costOfSold,
       graded,
@@ -1048,7 +1062,7 @@ export default function CardsPage() {
   }, [cards, sportFilter, setSportMap]);
 
   const netTone =
-    totals.netPosition > 0 ? "positive" : totals.netPosition < 0 ? "negative" : "neutral";
+    totals.totalNetGain > 0 ? "positive" : totals.totalNetGain < 0 ? "negative" : "neutral";
 
   const activeFiltersCount =
     (dupOnly ? 1 : 0) +
@@ -1427,10 +1441,10 @@ export default function CardsPage() {
       <div className="grid gap-3 sm:grid-cols-4">
         <Stat label="Total cards" value={`${totals.totalCards}`} />
         <Stat label="Total spent" value={currency(totals.totalSpent)} />
-        <Stat label="Total sold" value={currency(totals.totalSold)} />
+        <Stat label="Portfolio value" value={currency(totals.totalPortfolioValue)} />
         <Stat
-          label="Net position"
-          value={currency(totals.netPosition, { accounting: true })}
+          label="Total net gain"
+          value={currency(totals.totalNetGain, { accounting: true })}
           tone={netTone}
         />
       </div>

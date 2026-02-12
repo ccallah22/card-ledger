@@ -432,11 +432,14 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
 
     const status = card.status ?? "HAVE";
     const paid = asNumber(card.purchasePrice) ?? 0;
+    const market = asNumber((card as any).marketValue);
     const asking = asNumber((card as any).askingPrice);
     const sold = asNumber((card as any).soldPrice);
 
     const held = status === "WANT" || status === "SOLD" ? null : daysSince(card.purchaseDate);
     const net = typeof sold === "number" ? sold - paid : null;
+    const unrealized =
+      status !== "SOLD" && typeof market === "number" ? market - paid : null;
 
     const serial =
       typeof (card as any).serialNumber === "number" &&
@@ -446,7 +449,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
         ? `/${(card as any).serialTotal}`
         : "";
 
-    return { status, paid, asking, sold, held, net, serial };
+    return { status, paid, market, asking, sold, held, net, unrealized, serial };
   }, [card]);
 
   async function handleDelete() {
@@ -545,6 +548,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     { label: "Purchase date", value: card.purchaseDate ?? "", format: "text" },
 
     { label: "Paid", value: card.purchasePrice, format: "currency" },
+    { label: "Market value", value: (card as any).marketValue, format: "currency" },
     { label: "Asking", value: (card as any).askingPrice, format: "currency" },
     { label: "Sold", value: (card as any).soldPrice, format: "currency" },
   ];
@@ -569,6 +573,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       "status",
       "purchaseDate",
       "purchasePrice",
+      "marketValue",
       "askingPrice",
       "soldPrice",
       "soldDate",
@@ -708,6 +713,13 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           ) : null}
 
+          {typeof computed.market === "number" ? (
+            <div>
+              <span className="text-gray-600">Market value:</span>{" "}
+              <span className="font-semibold">{formatCurrency(computed.market)}</span>
+            </div>
+          ) : null}
+
           {computed.status === "SOLD" && typeof computed.sold === "number" ? (
             <div>
               <span className="text-gray-600">Sold for:</span>{" "}
@@ -720,6 +732,15 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
               <span className="text-gray-600">Net (sold - paid):</span>{" "}
               <span className="font-semibold">
                 {formatCurrency(computed.net, { accounting: true })}
+              </span>
+            </div>
+          ) : null}
+
+          {computed.status !== "SOLD" && typeof computed.unrealized === "number" ? (
+            <div>
+              <span className="text-gray-600">Unrealized gain:</span>{" "}
+              <span className="font-semibold">
+                {formatCurrency(computed.unrealized, { accounting: true })}
               </span>
             </div>
           ) : null}

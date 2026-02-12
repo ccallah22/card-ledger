@@ -29,6 +29,7 @@ export type SportsCard = {
   status: CardStatus;
 
   purchasePrice?: number;
+  marketValue?: number;
   purchaseDate?: string; // YYYY-MM-DD
 
   notes?: string;

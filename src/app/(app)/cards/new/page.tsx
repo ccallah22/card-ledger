@@ -1737,6 +1737,7 @@ function NewCardPageInner() {
 
   const [status, setStatus] = useState<CardStatus>("HAVE");
   const [purchasePrice, setPurchasePrice] = useState<string>("");
+  const [marketValue, setMarketValue] = useState<string>("");
   const [purchaseDate, setPurchaseDate] = useState<string>("");
 
   // ✅ Collector fields
@@ -2179,6 +2180,7 @@ function NewCardPageInner() {
       status: isWishlistCard ? "WANT" : status,
 
       purchasePrice: isWishlistCard ? undefined : toNum(purchasePrice),
+      marketValue: isWishlistCard ? undefined : toNum(marketValue),
       purchaseDate: isWishlistCard ? undefined : purchaseDate || undefined,
 
       variation: variation.trim() || undefined,
@@ -2286,6 +2288,7 @@ function NewCardPageInner() {
       setGrade("");
       setStatus("HAVE");
       setPurchasePrice("");
+      setMarketValue("");
       setPurchaseDate("");
       setVariation("");
       setInsert("");
@@ -2767,6 +2770,12 @@ function NewCardPageInner() {
         {!isWishlistCard ? (
           <>
             <Field label="Paid" value={purchasePrice} onChange={setPurchasePrice} placeholder="50" />
+            <Field
+              label="Market value"
+              value={marketValue}
+              onChange={setMarketValue}
+              placeholder="65"
+            />
             <Field label="Purchase date" value={purchaseDate} onChange={setPurchaseDate} type="date" />
           </>
         ) : null}

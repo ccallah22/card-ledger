@@ -26,6 +26,7 @@ export function cardsToCsv(cards: SportsCard[]) {
     "grade",
     "status",
     "purchasePrice",
+    "marketValue",
     "purchaseDate",
 
     // pricing / outcomes
@@ -68,6 +69,7 @@ export function cardsToCsv(cards: SportsCard[]) {
     c.status ?? "",
 
     c.purchasePrice ?? "",
+    (c as any).marketValue ?? "",
     c.purchaseDate ?? "",
 
     (c as any).askingPrice ?? "",

@@ -51,6 +51,7 @@ export default function EditCardPage({
   // Status / purchase
   const [status, setStatus] = useState<CardStatus>("HAVE");
   const [purchasePrice, setPurchasePrice] = useState<string>("");
+  const [marketValue, setMarketValue] = useState<string>("");
   const [purchaseDate, setPurchaseDate] = useState<string>("");
 
   // Collector fields
@@ -98,6 +99,7 @@ export default function EditCardPage({
 
       setStatus(found.status ?? "HAVE");
       setPurchasePrice(typeof found.purchasePrice === "number" ? String(found.purchasePrice) : "");
+      setMarketValue(typeof found.marketValue === "number" ? String(found.marketValue) : "");
       setPurchaseDate(found.purchaseDate ?? "");
 
       setVariation((found as any).variation ?? "");
@@ -141,6 +143,12 @@ export default function EditCardPage({
     return formatCurrency(n);
   }, [purchasePrice]);
 
+  const marketPreview = useMemo(() => {
+    const n = toNum(marketValue);
+    if (typeof n !== "number") return null;
+    return formatCurrency(n);
+  }, [marketValue]);
+
   async function onSave() {
     if (!original) return;
     if (!canSave) return;
@@ -170,6 +178,7 @@ export default function EditCardPage({
       status,
 
       purchasePrice: toNum(purchasePrice),
+      marketValue: toNum(marketValue),
       purchaseDate: purchaseDate || undefined,
 
       variation: variation.trim() || undefined,
@@ -290,6 +299,13 @@ export default function EditCardPage({
           onChange={setPurchasePrice}
           placeholder="50"
           preview={paidPreview}
+        />
+        <MoneyField
+          label="Market value"
+          value={marketValue}
+          onChange={setMarketValue}
+          placeholder="65"
+          preview={marketPreview}
         />
 
         <Field label="Purchase date" value={purchaseDate} onChange={setPurchaseDate} type="date" />
