@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+const cookieOptions = {
+  // Session cookie: cleared when browser is closed.
+  lifetime: 0,
+};
+
 async function supabaseProxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -8,6 +13,7 @@ async function supabaseProxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -30,6 +36,17 @@ async function supabaseProxy(request: NextRequest) {
 }
 
 export async function middleware(request: NextRequest) {
+  const host = (request.headers.get("host") ?? "").toLowerCase();
+  const canonicalHost = "thebindr.app";
+
+  // Canonicalize public production hosts to the apex domain.
+  if (host === "www.thebindr.app" || host === "thebinder.app" || host === "www.thebinder.app") {
+    const url = request.nextUrl.clone();
+    url.protocol = "https:";
+    url.host = canonicalHost;
+    return NextResponse.redirect(url, 308);
+  }
+
   let response: NextResponse;
   let user: unknown;
   try {
@@ -51,7 +68,6 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/admin"); // optional
 
   const isAuthPage = path.startsWith("/login") || path.startsWith("/signup");
-  const isHome = path === "/";
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
@@ -61,12 +77,6 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isAuthPage && user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/cards";
-    return NextResponse.redirect(url);
-  }
-
-  if (isHome && user) {
     const url = request.nextUrl.clone();
     url.pathname = "/cards";
     return NextResponse.redirect(url);

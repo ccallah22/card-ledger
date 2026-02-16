@@ -1,6 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+const cookieOptions = {
+  // Session cookie: cleared when browser is closed.
+  lifetime: 0,
+};
+
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -8,6 +13,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions,
       cookies: {
         getAll() {
           return cookieStore.getAll();
