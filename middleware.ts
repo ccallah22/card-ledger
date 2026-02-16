@@ -1,11 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const cookieOptions = {
-  // Session cookie: cleared when browser is closed.
-  lifetime: 0,
-};
-
 async function supabaseProxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -13,7 +8,6 @@ async function supabaseProxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookieOptions,
       cookies: {
         getAll() {
           return request.cookies.getAll();
