@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 import { dbLoadCards } from "@/lib/db/cards";
@@ -16,6 +17,12 @@ type CollectionStats = {
   totalInvested: number;
   netPosition: number;
   locationsCount: number;
+};
+
+type TotpEnrollment = {
+  factorId: string;
+  qrCode: string;
+  secret: string;
 };
 
 const LAST_EXPORT_KEY = "thebinder.lastExportAt";
@@ -37,6 +44,15 @@ function formatDate(isoDate?: string | null) {
     month: "short",
     day: "numeric",
   });
+}
+
+function browserLabel(ua: string) {
+  if (!ua) return "Unknown Browser";
+  if (ua.includes("Edg/")) return "Microsoft Edge";
+  if (ua.includes("Chrome/") && !ua.includes("Edg/")) return "Google Chrome";
+  if (ua.includes("Firefox/")) return "Mozilla Firefox";
+  if (ua.includes("Safari/") && !ua.includes("Chrome/")) return "Safari";
+  return "Web Browser";
 }
 
 function toStats(cards: SportsCard[]): CollectionStats {
@@ -101,12 +117,17 @@ export default function AccountClient() {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [securityBusy, setSecurityBusy] = useState(false);
 
   const [email, setEmail] = useState("");
   const [userId, setUserId] = useState("");
   const [memberSince, setMemberSince] = useState<string | null>(null);
   const [lastSignIn, setLastSignIn] = useState<string | null>(null);
   const [lastExportAt, setLastExportAt] = useState<string | null>(null);
+  const [currentDeviceName, setCurrentDeviceName] = useState("Current device");
+  const [mfaEnabledAt, setMfaEnabledAt] = useState<string | null>(null);
+  const [totpEnrollment, setTotpEnrollment] = useState<TotpEnrollment | null>(null);
+  const [totpCode, setTotpCode] = useState("");
   const [stats, setStats] = useState<CollectionStats>({
     totalCards: 0,
     totalValue: 0,
@@ -119,23 +140,37 @@ export default function AccountClient() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
 
+  const refreshSecurityState = useCallback(async () => {
+    const [{ data: factorData, error: factorError }, { data: userData, error: userError }] =
+      await Promise.all([supabase.auth.mfa.listFactors(), supabase.auth.getUser()]);
+
+    if (factorError) throw factorError;
+    if (userError) throw userError;
+
+    const verifiedTotp = factorData?.totp?.[0];
+    setMfaEnabledAt(verifiedTotp?.created_at ?? null);
+
+    const user = userData?.user;
+    if (user) {
+      setEmail(user.email ?? "");
+      setUserId(user.id ?? "");
+      setMemberSince(user.created_at ?? null);
+      setLastSignIn(user.last_sign_in_at ?? null);
+    }
+  }, [supabase]);
+
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [{ data: userData }, cards] = await Promise.all([
-          supabase.auth.getUser(),
-          dbLoadCards().catch(() => [] as SportsCard[]),
-        ]);
+        const [cards] = await Promise.all([dbLoadCards().catch(() => [] as SportsCard[])]);
 
         if (!active) return;
-
-        const user = userData?.user;
-        setEmail(user?.email ?? "");
-        setUserId(user?.id ?? "");
-        setMemberSince(user?.created_at ?? null);
-        setLastSignIn(user?.last_sign_in_at ?? null);
         setStats(toStats(cards));
+        await refreshSecurityState();
+        if (typeof navigator !== "undefined") {
+          setCurrentDeviceName(browserLabel(navigator.userAgent));
+        }
 
         if (typeof window !== "undefined") {
           const lastExport = window.localStorage.getItem(LAST_EXPORT_KEY);
@@ -152,7 +187,122 @@ export default function AccountClient() {
     return () => {
       active = false;
     };
-  }, [supabase]);
+  }, [refreshSecurityState]);
+
+  async function handleEnable2FA() {
+    setNotice(null);
+    setTotpCode("");
+    try {
+      setSecurityBusy(true);
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: "Authenticator App",
+      });
+      if (error) throw error;
+      if (!data || data.type !== "totp") {
+        throw new Error("Could not start 2FA setup.");
+      }
+
+      setTotpEnrollment({
+        factorId: data.id,
+        qrCode: data.totp.qr_code,
+        secret: data.totp.secret,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "We couldn’t start 2FA setup right now. Please try again.";
+      setNotice({ type: "error", message });
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function handleVerify2FA() {
+    setNotice(null);
+    if (!totpEnrollment) return;
+    const normalized = totpCode.replace(/\s+/g, "");
+    if (!/^\d{6}$/.test(normalized)) {
+      setNotice({ type: "error", message: "Enter a valid 6-digit authentication code." });
+      return;
+    }
+
+    try {
+      setSecurityBusy(true);
+      const { error } = await supabase.auth.mfa.challengeAndVerify({
+        factorId: totpEnrollment.factorId,
+        code: normalized,
+      });
+      if (error) throw error;
+
+      setTotpEnrollment(null);
+      setTotpCode("");
+      await refreshSecurityState();
+      setNotice({ type: "success", message: "Two-factor authentication is now enabled." });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "We couldn’t verify your code. Please check the code and try again.";
+      setNotice({ type: "error", message });
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function handleDisable2FA() {
+    setNotice(null);
+    try {
+      setSecurityBusy(true);
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (error) throw error;
+
+      const verifiedTotp = data?.totp?.[0];
+      if (!verifiedTotp) {
+        setNotice({ type: "error", message: "No enabled 2FA factor was found for this account." });
+        return;
+      }
+
+      const { error: unenrollError } = await supabase.auth.mfa.unenroll({
+        factorId: verifiedTotp.id,
+      });
+      if (unenrollError) throw unenrollError;
+
+      await refreshSecurityState();
+      setNotice({ type: "success", message: "Two-factor authentication has been disabled." });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "We couldn’t disable 2FA right now. Please try again.";
+      setNotice({ type: "error", message });
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function handleSignOutOtherSessions() {
+    setNotice(null);
+    try {
+      setSecurityBusy(true);
+      const { error } = await supabase.auth.signOut({ scope: "others" });
+      if (error) throw error;
+      setNotice({
+        type: "success",
+        message: "Signed out from other active sessions. This device stays signed in.",
+      });
+      await refreshSecurityState();
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "We couldn’t revoke other sessions right now. Please try again.";
+      setNotice({ type: "error", message });
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
 
   async function handlePasswordChange() {
     setNotice(null);
@@ -306,8 +456,97 @@ export default function AccountClient() {
         <div className="space-y-3">
           <div className="grid gap-2 sm:grid-cols-2">
             <StatRow label="Last Login Date" value={formatDate(lastSignIn)} />
-            <StatRow label="Two-Factor Authentication" value="Coming Soon" />
-            <StatRow label="Active Sessions" value="Coming Soon" />
+            <StatRow label="Two-Factor Authentication" value={mfaEnabledAt ? "Enabled" : "Not Enabled"} />
+            <StatRow label="2FA Enabled On" value={formatDate(mfaEnabledAt)} />
+          </div>
+
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3">
+            <h3 className="text-sm font-semibold text-zinc-900">Two-Factor Authentication</h3>
+            <p className="text-xs text-zinc-600">
+              Add an extra layer of security to protect your collection.
+            </p>
+            {!mfaEnabledAt ? (
+              <button
+                type="button"
+                onClick={handleEnable2FA}
+                disabled={securityBusy || !!totpEnrollment}
+                className="btn-secondary"
+              >
+                {securityBusy ? "Starting…" : "Enable 2FA"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleDisable2FA}
+                disabled={securityBusy}
+                className="btn-secondary"
+              >
+                {securityBusy ? "Updating…" : "Disable 2FA"}
+              </button>
+            )}
+
+            {totpEnrollment ? (
+              <div className="space-y-3 rounded-md border border-zinc-300 bg-white p-3">
+                <p className="text-xs text-zinc-700">
+                  Scan this QR code with Google Authenticator, Authy, or another authenticator app.
+                </p>
+                <Image
+                  src={totpEnrollment.qrCode}
+                  alt="Two-factor authentication QR code"
+                  width={176}
+                  height={176}
+                  unoptimized
+                  className="h-44 w-44 rounded border border-zinc-200 bg-white p-2"
+                />
+                <div>
+                  <div className="text-xs font-medium text-zinc-700">Can’t scan?</div>
+                  <code className="block break-all rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-700">
+                    {totpEnrollment.secret}
+                  </code>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="text"
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value)}
+                    placeholder="Enter 6-digit code"
+                    inputMode="numeric"
+                    className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerify2FA}
+                    disabled={securityBusy}
+                    className="btn-primary"
+                  >
+                    {securityBusy ? "Verifying…" : "Verify and Enable"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3">
+            <h3 className="text-sm font-semibold text-zinc-900">Active Sessions</h3>
+            <div className="rounded-md border border-zinc-200 bg-white p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-zinc-900">{currentDeviceName}</p>
+                  <p className="text-xs text-zinc-600">Last active: {formatDate(lastSignIn)}</p>
+                </div>
+                <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
+                  Current Device
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSignOutOtherSessions}
+              disabled={securityBusy}
+              className="btn-secondary"
+            >
+              {securityBusy ? "Updating…" : "Log Out Other Sessions"}
+            </button>
           </div>
 
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3">
