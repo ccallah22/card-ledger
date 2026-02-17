@@ -6,6 +6,12 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import { createClient } from "@/lib/supabase/client";
 import { dbLoadCards } from "@/lib/db/cards";
+import {
+  getOrCreateDeviceId,
+  listMyDeviceSessions,
+  revokeOtherDeviceSessions,
+  type DeviceSession,
+} from "@/lib/db/deviceSessions";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import type { SportsCard } from "@/lib/types";
 
@@ -128,6 +134,8 @@ export default function AccountClient() {
   const [mfaEnabledAt, setMfaEnabledAt] = useState<string | null>(null);
   const [totpEnrollment, setTotpEnrollment] = useState<TotpEnrollment | null>(null);
   const [totpCode, setTotpCode] = useState("");
+  const [sessions, setSessions] = useState<DeviceSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   const [stats, setStats] = useState<CollectionStats>({
     totalCards: 0,
     totalValue: 0,
@@ -139,6 +147,7 @@ export default function AccountClient() {
   const [newPassword, setNewPassword] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
+  const currentDeviceId = typeof window === "undefined" ? "server" : getOrCreateDeviceId();
 
   const refreshSecurityState = useCallback(async () => {
     const [{ data: factorData, error: factorError }, { data: userData, error: userError }] =
@@ -159,6 +168,11 @@ export default function AccountClient() {
     }
   }, [supabase]);
 
+  const refreshDeviceSessions = useCallback(async () => {
+    const data = await listMyDeviceSessions();
+    setSessions(data);
+  }, []);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -168,6 +182,7 @@ export default function AccountClient() {
         if (!active) return;
         setStats(toStats(cards));
         await refreshSecurityState();
+        await refreshDeviceSessions();
         if (typeof navigator !== "undefined") {
           setCurrentDeviceName(browserLabel(navigator.userAgent));
         }
@@ -180,6 +195,7 @@ export default function AccountClient() {
         if (active) {
           setLoading(false);
           setStatsLoading(false);
+          setSessionsLoading(false);
         }
       }
     })();
@@ -187,7 +203,7 @@ export default function AccountClient() {
     return () => {
       active = false;
     };
-  }, [refreshSecurityState]);
+  }, [refreshDeviceSessions, refreshSecurityState]);
 
   async function handleEnable2FA() {
     setNotice(null);
@@ -286,6 +302,7 @@ export default function AccountClient() {
     setNotice(null);
     try {
       setSecurityBusy(true);
+      await revokeOtherDeviceSessions();
       const { error } = await supabase.auth.signOut({ scope: "others" });
       if (error) throw error;
       setNotice({
@@ -293,6 +310,7 @@ export default function AccountClient() {
         message: "Signed out from other active sessions. This device stays signed in.",
       });
       await refreshSecurityState();
+      await refreshDeviceSessions();
     } catch (err) {
       const message =
         err instanceof Error
@@ -528,25 +546,56 @@ export default function AccountClient() {
 
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3">
             <h3 className="text-sm font-semibold text-zinc-900">Active Sessions</h3>
-            <div className="rounded-md border border-zinc-200 bg-white p-3 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-zinc-900">{currentDeviceName}</p>
-                  <p className="text-xs text-zinc-600">Last active: {formatDate(lastSignIn)}</p>
-                </div>
-                <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
-                  Current Device
-                </span>
+            {sessionsLoading ? (
+              <div className="loading-state">Loading active sessions…</div>
+            ) : sessions.length === 0 ? (
+              <div className="empty-state">No active sessions found yet.</div>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map((session) => {
+                  const isCurrent = session.device_id === currentDeviceId;
+                  return (
+                    <div
+                      key={session.id}
+                      className="rounded-md border border-zinc-200 bg-white p-3 text-sm"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-zinc-900">
+                            {isCurrent ? currentDeviceName : session.device_name || "Web Device"}
+                          </p>
+                          <p className="text-xs text-zinc-600">
+                            Last active: {formatDate(session.last_seen_at)}
+                          </p>
+                        </div>
+                        {isCurrent ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
+                            Current Device
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
             <button
               type="button"
               onClick={handleSignOutOtherSessions}
-              disabled={securityBusy}
+              disabled={securityBusy || sessions.length <= 1}
               className="btn-secondary"
             >
               {securityBusy ? "Updating…" : "Log Out Other Sessions"}
             </button>
+            {sessions.length <= 1 ? (
+              <p className="text-xs text-zinc-500">
+                Sign in on another device to manage and revoke it here.
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3">

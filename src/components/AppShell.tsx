@@ -6,6 +6,7 @@ import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
+import { heartbeatDeviceSession } from "@/lib/db/deviceSessions";
 
 type NavItem = {
   href: string;
@@ -214,6 +215,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthScreen = pathname.startsWith("/login") || pathname.startsWith("/signup");
+  const isMarketing =
+    pathname === "/" ||
+    pathname === "/demo" ||
+    pathname === "/help" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    pathname === "/contact" ||
+    pathname === "/pricing" ||
+    pathname === "/about" ||
+    pathname === "/changelog" ||
+    pathname === "/status";
 
   const [collapsed, setCollapsed] = useState(false);
   const [hasLoadedPref, setHasLoadedPref] = useState(false);
@@ -278,7 +290,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         if (!data?.user) return;
 
         const cards = await dbLoadCards();
-        const toFix = cards.filter((c) => (c as any).soldFees !== undefined);
+        const toFix = cards.filter((c) => c.soldFees !== undefined);
         if (!toFix.length) {
           localStorage.setItem(SOLD_FEES_CLEANUP_KEY, "1");
           localStorage.removeItem(LEGACY_SOLD_FEES_CLEANUP_KEY);
@@ -305,6 +317,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (isAuthScreen || isMarketing) return;
+
+    let stopped = false;
+
+    const runHeartbeat = async () => {
+      if (stopped) return;
+      try {
+        await heartbeatDeviceSession();
+      } catch {
+        // Ignore heartbeat errors; account page can still load without sessions list.
+      }
+    };
+
+    void runHeartbeat();
+
+    const interval = window.setInterval(() => {
+      void runHeartbeat();
+    }, 5 * 60 * 1000);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void runHeartbeat();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [isAuthScreen, isMarketing]);
 
   useEffect(() => {
     if (!hasLoadedPref) return;
@@ -375,18 +422,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     for (const item of NAV) map.set(item.href, isActivePath(pathname, item.href));
     return map;
   }, [pathname]);
-
-  const isMarketing =
-    pathname === "/" ||
-    pathname === "/demo" ||
-    pathname === "/help" ||
-    pathname === "/privacy" ||
-    pathname === "/terms" ||
-    pathname === "/contact" ||
-    pathname === "/pricing" ||
-    pathname === "/about" ||
-    pathname === "/changelog" ||
-    pathname === "/status";
 
   return (
     <div
