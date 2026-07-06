@@ -7,8 +7,7 @@ import type { GradingStatus, CardStatus } from "@/lib/types";
 import { type MyCardInput, createMyCard } from "@/lib/repositories/myCards";
 import { listLocations } from "@/lib/repositories/locations";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
-import { buildCardFingerprint } from "@/lib/fingerprint";
-import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
+import { saveSharedImage } from "@/lib/db/sharedImages";
 import { saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 import type { ChecklistEntry } from "@/lib/db/checklists.client";
 import {
@@ -20,6 +19,7 @@ import { Field, Select, Check } from "@/components/forms/FormControls";
 import { useSetLookup } from "@/hooks/cards/useSetLookup";
 import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
 import { useCardImage } from "@/hooks/cards/useCardImage";
+import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 
@@ -88,9 +88,6 @@ function NewCardPageInner() {
 
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [reportInfo, setReportInfo] = useState<{ reports: number; status?: string } | null>(
-    null
-  );
 
   const {
     imageUrl,
@@ -135,66 +132,17 @@ function NewCardPageInner() {
     handleImageFile,
   } = useCardImage();
 
-  const fingerprint = useMemo(
-    () =>
-      buildCardFingerprint({
-        year,
-        setName,
-        cardNumber,
-        playerName,
-        team,
-        insert,
-        variation,
-        parallel,
-        serialTotal,
-      }),
-    [year, setName, cardNumber, playerName, team, insert, variation, parallel, serialTotal]
-  );
-
-  const [sharedImage, setSharedImage] = useState<null | {
-    fingerprint: string;
-    dataUrl: string;
-    isFront: boolean;
-    isSlabbed: boolean;
-    createdAt: string;
-  }>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (!fingerprint) {
-      setSharedImage(null);
-      return;
-    }
-    fetchSharedImage(fingerprint)
-      .then((img) => {
-        if (active) setSharedImage(img);
-      })
-      .catch(() => {
-        if (active) setSharedImage(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [fingerprint]);
-
-  useEffect(() => {
-    if (!fingerprint) {
-      setReportInfo(null);
-      return;
-    }
-    fetch("/api/image-reports/batch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fingerprints: [fingerprint] }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        const item = data?.[fingerprint];
-        if (item) setReportInfo({ reports: item.reports ?? 0, status: item.status });
-        else setReportInfo(null);
-      })
-      .catch(() => setReportInfo(null));
-  }, [fingerprint]);
+  const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
+    year,
+    setName,
+    cardNumber,
+    playerName,
+    team,
+    insert,
+    variation,
+    parallel,
+    serialTotal,
+  });
 
   useEffect(() => {
     if (isWishlist) {
