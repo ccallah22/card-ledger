@@ -6,41 +6,21 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
 import { type MyCardInput, createMyCard } from "@/lib/repositories/myCards";
 import { listLocations } from "@/lib/repositories/locations";
-import { searchSets } from "@/lib/repositories/sets";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
-import * as checklistDb from "@/lib/db/checklists.client";
 import type { ChecklistEntry } from "@/lib/db/checklists.client";
-import {
-  VARIANT_KEYWORDS,
-  expandChecklistWithSectionParallels,
-  expandScoreChecklist,
-  expandPrizmChecklist,
-  expandCwcChecklist,
-  expandDonrussChecklist,
-  sectionTokens,
-  sectionNumbers,
-  normalizeQueryTokens,
-} from "@/lib/checklists/parallelExpansion";
 import {
   applySectionAutoFill,
   inferFlagsFromSection,
-  checklistGroup,
   toNum,
 } from "@/lib/checklists/autofill";
 import { Field, Select, Check } from "@/components/forms/FormControls";
-
-type SetSuggestion = {
-  year: string;
-  name: string;
-  brand?: string;
-  sport?: string;
-  checklistKey?: string;
-};
+import { useSetLookup } from "@/hooks/cards/useSetLookup";
+import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -71,11 +51,15 @@ function NewCardPageInner() {
   const [setName, setSetName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
   const [team, setTeam] = useState("");
-  const [setQuery, setSetQuery] = useState("");
-  const [showSetResults, setShowSetResults] = useState(false);
-  const [checklistQuery, setChecklistQuery] = useState("");
-  const [showChecklistResults, setShowChecklistResults] = useState(false);
-  const [checklistSection, setChecklistSection] = useState<"ALL" | string>("ALL");
+  const {
+    setQuery,
+    setSetQuery,
+    showSetResults,
+    setShowSetResults,
+    setEntries,
+    setResults,
+    selectSet,
+  } = useSetLookup({ setYear, setSetName });
 
   // ✅ NEW
   const [location, setLocation] = useState("");
@@ -330,182 +314,18 @@ function NewCardPageInner() {
     return baseOk && cardPhotoConfirm;
   }, [playerName, year, setName, imageUrl, cardPhotoConfirm]);
 
-  const [setEntries, setSetEntries] = useState<SetSuggestion[]>([]);
-
-  // Debounce the network lookup so we don't fire a query on every keystroke,
-  // matching the pattern already used for player search (PlayerExplorer).
-  const [debouncedSetQuery, setDebouncedSetQuery] = useState("");
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSetQuery(setQuery), 150);
-    return () => clearTimeout(t);
-  }, [setQuery]);
-
-  useEffect(() => {
-    let active = true;
-    const trimmed = debouncedSetQuery.trim();
-
-    if (!trimmed) {
-      setSetEntries([]);
-      return;
-    }
-
-    searchSets(trimmed)
-      .then((sets) => {
-        if (!active) return;
-        setSetEntries(
-          sets.map((s) => ({
-            year: s.release_year != null ? String(s.release_year) : "",
-            name: s.name,
-            brand: s.brand ?? undefined,
-          })),
-        );
-      })
-      .catch(() => {
-        if (active) setSetEntries([]);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [debouncedSetQuery]);
-
-  const setResults = useMemo(() => {
-    const q = setQuery.trim().toLowerCase();
-    const list = q
-      ? setEntries.filter((s) => {
-          const hay = [s.year, s.name, s.brand ?? "", s.sport ?? ""].join(" ").toLowerCase();
-          return hay.includes(q);
-        })
-      : setEntries;
-    const scored = list.map((s) => {
-      let score = 0;
-      if (s.checklistKey) score += 3;
-      if (q) {
-        const name = s.name.toLowerCase();
-        const full = `${s.year} ${s.name}`.toLowerCase();
-        if (full === q) score += 5;
-        if (name.includes(q)) score += 2;
-        if (s.year.toLowerCase().includes(q)) score += 1;
-      }
-      return { s, score };
-    });
-    scored.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.s.name.localeCompare(b.s.name);
-    });
-    return scored.map((item) => item.s).slice(0, 12);
-  }, [setQuery, setEntries]);
-
-  const checklistKey = useMemo(() => {
-    const y = year.trim();
-    const name = setName.trim().toLowerCase();
-    if (!y || !name) return null;
-
-    const exact = setEntries.find(
-      (s) => s.checklistKey && s.year === y && s.name.toLowerCase() === name
-    );
-    if (exact?.checklistKey) return exact.checklistKey;
-
-    const fuzzy = setEntries.find(
-      (s) =>
-        s.checklistKey &&
-        s.year === y &&
-        (name.includes(s.name.toLowerCase()) || s.name.toLowerCase().includes(name))
-    );
-    return fuzzy?.checklistKey ?? null;
-  }, [year, setName, setEntries]);
-
-  const [checklistEntries, setChecklistEntries] = useState<ChecklistEntry[]>([]);
-  const [checklistLoading, setChecklistLoading] = useState(false);
-  const [checklistSectionParallels, setChecklistSectionParallels] = useState<
-    Record<string, string[]>
-  >({});
-
-  useEffect(() => {
-    if (!checklistKey) {
-      setChecklistEntries([]);
-      setChecklistSectionParallels({});
-      return;
-    }
-
-    let active = true;
-    setChecklistLoading(true);
-    Promise.all([
-      checklistDb.dbLoadChecklistEntries(checklistKey),
-      checklistDb.dbLoadChecklistSectionParallels(checklistKey),
-    ])
-      .then(([entries, parallels]) => {
-        if (!active) return;
-        setChecklistEntries(entries);
-        setChecklistSectionParallels(parallels);
-      })
-      .catch(() => {
-        if (!active) return;
-        setChecklistEntries([]);
-        setChecklistSectionParallels({});
-      })
-      .finally(() => {
-        if (active) setChecklistLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [checklistKey]);
-
-  const activeChecklist = useMemo(() => {
-    if (!checklistKey) return [];
-    if (Object.keys(checklistSectionParallels).length) {
-      return expandChecklistWithSectionParallels(checklistEntries, checklistSectionParallels);
-    }
-    if (checklistKey === "donruss-2025") return expandDonrussChecklist(checklistEntries);
-    if (checklistKey === "prizm-cwc-2025") return expandCwcChecklist(checklistEntries);
-    if (checklistKey === "prizm-2025") return expandPrizmChecklist(checklistEntries);
-    if (checklistKey === "score-2025") return expandScoreChecklist(checklistEntries);
-    return checklistEntries;
-  }, [checklistKey, checklistEntries, checklistSectionParallels]);
-
-  const checklistResults = useMemo(() => {
-    if (!activeChecklist.length) return [];
-    const qTokens = normalizeQueryTokens(checklistQuery);
-    const list = qTokens.length
-      ? activeChecklist.filter((c) => {
-          const tokens = sectionTokens(c.section);
-          const numbers = sectionNumbers(c.section);
-          const hayRaw = [
-            c.number,
-            c.name,
-            c.team ?? "",
-            c.section,
-            ...tokens,
-            ...numbers,
-          ]
-            .join(" ")
-            .toLowerCase();
-          const hay = hayRaw.replace(/[^a-z0-9]+/g, " ").trim();
-          return qTokens.every((t) => hay.includes(t));
-        })
-      : activeChecklist;
-    const filtered =
-      checklistSection === "ALL"
-        ? list
-        : list.filter((c) => checklistGroup(c.section) === checklistSection);
-    const base = filtered.filter((c) => !VARIANT_KEYWORDS.some((k) => c.section.includes(k)));
-    const variants = filtered.filter((c) => VARIANT_KEYWORDS.some((k) => c.section.includes(k)));
-    return [...base, ...variants].slice(0, 200);
-  }, [activeChecklist, checklistQuery, checklistSection]);
-
-  const checklistGroups = useMemo(() => {
-    if (!activeChecklist.length) return [];
-    const counts = new Map<string, number>();
-    for (const c of activeChecklist) {
-      const group = checklistGroup(c.section);
-      counts.set(group, (counts.get(group) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [activeChecklist]);
+  const {
+    checklistQuery,
+    setChecklistQuery,
+    showChecklistResults,
+    setShowChecklistResults,
+    checklistSection,
+    setChecklistSection,
+    activeChecklist,
+    checklistResults,
+    checklistLoading,
+    checklistGroups,
+  } = useChecklistLookup({ setEntries, year, setName });
 
   function handleImageFile(file: File | null) {
     if (!file) return;
@@ -728,14 +548,11 @@ function NewCardPageInner() {
                     type="button"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      setYear(s.year);
-                      setSetName(s.name);
-                      setSetQuery(`${s.year} ${s.name}`);
+                      selectSet(s);
                       if (s.checklistKey) {
                         setChecklistQuery("");
                         setChecklistSection("ALL");
                       }
-                      setShowSetResults(false);
                     }}
                     className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
                   >
