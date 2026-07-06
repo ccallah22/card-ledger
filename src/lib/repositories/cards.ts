@@ -55,6 +55,72 @@ export async function getCard(id: number): Promise<CardRow | null> {
   return data as CardRow | null;
 }
 
+/**
+ * Display-ready catalog card for the read-only /catalog/cards/[id] page:
+ * the card's own fields plus its set (cards.set_id -> sets) and the
+ * player(s) featured on it (via card_players -> players). This is the
+ * catalog card (cards.id), not a specific user's owned copy.
+ */
+export type CardWithContext = {
+  id: number;
+  cardNumber: string;
+  title: string | null;
+  rookieCard: boolean;
+  isInsert: boolean;
+  isAutograph: boolean;
+  isMemorabilia: boolean;
+  releaseYear: number | null;
+  setName: string | null;
+  setBrand: string | null;
+  setManufacturer: string | null;
+  playerNames: string[];
+};
+
+type CardWithContextRow = {
+  id: number;
+  card_number: string;
+  title: string | null;
+  rookie_card: boolean;
+  is_insert: boolean;
+  is_autograph: boolean;
+  is_memorabilia: boolean;
+  sets: { name: string | null; release_year: number | null; brand: string | null; manufacturer: string | null } | null;
+  card_players: { players: { full_name: string } | null }[] | null;
+};
+
+const CARD_CONTEXT_SELECT =
+  "id, card_number, title, rookie_card, is_insert, is_autograph, is_memorabilia, sets(name, release_year, brand, manufacturer), card_players(players(full_name))";
+
+export async function getCardWithContext(id: number): Promise<CardWithContext | null> {
+  const { data, error } = await supabase
+    .from("cards")
+    .select(CARD_CONTEXT_SELECT)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as unknown as CardWithContextRow;
+
+  return {
+    id: row.id,
+    cardNumber: row.card_number,
+    title: row.title,
+    rookieCard: row.rookie_card,
+    isInsert: row.is_insert,
+    isAutograph: row.is_autograph,
+    isMemorabilia: row.is_memorabilia,
+    releaseYear: row.sets?.release_year ?? null,
+    setName: row.sets?.name ?? null,
+    setBrand: row.sets?.brand ?? null,
+    setManufacturer: row.sets?.manufacturer ?? null,
+    playerNames: (row.card_players ?? [])
+      .map((cp) => cp.players?.full_name)
+      .filter((name): name is string => !!name),
+  };
+}
+
 export async function findCardBySetAndNumber(
   setId: number,
   cardNumber: string,

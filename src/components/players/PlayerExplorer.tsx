@@ -1,21 +1,43 @@
 "use client";
 
-import { useState } from "react";
-import { players } from "@/lib/players";
+import { useEffect, useState } from "react";
+import { listPlayers, searchPlayers, type PlayerWithContext } from "@/lib/repositories/players";
 import { PlayerCard } from "@/components/players/PlayerCard";
 
 export function PlayerExplorer() {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [players, setPlayers] = useState<PlayerWithContext[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const filteredPlayers = players.filter((player) => {
-    const query = search.toLowerCase();
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(t);
+  }, [search]);
 
-    return (
-      player.name.toLowerCase().includes(query) ||
-      player.sport.toLowerCase().includes(query) ||
-      player.team.toLowerCase().includes(query)
-    );
-  });
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const data = debouncedSearch.trim()
+          ? await searchPlayers(debouncedSearch.trim())
+          : await listPlayers();
+        if (active) setPlayers(data);
+      } catch (e) {
+        if (active) setError(e instanceof Error ? e.message : "Failed to load players.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [debouncedSearch]);
 
   return (
     <div className="rounded-lg border bg-card p-6">
@@ -38,18 +60,16 @@ export function PlayerExplorer() {
       </p>
 
       <div className="mt-6 space-y-3">
-        {filteredPlayers.length === 0 && (
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading players…</p>
+        ) : error ? (
+          <p className="text-sm text-red-600">Could not load players. {error}</p>
+        ) : players.length === 0 ? (
           <p className="text-sm text-muted-foreground">No players found.</p>
+        ) : (
+          players.map((player) => <PlayerCard key={player.id} player={player} />)
         )}
-
-        {filteredPlayers.map((player) => (
-          <PlayerCard
-  key={player.id}
-  player={player}
-/>
-        ))}
       </div>
     </div>
   );
 }
-

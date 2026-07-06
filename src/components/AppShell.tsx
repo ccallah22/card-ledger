@@ -93,6 +93,14 @@ function IconTag() {
     </svg>
   );
 }
+function IconUser() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+    </svg>
+  );
+}
 
 function IconDots() {
   return (
@@ -124,6 +132,7 @@ const NAV: NavItem[] = [
   { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
   { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
   { href: "/cards/sold", label: "Sold History", icon: <IconReceipt /> },
+  { href: "/players", label: "Players", icon: <IconUser /> },
 ];
 
 function isActivePath(pathname: string, href: string) {

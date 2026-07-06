@@ -14,32 +14,90 @@ export type PlayerRow = {
   updated_at: string;
 };
 
-export async function listPlayers(): Promise<PlayerRow[]> {
+/**
+ * Display-ready player shape for list/search results: identity fields plus
+ * team/league/sport context resolved via players.team_id -> teams and
+ * players.league_id -> leagues -> sports. Any of the three context fields
+ * may be null if that relationship isn't set on the player yet.
+ */
+export type PlayerWithContext = {
+  id: number;
+  full_name: string;
+  slug: string;
+  team_name: string | null;
+  league_name: string | null;
+  sport_name: string | null;
+};
+
+type PlayerWithContextRow = {
+  id: number;
+  full_name: string;
+  slug: string;
+  teams: { name: string } | null;
+  leagues: { name: string; sports: { name: string } | null } | null;
+};
+
+const CONTEXT_SELECT = "id, full_name, slug, teams(name), leagues(name, sports(name))";
+
+function toPlayerWithContext(row: PlayerWithContextRow): PlayerWithContext {
+  return {
+    id: row.id,
+    full_name: row.full_name,
+    slug: row.slug,
+    team_name: row.teams?.name ?? null,
+    league_name: row.leagues?.name ?? null,
+    sport_name: row.leagues?.sports?.name ?? null,
+  };
+}
+
+export async function listPlayers(): Promise<PlayerWithContext[]> {
   const { data, error } = await supabase
     .from("players")
-    .select("*")
-    .order("full_name", { ascending: true });
+    .select(CONTEXT_SELECT)
+    .order("full_name", { ascending: true })
+    .limit(100);
 
   if (error) throw error;
 
-  return (data ?? []) as PlayerRow[];
+  return ((data ?? []) as unknown as PlayerWithContextRow[]).map(toPlayerWithContext);
 }
 
-export async function searchPlayers(queryText: string): Promise<PlayerRow[]> {
+export async function searchPlayers(queryText: string): Promise<PlayerWithContext[]> {
   const trimmed = queryText.trim();
 
   if (!trimmed) return [];
 
   const { data, error } = await supabase
     .from("players")
-    .select("*")
+    .select(CONTEXT_SELECT)
     .or(`full_name.ilike.%${trimmed}%,search_text.ilike.%${trimmed}%`)
     .order("full_name", { ascending: true })
     .limit(25);
 
   if (error) throw error;
 
-  return (data ?? []) as PlayerRow[];
+  return ((data ?? []) as unknown as PlayerWithContextRow[]).map(toPlayerWithContext);
+}
+
+/**
+ * Looks up a player by slug for the player detail route, with the same
+ * display context as listPlayers/searchPlayers. Slugs are only unique per
+ * league (players_league_id_slug_key), so a bare slug lookup could in
+ * principle match more than one player across different leagues; this
+ * takes the first match rather than erroring, since disambiguating further
+ * would need a league in the URL, which the detail route doesn't have yet.
+ */
+export async function getPlayerBySlug(slug: string): Promise<PlayerWithContext | null> {
+  const { data, error } = await supabase
+    .from("players")
+    .select(CONTEXT_SELECT)
+    .eq("slug", slug)
+    .limit(1);
+
+  if (error) throw error;
+
+  const row = (data as unknown as PlayerWithContextRow[] | null)?.[0];
+  return row ? toPlayerWithContext(row) : null;
 }
 
 export async function getPlayer(id: number): Promise<PlayerRow | null> {
