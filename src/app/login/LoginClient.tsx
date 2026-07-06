@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 export default function LoginClient() {
   const searchParams = useSearchParams();
-  const nextPath = useMemo(() => searchParams.get("next") || "/cards", [searchParams]);
+  const nextPath = useMemo(() => searchParams.get("next") || "/dashboard", [searchParams]);
   const signedOut = useMemo(() => searchParams.get("signed_out") === "1", [searchParams]);
 
   const [email, setEmail] = useState("");

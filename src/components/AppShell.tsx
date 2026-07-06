@@ -16,6 +16,16 @@ type NavItem = {
 const SIDEBAR_KEY = "thebinder:ui:sidebar-collapsed:v1";
 const LEGACY_SIDEBAR_KEY = "card-ledger:ui:sidebar-collapsed:v1";
 
+function IconChart() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 20V10" />
+      <path d="M12 20V4" />
+      <path d="M20 20v-6" />
+    </svg>
+  );
+}
+
 function IconGrid() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
@@ -137,6 +147,7 @@ function IconChevronRight() {
 }
 
 const NAV: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: <IconChart /> },
   { href: "/cards", label: "Binder", icon: <IconGrid /> },
   { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
   { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
