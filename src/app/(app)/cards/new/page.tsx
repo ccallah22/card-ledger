@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
@@ -9,7 +9,6 @@ import { listLocations } from "@/lib/repositories/locations";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
-import { cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 import type { ChecklistEntry } from "@/lib/db/checklists.client";
 import {
@@ -20,6 +19,7 @@ import {
 import { Field, Select, Check } from "@/components/forms/FormControls";
 import { useSetLookup } from "@/hooks/cards/useSetLookup";
 import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
+import { useCardImage } from "@/hooks/cards/useCardImage";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 
@@ -87,50 +87,53 @@ function NewCardPageInner() {
   const [isPatch, setIsPatch] = useState(false);
 
   const [notes, setNotes] = useState("");
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageIsFront, setImageIsFront] = useState(true);
-  const [imageIsSlabbed, setImageIsSlabbed] = useState(false);
-  const [imageShare, setImageShare] = useState(false);
-  const [imageOwnerConfirm, setImageOwnerConfirm] = useState(false);
-  const [imageType, setImageType] = useState<
-    "front" | "back" | "slab_front" | "slab_back"
-  >("front");
-  const [imageError, setImageError] = useState<string>("");
-  const [imageCheckStatus, setImageCheckStatus] = useState<
-    "idle" | "checking" | "accept" | "review" | "block"
-  >("idle");
-  const [cardPhotoConfirm, setCardPhotoConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [reportInfo, setReportInfo] = useState<{ reports: number; status?: string } | null>(
     null
   );
 
-  const [cropData, setCropData] = useState<{
-    dataUrl: string;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [cropSource, setCropSource] = useState<{
-    dataUrl: string;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [showCrop, setShowCrop] = useState(false);
-  const [cropZoom, setCropZoom] = useState(1);
-  const [cropRotationBase, setCropRotationBase] = useState(0);
-  const [cropRotationFine, setCropRotationFine] = useState(0);
-  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
-  const cropDragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
-
-  const CROP_FRAME_W = 320;
-  const CROP_FRAME_H = 448;
-  const CROP_FRAME_PAD = 8;
-  const CROP_BOX_W = CROP_FRAME_W - CROP_FRAME_PAD * 2;
-  const CROP_BOX_H = CROP_FRAME_H - CROP_FRAME_PAD * 2;
-  const CROP_ZOOM_MIN = 1;
-  const CROP_ZOOM_MAX = 1.5;
-  const CROP_ROTATION_FINE_MIN = -10;
-  const CROP_ROTATION_FINE_MAX = 10;
+  const {
+    imageUrl,
+    setImageUrl,
+    imageIsFront,
+    setImageIsFront,
+    imageIsSlabbed,
+    setImageIsSlabbed,
+    imageShare,
+    setImageShare,
+    imageOwnerConfirm,
+    setImageOwnerConfirm,
+    imageType,
+    setImageType,
+    imageError,
+    setImageError,
+    imageCheckStatus,
+    setImageCheckStatus,
+    cardPhotoConfirm,
+    setCardPhotoConfirm,
+    cropData,
+    setCropData,
+    setCropSource,
+    showCrop,
+    setShowCrop,
+    cropZoom,
+    setCropZoom,
+    cropRotationBase,
+    cropRotationFine,
+    cropOffset,
+    setCropOffset,
+    cropDragRef,
+    cropBoxWidth,
+    cropBoxHeight,
+    cropZoomMin,
+    cropZoomMax,
+    cropRotationFineMin,
+    cropRotationFineMax,
+    clampCropOffset,
+    applyCropRotation,
+    confirmCrop,
+    handleImageFile,
+  } = useCardImage();
 
   const fingerprint = useMemo(
     () =>
@@ -216,99 +219,6 @@ function NewCardPageInner() {
     setCardPhotoConfirm(false);
   }, [isWishlistCard]);
 
-  function clampCropOffset(
-    next: { x: number; y: number },
-    data: { width: number; height: number }
-  ) {
-    const baseScale = Math.max(CROP_BOX_W / data.width, CROP_BOX_H / data.height);
-    const scale = baseScale * cropZoom;
-    const scaledW = data.width * scale;
-    const scaledH = data.height * scale;
-    const maxX = Math.max(0, (scaledW - CROP_BOX_W) / 2);
-    const maxY = Math.max(0, (scaledH - CROP_BOX_H) / 2);
-    return {
-      x: Math.max(-maxX, Math.min(maxX, next.x)),
-      y: Math.max(-maxY, Math.min(maxY, next.y)),
-    };
-  }
-
-  useEffect(() => {
-    if (!cropData) return;
-    setCropOffset((prev) => clampCropOffset(prev, cropData));
-  }, [cropZoom, cropData]);
-
-  async function runImageCheck(dataUrl: string) {
-    const res = await fetch("/api/image-check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageDataUrl: dataUrl }),
-    });
-    const data = await res.json();
-    if (!res.ok || data?.message) {
-      setImageCheckStatus("review");
-      return;
-    }
-    if (data.decision === "block") {
-      setImageCheckStatus("block");
-      setImageUrl(null);
-      setImageError(
-        "This doesn’t look like a card photo. Please upload a picture of the card."
-      );
-      return;
-    }
-    setImageCheckStatus(data.decision === "review" ? "review" : "accept");
-  }
-
-  async function confirmCrop() {
-    if (!cropData) return;
-    const baseScale = Math.max(CROP_BOX_W / cropData.width, CROP_BOX_H / cropData.height);
-    const scale = baseScale * cropZoom;
-    const rawCropW = CROP_BOX_W / scale;
-    const rawCropH = CROP_BOX_H / scale;
-    const cropW = Math.min(cropData.width, rawCropW);
-    const cropH = Math.min(cropData.height, rawCropH);
-    const x = cropData.width / 2 + ((-CROP_BOX_W / 2 - cropOffset.x) / scale);
-    const y = cropData.height / 2 + ((-CROP_BOX_H / 2 - cropOffset.y) / scale);
-    const cropped = await cropImageDataUrl(cropData.dataUrl, {
-      x: Math.max(0, Math.min(cropData.width - cropW, x)),
-      y: Math.max(0, Math.min(cropData.height - cropH, y)),
-      width: cropW,
-      height: cropH,
-    }, "image/webp", 0.92, { width: CROP_BOX_W, height: CROP_BOX_H });
-    setImageUrl(cropped);
-    setImageOwnerConfirm(false);
-    setImageShare(false);
-    setCardPhotoConfirm(false);
-    setShowCrop(false);
-    setCropData(null);
-    setImageCheckStatus("checking");
-    await runImageCheck(cropped);
-  }
-
-  async function applyCropRotation(nextBase: number, nextFine: number) {
-    if (!cropSource) return;
-    try {
-      const totalRotation = nextBase + nextFine;
-      const rotated = await rotateImageDataUrl(cropSource.dataUrl, totalRotation);
-      const img = new Image();
-      img.onload = () => {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        setCropData({ dataUrl: rotated, width, height });
-        setCropOffset({ x: 0, y: 0 });
-        setCropZoom(1);
-        setCropRotationBase(nextBase);
-        setCropRotationFine(nextFine);
-      };
-      img.onerror = () => {
-        setImageError("Failed to rotate image.");
-      };
-      img.src = rotated;
-    } catch {
-      setImageError("Failed to rotate image.");
-    }
-  }
-
   const canSave = useMemo(() => {
     const baseOk = Boolean(playerName.trim() && year.trim() && setName.trim());
     if (!imageUrl) return baseOk;
@@ -327,26 +237,6 @@ function NewCardPageInner() {
     checklistLoading,
     checklistGroups,
   } = useChecklistLookup({ setEntries, year, setName });
-
-  function handleImageFile(file: File | null) {
-    if (!file) return;
-    setImageError("");
-    setImageCheckStatus("checking");
-    processImageFile(file)
-      .then(async (result) => {
-        setCropSource({ dataUrl: result.dataUrl, width: result.width, height: result.height });
-        setCropData({ dataUrl: result.dataUrl, width: result.width, height: result.height });
-        setCropOffset({ x: 0, y: 0 });
-        setCropZoom(1);
-        setCropRotationBase(0);
-        setCropRotationFine(0);
-        setShowCrop(true);
-      })
-      .catch((err: Error) => {
-        setImageCheckStatus("idle");
-        setImageError(err.message || "Image failed validation.");
-      });
-  }
 
   function buildCard(): MyCardInput | null {
     if (!canSave) return null;
@@ -855,12 +745,12 @@ function NewCardPageInner() {
         cropRotationFine={cropRotationFine}
         applyCropRotation={applyCropRotation}
         confirmCrop={confirmCrop}
-        cropBoxWidth={CROP_BOX_W}
-        cropBoxHeight={CROP_BOX_H}
-        cropZoomMin={CROP_ZOOM_MIN}
-        cropZoomMax={CROP_ZOOM_MAX}
-        cropRotationFineMin={CROP_ROTATION_FINE_MIN}
-        cropRotationFineMax={CROP_ROTATION_FINE_MAX}
+        cropBoxWidth={cropBoxWidth}
+        cropBoxHeight={cropBoxHeight}
+        cropZoomMin={cropZoomMin}
+        cropZoomMax={cropZoomMax}
+        cropRotationFineMin={cropRotationFineMin}
+        cropRotationFineMax={cropRotationFineMax}
       />
     </div>
   );
