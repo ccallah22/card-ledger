@@ -59,7 +59,7 @@ export default function LoginClient() {
 
       if (mode === "signup") {
         setStatus("success");
-        setInfo("Account created. Check your email to confirm, then sign in.");
+        setInfo("Account created. You can now continue.");
         return;
       }
 
@@ -109,11 +109,6 @@ export default function LoginClient() {
             style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ccc" }}
           />
         </label>
-        {mode === "signup" ? (
-          <div style={{ fontSize: 12, opacity: 0.8 }}>
-            We’ll email a confirmation link before you can sign in.
-          </div>
-        ) : null}
 
         {info ? (
           <div style={{ padding: 10, borderRadius: 10, border: "1px solid #86efac" }}>

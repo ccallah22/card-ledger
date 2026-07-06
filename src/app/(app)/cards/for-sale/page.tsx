@@ -2,26 +2,30 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { SportsCard } from "@/lib/types";
-import { dbLoadCards, dbUpsertCard } from "@/lib/db/cards";
+import { type MyCard, listMyCards, updateMyCard } from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { formatCurrency } from "@/lib/format";
 import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-function labelForCard(c: SportsCard) {
+function labelForCard(c: MyCard) {
   return `${c.playerName} • ${c.year} • ${c.setName}${c.cardNumber ? ` #${c.cardNumber}` : ""}`;
 }
 
-function serialLabel(c: SportsCard) {
-  const serialNumber = (c as any).serialNumber as number | undefined;
-  const serialTotal = (c as any).serialTotal as number | undefined;
-  if (typeof serialNumber === "number" && typeof serialTotal === "number") {
-    return `${serialNumber}/${serialTotal}`;
+function serialLabel(c: MyCard) {
+  if (typeof c.serialNumber === "number" && typeof c.serialTotal === "number") {
+    return `${c.serialNumber}/${c.serialTotal}`;
   }
-  if (typeof serialTotal === "number") return `/${serialTotal}`;
+  if (typeof c.serialTotal === "number") return `/${c.serialTotal}`;
   return "";
 }
 
@@ -44,7 +48,7 @@ function MiniBadge({
 }
 
 export default function ForSalePage() {
-  const [cards, setCards] = useState<SportsCard[]>([]);
+  const [cards, setCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -56,7 +60,8 @@ export default function ForSalePage() {
       try {
         setLoading(true);
         setError("");
-        const data = await dbLoadCards();
+        const profileId = await requireProfileId();
+        const data = await listMyCards(profileId);
         if (active) setCards(data);
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load cards");
@@ -84,7 +89,7 @@ export default function ForSalePage() {
   const totals = useMemo(() => {
     const count = forSaleCards.length;
     const totalAsk = forSaleCards.reduce(
-      (sum, c) => sum + (asNumber((c as any).askingPrice) ?? 0),
+      (sum, c) => sum + (asNumber(c.askingPrice) ?? 0),
       0
     );
     return { count, totalAsk };
@@ -126,14 +131,13 @@ export default function ForSalePage() {
 
     setBulkBusy(true);
     try {
-      const updated = cards.map((c) =>
-        selectedIds.has(c.id) ? ({ ...c, status: "HAVE" } as SportsCard) : c
+      const profileId = await requireProfileId();
+      const ids = Array.from(selectedIds);
+      const updated = await Promise.all(
+        ids.map((id) => updateMyCard(profileId, id, { status: "HAVE" })),
       );
-      const changed = updated.filter((c, idx) => cards[idx].status !== c.status);
-      for (const next of changed) {
-        await dbUpsertCard(next);
-      }
-      setCards(updated);
+      const byId = new Map(updated.map((c) => [c.id, c]));
+      setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
       setSelectedIds(new Set());
     } catch (e: any) {
       setError(e?.message ?? "Failed to remove selected cards.");
@@ -240,16 +244,13 @@ export default function ForSalePage() {
         ) : (
           <div className="divide-y">
             {forSaleCards.map((c) => {
-              const asking = asNumber((c as any).askingPrice);
-              const variation = (c as any).variation as string | undefined;
-              const insert = (c as any).insert as string | undefined;
-              const parallel = (c as any).parallel as string | undefined;
+              const asking = asNumber(c.askingPrice);
+              const variation = c.variation;
+              const insert = c.insert;
+              const parallel = c.parallel;
               const serial = serialLabel(c);
               const imageUrl =
-                loadThumbnailForCard(String(c.id)) ??
-                loadImageForCard(String(c.id)) ??
-                ((c as any).imageUrl as string | undefined) ??
-                "";
+                loadThumbnailForCard(String(c.id)) ?? loadImageForCard(String(c.id)) ?? "";
               return (
                 <div
                   key={c.id}
@@ -299,9 +300,9 @@ export default function ForSalePage() {
                                 `Remove ${c.playerName} from For Sale?`
                               );
                               if (!confirmed) return;
-                              const next: SportsCard = { ...c, status: "HAVE" };
                               try {
-                                await dbUpsertCard(next);
+                                const profileId = await requireProfileId();
+                                const next = await updateMyCard(profileId, c.id, { status: "HAVE" });
                                 setCards((prev) =>
                                   prev.map((item) => (item.id === c.id ? next : item))
                                 );
@@ -326,15 +327,15 @@ export default function ForSalePage() {
                           {insert ? <MiniBadge>{insert}</MiniBadge> : null}
                           {parallel ? <MiniBadge>{parallel}</MiniBadge> : null}
                           {serial ? <MiniBadge>#{serial}</MiniBadge> : null}
-                          {(c as any).isRookie ? (
+                          {c.isRookie ? (
                             <MiniBadge>
                               <span className="uppercase tracking-wider">Rookie</span>
                             </MiniBadge>
                           ) : null}
-                          {(c as any).isAutograph ? (
+                          {c.isAutograph ? (
                             <MiniBadge tone="purple">Auto</MiniBadge>
                           ) : null}
-                          {(c as any).isPatch ? (
+                          {c.isPatch ? (
                             <MiniBadge tone="amber">Patch</MiniBadge>
                           ) : null}
                         </div>
@@ -364,9 +365,9 @@ export default function ForSalePage() {
                           `Remove ${c.playerName} from For Sale?`
                         );
                         if (!confirmed) return;
-                        const next: SportsCard = { ...c, status: "HAVE" };
                         try {
-                          await dbUpsertCard(next);
+                          const profileId = await requireProfileId();
+                          const next = await updateMyCard(profileId, c.id, { status: "HAVE" });
                           setCards((prev) =>
                             prev.map((item) => (item.id === c.id ? next : item))
                           );

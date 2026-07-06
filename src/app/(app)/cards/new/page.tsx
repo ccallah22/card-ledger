@@ -3,16 +3,32 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
-import { dbLoadCards, dbUpsertCard } from "@/lib/db/cards";
+import type { GradingStatus, CardStatus } from "@/lib/types";
+import { type MyCardInput, createMyCard } from "@/lib/repositories/myCards";
+import { listLocations } from "@/lib/repositories/locations";
+import { listSets } from "@/lib/repositories/sets";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
 import { IMAGE_RULES, cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
-import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
 import { saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 import * as checklistDb from "@/lib/db/checklists.client";
 import type { ChecklistEntry } from "@/lib/db/checklists.client";
+
+type SetSuggestion = {
+  year: string;
+  name: string;
+  brand?: string;
+  sport?: string;
+  checklistKey?: string;
+};
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 const INSERT_SECTIONS = new Set([
   "Anniversary Rookies",
@@ -1678,14 +1694,6 @@ function checklistGroup(section: string) {
   return "Parallels";
 }
 
-function uid() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  // fallback (may not be accepted by Supabase UUID columns)
-  return Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36);
-}
-
 function toNum(v: string): number | undefined {
   const t = v.trim();
   if (!t) return undefined;
@@ -1703,13 +1711,9 @@ function NewCardPageInner() {
   useEffect(() => {
     (async () => {
       try {
-        const cards = await dbLoadCards();
-        const set = new Set<string>();
-        for (const c of cards) {
-          const raw = (((c as any).location as string | undefined) ?? "").trim();
-          if (raw) set.add(raw);
-        }
-        setLocationOptions(Array.from(set).sort((a, b) => a.localeCompare(b)));
+        const profileId = await requireProfileId();
+        const locations = await listLocations(profileId);
+        setLocationOptions(locations.map((l) => l.name).sort((a, b) => a.localeCompare(b)));
       } catch {
         // ignore
       }
@@ -1731,7 +1735,7 @@ function NewCardPageInner() {
   const [location, setLocation] = useState("");
   const [locationOptions, setLocationOptions] = useState<string[]>([]);
 
-  const [condition, setCondition] = useState<CardCondition>("RAW");
+  const [gradingStatus, setGradingStatus] = useState<GradingStatus>("RAW");
   const [grader, setGrader] = useState("");
   const [grade, setGrade] = useState("");
 
@@ -1980,13 +1984,20 @@ function NewCardPageInner() {
     return baseOk && cardPhotoConfirm;
   }, [playerName, year, setName, imageUrl, cardPhotoConfirm]);
 
-  const [setEntries, setSetEntries] = useState<SetEntry[]>([]);
+  const [setEntries, setSetEntries] = useState<SetSuggestion[]>([]);
 
   useEffect(() => {
     let active = true;
-    dbLoadSets()
+    listSets()
       .then((sets) => {
-        if (active) setSetEntries(sets);
+        if (!active) return;
+        setSetEntries(
+          sets.map((s) => ({
+            year: s.release_year != null ? String(s.release_year) : "",
+            name: s.name,
+            brand: s.brand ?? undefined,
+          })),
+        );
       })
       .catch(() => {
         if (active) setSetEntries([]);
@@ -2154,33 +2165,30 @@ function NewCardPageInner() {
       });
   }
 
-  function buildCard(): SportsCard | null {
+  function buildCard(): MyCardInput | null {
     if (!canSave) return null;
 
-    const now = new Date().toISOString();
     const derivedSerialTotal =
       serialTotal.trim() ||
       (parallel.match(/\/\s*(\d+)\b/) ? parallel.match(/\/\s*(\d+)\b/)?.[1] ?? "" : "");
 
-    const card: SportsCard = {
-      id: uid(),
+    const card: MyCardInput = {
       playerName: playerName.trim(),
       year: year.trim(),
       setName: setName.trim(),
       cardNumber: cardNumber.trim() || undefined,
       team: team.trim() || undefined,
 
-      // ✅ NEW
       location: isWishlistCard ? undefined : location.trim() || undefined,
 
-      condition,
-      grader: condition === "GRADED" ? (grader.trim() || undefined) : undefined,
-      grade: condition === "GRADED" ? (grade.trim() || undefined) : undefined,
+      gradingStatus,
+      grader: gradingStatus === "GRADED" ? (grader.trim() || undefined) : undefined,
+      grade: gradingStatus === "GRADED" ? (grade.trim() || undefined) : undefined,
 
       status: isWishlistCard ? "WANT" : status,
 
       purchasePrice: isWishlistCard ? undefined : toNum(purchasePrice),
-      marketValue: isWishlistCard ? undefined : toNum(marketValue),
+      estimatedValue: isWishlistCard ? undefined : toNum(marketValue),
       purchaseDate: isWishlistCard ? undefined : purchaseDate || undefined,
 
       variation: variation.trim() || undefined,
@@ -2195,25 +2203,20 @@ function NewCardPageInner() {
 
       notes: notes.trim() || undefined,
 
-      imageUrl: isWishlistCard ? undefined : imageUrl || undefined,
       imageShared: isWishlistCard ? undefined : imageShare || undefined,
-      imageIsFront: isWishlistCard ? undefined : imageIsFront,
-      imageIsSlabbed: isWishlistCard ? undefined : imageIsSlabbed,
       imageType: isWishlistCard ? undefined : imageType,
-
-      createdAt: now,
-      updatedAt: now,
     };
 
     return card;
   }
 
   async function onSave() {
-    const card = buildCard();
-    if (!card) return;
+    const input = buildCard();
+    if (!input) return;
     setIsSaving(true);
     try {
-      await dbUpsertCard(card);
+      const profileId = await requireProfileId();
+      const card = await createMyCard(profileId, input);
       if (!isWishlistCard && imageUrl) {
         saveImageForCard(String(card.id), imageUrl);
         await saveThumbnailForCard(String(card.id), imageUrl);
@@ -2246,11 +2249,12 @@ function NewCardPageInner() {
   }
 
   async function onSaveAndAddAnother() {
-    const card = buildCard();
-    if (!card) return;
+    const input = buildCard();
+    if (!input) return;
     setIsSaving(true);
     try {
-      await dbUpsertCard(card);
+      const profileId = await requireProfileId();
+      const card = await createMyCard(profileId, input);
       if (!isWishlistCard && imageUrl) {
         saveImageForCard(String(card.id), imageUrl);
         await saveThumbnailForCard(String(card.id), imageUrl);
@@ -2283,7 +2287,7 @@ function NewCardPageInner() {
       setCardNumber("");
       setTeam("");
       setLocation("");
-      setCondition("RAW");
+      setGradingStatus("RAW");
       setGrader("");
       setGrade("");
       setStatus("HAVE");
@@ -2737,8 +2741,8 @@ function NewCardPageInner() {
 
         <Select
           label="Condition"
-          value={condition}
-          onChange={(v) => setCondition(v as CardCondition)}
+          value={gradingStatus}
+          onChange={(v) => setGradingStatus(v as GradingStatus)}
           options={[
             ["RAW", "Raw"],
             ["GRADED", "Graded"],
@@ -2746,7 +2750,7 @@ function NewCardPageInner() {
         />
 
         {/* ✅ Only show grading fields when needed (no empty grid gaps) */}
-        {condition === "GRADED" ? (
+        {gradingStatus === "GRADED" ? (
           <>
             <Field label="Grader" value={grader} onChange={setGrader} placeholder="PSA" />
             <Field label="Grade" value={grade} onChange={setGrade} placeholder="10" />

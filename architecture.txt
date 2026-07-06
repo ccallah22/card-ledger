@@ -1,0 +1,201 @@
+Folder PATH listing for volume Windows
+Volume serial number is 00000239 94FB:2769
+C:\USERS\CALLA\ONEDRIVE\DESKTOP\THEBINDER\CARD-LEDGER\SRC
++---app
+¦   ¦   apple-icon.png
+¦   ¦   globals.css
+¦   ¦   head.tsx
+¦   ¦   icon.png
+¦   ¦   layout.tsx
+¦   ¦   manifest.ts
+¦   ¦   not-found.tsx
+¦   ¦   page.tsx
+¦   ¦   robots.ts
+¦   ¦   sitemap.ts
+¦   ¦   
+¦   +---(app)
+¦   ¦   ¦   layout.tsx
+¦   ¦   ¦   
+¦   ¦   +---account
+¦   ¦   ¦       AccountClient.tsx
+¦   ¦   ¦       page.tsx
+¦   ¦   ¦       
+¦   ¦   +---cards
+¦   ¦   ¦   ¦   page.tsx
+¦   ¦   ¦   ¦   
+¦   ¦   ¦   +---backup
+¦   ¦   ¦   ¦       page.tsx
+¦   ¦   ¦   ¦       
+¦   ¦   ¦   +---for-sale
+¦   ¦   ¦   ¦       page.tsx
+¦   ¦   ¦   ¦       
+¦   ¦   ¦   +---locations
+¦   ¦   ¦   ¦       page.tsx
+¦   ¦   ¦   ¦       
+¦   ¦   ¦   +---new
+¦   ¦   ¦   ¦       page.tsx
+¦   ¦   ¦   ¦       
+¦   ¦   ¦   +---sold
+¦   ¦   ¦   ¦       page.tsx
+¦   ¦   ¦   ¦       
+¦   ¦   ¦   +---wishlist
+¦   ¦   ¦   ¦   ¦   page.tsx
+¦   ¦   ¦   ¦   ¦   
+¦   ¦   ¦   ¦   +---search
+¦   ¦   ¦   ¦           page.tsx
+¦   ¦   ¦   ¦           
+¦   ¦   ¦   +---[id]
+¦   ¦   ¦       ¦   page.tsx
+¦   ¦   ¦       ¦   
+¦   ¦   ¦       +---edit
+¦   ¦   ¦       ¦       page.tsx
+¦   ¦   ¦       ¦       
+¦   ¦   ¦       +---sold
+¦   ¦   ¦               page.tsx
+¦   ¦   ¦               
+¦   ¦   +---players
+¦   ¦           page.tsx
+¦   ¦           
+¦   +---about
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---admin
+¦   ¦   +---checklists
+¦   ¦   ¦       page.tsx
+¦   ¦   ¦       
+¦   ¦   +---moderation
+¦   ¦           page.tsx
+¦   ¦           
+¦   +---api
+¦   ¦   +---account
+¦   ¦   ¦   +---delete
+¦   ¦   ¦           route.ts
+¦   ¦   ¦           
+¦   ¦   +---cards
+¦   ¦   ¦   ¦   route.ts
+¦   ¦   ¦   ¦   
+¦   ¦   ¦   +---dedupe
+¦   ¦   ¦   ¦       route.ts
+¦   ¦   ¦   ¦       
+¦   ¦   ¦   +---[id]
+¦   ¦   ¦           route.ts
+¦   ¦   ¦           
+¦   ¦   +---checklists
+¦   ¦   ¦   +---import
+¦   ¦   ¦   ¦       route.ts
+¦   ¦   ¦   ¦       
+¦   ¦   ¦   +---preview
+¦   ¦   ¦           route.ts
+¦   ¦   ¦           
+¦   ¦   +---image-check
+¦   ¦   ¦       route.ts
+¦   ¦   ¦       
+¦   ¦   +---image-reports
+¦   ¦   ¦   ¦   route.ts
+¦   ¦   ¦   ¦   
+¦   ¦   ¦   +---batch
+¦   ¦   ¦           route.ts
+¦   ¦   ¦           
+¦   ¦   +---support
+¦   ¦           route.ts
+¦   ¦           
+¦   +---changelog
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---contact
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---debug
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---demo
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---help
+¦   ¦       page.tsx
+¦   ¦       SupportFormClient.tsx
+¦   ¦       
+¦   +---login
+¦   ¦       LoginClient.tsx
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---pricing
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---privacy
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---status
+¦   ¦       page.tsx
+¦   ¦       
+¦   +---terms
+¦           page.tsx
+¦           
++---components
+¦   ¦   AppShell.tsx
+¦   ¦   MarketingShell.tsx
+¦   ¦   
+¦   +---players
+¦           PlayerCard.tsx
+¦           PlayerExplorer.tsx
+¦           
++---lib
+¦   ¦   cardsDb.ts
+¦   ¦   cardsDbMapper.ts
+¦   ¦   csv.ts
+¦   ¦   fingerprint.ts
+¦   ¦   format.ts
+¦   ¦   image.ts
+¦   ¦   imageStore.ts
+¦   ¦   players.ts
+¦   ¦   reporting.ts
+¦   ¦   sentry.ts
+¦   ¦   sharedImages.ts
+¦   ¦   supabaseClient.ts
+¦   ¦   types.ts
+¦   ¦   
+¦   +---checklists
+¦   ¦       donruss2025.ts
+¦   ¦       donruss2025_autographs.ts
+¦   ¦       donruss2025_inserts.ts
+¦   ¦       donruss2025_memorabilia.ts
+¦   ¦       prizm2025.ts
+¦   ¦       prizm2025_autographs.ts
+¦   ¦       prizm2025_fifa_club_world_cup.ts
+¦   ¦       prizm2025_inserts.ts
+¦   ¦       prizm2025_memorabilia.ts
+¦   ¦       score2025.ts
+¦   ¦       score2025_autographs.ts
+¦   ¦       score2025_inserts.ts
+¦   ¦       score2025_memorabilia.ts
+¦   ¦       
+¦   +---db
+¦   ¦       cardConditions.ts
+¦   ¦       cardPlayers.ts
+¦   ¦       cards.ts
+¦   ¦       cardVariants.ts
+¦   ¦       checklists.client.ts
+¦   ¦       checklists.ts
+¦   ¦       deviceSessions.ts
+¦   ¦       gradingCompanies.ts
+¦   ¦       leagues.ts
+¦   ¦       locations.ts
+¦   ¦       migrateLocalToSupabase.ts
+¦   ¦       parallelTypes.ts
+¦   ¦       players.ts
+¦   ¦       profiles.ts
+¦   ¦       saleStatuses.ts
+¦   ¦       sets.ts
+¦   ¦       sharedImages.ts
+¦   ¦       sports.ts
+¦   ¦       teams.ts
+¦   ¦       userCards.ts
+¦   ¦       valueSnapshots.ts
+¦   ¦       
+¦   +---supabase
+¦           client.ts
+¦           server.ts
+¦           
++---types
+        player.ts
+        

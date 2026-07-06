@@ -2,9 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { SportsCard } from "@/lib/types";
-import { dbLoadCards } from "@/lib/db/cards";
+import { type MyCard, listMyCards } from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { formatCurrency } from "@/lib/format";
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
@@ -74,7 +80,7 @@ function LineChart({ points, height = 140 }: { points: TrendPoint[]; height?: nu
       </div>
 
       <svg
-        viewBox={`0 0 ${width} 0 ${height}`}
+        viewBox={`0 0 ${width} ${height}`}
         className="h-[160px] w-full text-zinc-800"
         role="img"
       >
@@ -117,7 +123,7 @@ type Extreme = {
 };
 
 export default function SoldHistoryPage() {
-  const [cards, setCards] = useState<SportsCard[]>([]);
+  const [cards, setCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -127,7 +133,8 @@ export default function SoldHistoryPage() {
       try {
         setLoading(true);
         setError("");
-        const data = await dbLoadCards();
+        const profileId = await requireProfileId();
+        const data = await listMyCards(profileId);
         if (active) setCards(data);
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load cards");
@@ -145,26 +152,26 @@ export default function SoldHistoryPage() {
       .filter((c) => (c.status ?? "HAVE") === "SOLD")
       .slice()
       .sort((a, b) => {
-        const ad = ((a as any).soldDate as string | undefined) ?? "";
-        const bd = ((b as any).soldDate as string | undefined) ?? "";
+        const ad = a.soldDate ?? "";
+        const bd = b.soldDate ?? "";
         return bd.localeCompare(ad); // newest first
       });
   }, [cards]);
 
   const totals = useMemo(() => {
-    const totalSold = soldCards.reduce((sum, c) => sum + (asNumber((c as any).soldPrice) ?? 0), 0);
+    const totalSold = soldCards.reduce((sum, c) => sum + (asNumber(c.soldPrice) ?? 0), 0);
     const totalPaid = soldCards.reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
     const realizedNet = totalSold - totalPaid;
 
     const count = soldCards.length;
 
     const wins = soldCards.filter((c) => {
-      const pl = (asNumber((c as any).soldPrice) ?? 0) - (asNumber(c.purchasePrice) ?? 0);
+      const pl = (asNumber(c.soldPrice) ?? 0) - (asNumber(c.purchasePrice) ?? 0);
       return pl > 0;
     }).length;
 
     const losses = soldCards.filter((c) => {
-      const pl = (asNumber((c as any).soldPrice) ?? 0) - (asNumber(c.purchasePrice) ?? 0);
+      const pl = (asNumber(c.soldPrice) ?? 0) - (asNumber(c.purchasePrice) ?? 0);
       return pl < 0;
     }).length;
 
@@ -181,7 +188,7 @@ export default function SoldHistoryPage() {
     const holdDays: number[] = [];
 
     for (const c of soldCards) {
-      const soldPrice = asNumber((c as any).soldPrice) ?? 0;
+      const soldPrice = asNumber(c.soldPrice) ?? 0;
       const paid = asNumber(c.purchasePrice) ?? 0;
       const pl = soldPrice - paid;
 
@@ -190,7 +197,7 @@ export default function SoldHistoryPage() {
       if (!best || pl > best.pl) best = { id: c.id, label, pl };
       if (!worst || pl < worst.pl) worst = { id: c.id, label, pl };
 
-      const soldDate = ((c as any).soldDate as string | undefined) ?? "";
+      const soldDate = c.soldDate ?? "";
       const d = daysBetween(c.purchaseDate, soldDate);
       if (typeof d === "number") holdDays.push(d);
     }
@@ -229,8 +236,8 @@ export default function SoldHistoryPage() {
     const byMonth = new Map<string, number>();
 
     for (const c of soldCards) {
-      const soldDate = ((c as any).soldDate as string | undefined) ?? "";
-      const soldPrice = asNumber((c as any).soldPrice) ?? 0;
+      const soldDate = c.soldDate ?? "";
+      const soldPrice = asNumber(c.soldPrice) ?? 0;
       const paid = asNumber(c.purchasePrice) ?? 0;
 
       if (!soldDate) continue;
@@ -341,8 +348,8 @@ export default function SoldHistoryPage() {
         ) : (
           <ul className="divide-y">
             {soldCards.map((c) => {
-              const soldDate = ((c as any).soldDate as string | undefined) ?? "";
-              const soldPrice = asNumber((c as any).soldPrice) ?? 0;
+              const soldDate = c.soldDate ?? "";
+              const soldPrice = asNumber(c.soldPrice) ?? 0;
               const paid = asNumber(c.purchasePrice) ?? 0;
               const pl = soldPrice - paid;
 

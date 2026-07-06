@@ -1,74 +1,119 @@
 export type CardStatus = "HAVE" | "WANT" | "FOR_SALE" | "SOLD";
-export type CardCondition = "RAW" | "GRADED";
+
+export type GradingStatus = "RAW" | "GRADED";
+
+export type CardCondition =
+  | "MINT"
+  | "NEAR_MINT_MINT"
+  | "NEAR_MINT"
+  | "EXCELLENT"
+  | "VERY_GOOD"
+  | "GOOD"
+  | "FAIR"
+  | "POOR";
+
+export type ImageType = "front" | "back" | "slab_front" | "slab_back";
+
+export type Player = {
+  id: string;
+  leagueId?: string | null;
+  teamId?: string | null;
+  fullName: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  slug: string;
+  searchText?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type Card = {
+  id: string;
+  setId: string;
+  cardNumber: string;
+  title?: string | null;
+  rookieCard: boolean;
+  printedYear?: number | null;
+  releaseYear?: number | null;
+  isInsert: boolean;
+  isAutograph: boolean;
+  isMemorabilia: boolean;
+  searchText?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CardVariant = {
+  id: string;
+  cardId: string;
+  parallelTypeId?: string | null;
+  nameOverride?: string | null;
+  serialNumbered: boolean;
+  printRun?: number | null;
+  hasAutograph: boolean;
+  hasMemorabilia: boolean;
+  isRefractor: boolean;
+  isDieCut: boolean;
+  isShortPrint: boolean;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type Location = {
+  id: string;
+  profileId: string;
+  name: string;
+  description?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type UserCard = {
+  id: string;
+  profileId: string;
+  cardId: string;
+  cardVariantId?: string | null;
+  locationId?: string | null;
+
+  gradingStatus: GradingStatus;
+  condition?: CardCondition | null;
+  gradingCompanyId?: string | null;
+  grade?: string | null;
+  certNumber?: string | null;
+
+  status: CardStatus;
+
+  purchasePrice?: number | null;
+  purchaseDate?: string | null;
+  purchaseSource?: string | null;
+
+  estimatedValue?: number | null;
+
+  askingPrice?: number | null;
+  soldPrice?: number | null;
+  soldDate?: string | null;
+  soldFees?: number | null;
+  soldNotes?: string | null;
+
+  quantity: number;
+  notes?: string | null;
+
+  imagePath?: string | null;
+  thumbPath?: string | null;
+  imageShared?: boolean | null;
+  imageType?: ImageType | null;
+
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 export type CardComp = {
   id: string;
   price: number;
-  date?: string; // YYYY-MM-DD
+  date?: string;
   source?: string;
   url?: string;
   notes?: string;
 };
 
-export type SportsCard = {
-  id: string;
-
-  playerName: string;
-  year: string;
-  setName: string;
-  cardNumber?: string;
-  team?: string;
-
-  // ✅ NEW: Location tracking (Binder A / Box 1 / Safe, etc.)
-  location?: string;
-
-  condition: CardCondition;
-  grader?: string;
-  grade?: string;
-
-  status: CardStatus;
-
-  purchasePrice?: number;
-  marketValue?: number;
-  purchaseDate?: string; // YYYY-MM-DD
-
-  notes?: string;
-
-  // Selling/listing fields
-  askingPrice?: number;
-
-  // Sold / realized fields
-  soldPrice?: number;
-  soldDate?: string; // YYYY-MM-DD
-  soldFees?: number; // optional fees paid on the sale (platform fees, shipping, etc.)
-  soldNotes?: string; // optional notes about the sale (buyer/platform/etc.)
-
-  // ✅ Collector features: variations/parallels
-  variation?: string; // e.g., Base / Refractor / Silver / Wave
-  insert?: string; // e.g., Kaboom / Downtown / Color Blast
-  parallel?: string; // optional separate field if you want
-  serialNumber?: number; // e.g., 12
-  serialTotal?: number; // e.g., 99 (for 12/99)
-
-  // ✅ Collector flags
-  isRookie?: boolean;
-  isAutograph?: boolean;
-  isPatch?: boolean;
-
-  // ✅ Market comps
-  comps?: CardComp[];
-
-  // ✅ Images
-  imageUrl?: string; // data URL for user-owned image
-  imageShared?: boolean; // consent to use as shared reference
-  imageIsFront?: boolean;
-  imageIsSlabbed?: boolean;
-  imageType?: "front" | "back" | "slab_front" | "slab_back";
-  thumbPath?: string | null;
-  imagePath?: string | null;
-  thumbUrl?: string | null; // computed at runtime for display
-
-  // Timestamps (helpful for future features like "recently added", "inventory age", etc.)
-  createdAt?: string; // ISO string
-  updatedAt?: string; // ISO string
-};

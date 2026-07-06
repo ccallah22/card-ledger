@@ -32,6 +32,11 @@ export async function POST() {
 
   await supabase.from("shared_images").delete().eq("user_id", user.id);
 
+  // user_cards/locations cascade from profiles -> auth.users, but deleting
+  // them explicitly keeps this route correct even if that cascade changes.
+  await admin.from("user_cards").delete().eq("profile_id", user.id);
+  await admin.from("locations").delete().eq("profile_id", user.id);
+
   const { error: deleteErr } = await admin.auth.admin.deleteUser(user.id);
   if (deleteErr) {
     return Response.json({ error: deleteErr.message }, { status: 500 });

@@ -1,4 +1,4 @@
-import type { SportsCard } from "./types";
+import type { MyCard } from "./repositories/myCards";
 
 function esc(s: unknown): string {
   const v = (s ?? "").toString();
@@ -9,7 +9,7 @@ function esc(s: unknown): string {
   return v;
 }
 
-export function cardsToCsv(cards: SportsCard[]) {
+export function cardsToCsv(cards: MyCard[]) {
   const headers = [
     "id",
     "playerName",
@@ -18,15 +18,16 @@ export function cardsToCsv(cards: SportsCard[]) {
     "cardNumber",
     "team",
 
-    // ✅ NEW
     "location",
 
+    "gradingStatus",
     "condition",
     "grader",
     "grade",
+    "certNumber",
     "status",
     "purchasePrice",
-    "marketValue",
+    "estimatedValue",
     "purchaseDate",
 
     // pricing / outcomes
@@ -38,6 +39,7 @@ export function cardsToCsv(cards: SportsCard[]) {
 
     // collector fields
     "variation",
+    "insert",
     "parallel",
     "serialNumber",
     "serialTotal",
@@ -60,36 +62,38 @@ export function cardsToCsv(cards: SportsCard[]) {
     c.cardNumber ?? "",
     c.team ?? "",
 
-    // ✅ NEW
     c.location ?? "",
 
-    c.condition,
+    c.gradingStatus,
+    c.condition ?? "",
     c.grader ?? "",
     c.grade ?? "",
+    c.certNumber ?? "",
     c.status ?? "",
 
     c.purchasePrice ?? "",
-    (c as any).marketValue ?? "",
+    c.estimatedValue ?? "",
     c.purchaseDate ?? "",
 
-    (c as any).askingPrice ?? "",
-    (c as any).soldPrice ?? "",
-    (c as any).soldDate ?? "",
-    (c as any).soldFees ?? "",
-    (c as any).soldNotes ?? "",
+    c.askingPrice ?? "",
+    c.soldPrice ?? "",
+    c.soldDate ?? "",
+    c.soldFees ?? "",
+    c.soldNotes ?? "",
 
-    (c as any).variation ?? "",
-    (c as any).parallel ?? "",
-    (c as any).serialNumber ?? "",
-    (c as any).serialTotal ?? "",
-    (c as any).isRookie ? "true" : "",
-    (c as any).isAutograph ? "true" : "",
-    (c as any).isPatch ? "true" : "",
+    c.variation ?? "",
+    c.insert ?? "",
+    c.parallel ?? "",
+    c.serialNumber ?? "",
+    c.serialTotal ?? "",
+    c.isRookie ? "true" : "",
+    c.isAutograph ? "true" : "",
+    c.isPatch ? "true" : "",
 
     c.notes ?? "",
 
-    (c as any).createdAt ?? "",
-    (c as any).updatedAt ?? "",
+    c.createdAt ?? "",
+    c.updatedAt ?? "",
   ]);
 
   return [headers.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");

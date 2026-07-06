@@ -3,8 +3,14 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { SportsCard } from "@/lib/types";
-import { dbGetCard, dbUpsertCard } from "@/lib/db/cards";
+import { type MyCard, getMyCard, updateMyCard } from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 function currency(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -19,7 +25,7 @@ export default function MarkSoldPage({
   const { id } = use(params);
 
   const [loading, setLoading] = useState(true);
-  const [card, setCard] = useState<SportsCard | null>(null);
+  const [card, setCard] = useState<MyCard | null>(null);
 
   const [soldPrice, setSoldPrice] = useState<string>("");
   const [soldDate, setSoldDate] = useState<string>("");
@@ -30,7 +36,7 @@ export default function MarkSoldPage({
   useEffect(() => {
     let active = true;
     (async () => {
-      const initial = await dbGetCard(String(id));
+      const initial = await getMyCard(String(id));
       if (!active) return;
       setCard(initial);
       setLoading(false);
@@ -84,20 +90,15 @@ export default function MarkSoldPage({
     if (!canSave) return;
     setIsSaving(true);
     try {
+      const now = new Date().toISOString();
 
-    const now = new Date().toISOString();
-
-    const next: SportsCard = {
-      ...card,
-      id: card.id,
-      status: "SOLD",
-      soldPrice: Number(soldPrice),
-      soldDate: soldDate || now.slice(0, 10),
-      soldNotes: soldNotes.trim() || undefined,
-      updatedAt: now,
-    };
-
-      await dbUpsertCard(next);
+      const profileId = await requireProfileId();
+      await updateMyCard(profileId, card.id, {
+        status: "SOLD",
+        soldPrice: Number(soldPrice),
+        soldDate: soldDate || now.slice(0, 10),
+        soldNotes: soldNotes.trim() || undefined,
+      });
       router.push(returnTo === "for-sale" ? "/cards/for-sale" : "/cards/sold");
     } finally {
       setIsSaving(false);

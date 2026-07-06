@@ -3,11 +3,18 @@
 import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { SportsCard, CardCondition, CardStatus } from "@/lib/types";
-import { dbGetCard, dbUpsertCard } from "@/lib/db/cards";
+import type { GradingStatus, CardStatus } from "@/lib/types";
+import { type MyCard, type MyCardInput, getMyCard, updateMyCard } from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageForCard, removeImageForCard, saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 import { IMAGE_RULES, processImageFile } from "@/lib/image";
 import { formatCurrency } from "@/lib/format";
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 function toNum(v: string): number | undefined {
   const t = v.trim();
@@ -31,7 +38,7 @@ export default function EditCardPage({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const [original, setOriginal] = useState<SportsCard | null>(null);
+  const [original, setOriginal] = useState<MyCard | null>(null);
 
   // Core
   const [playerName, setPlayerName] = useState("");
@@ -44,7 +51,7 @@ export default function EditCardPage({
   const [location, setLocation] = useState("");
 
   // Condition / grading
-  const [condition, setCondition] = useState<CardCondition>("RAW");
+  const [gradingStatus, setGradingStatus] = useState<GradingStatus>("RAW");
   const [grader, setGrader] = useState("");
   const [grade, setGrade] = useState("");
 
@@ -74,7 +81,7 @@ export default function EditCardPage({
   useEffect(() => {
     let active = true;
     (async () => {
-      const found = await dbGetCard(String(id));
+      const found = await getMyCard(String(id));
       if (!active) return;
 
       if (!found) {
@@ -91,38 +98,30 @@ export default function EditCardPage({
       setCardNumber(found.cardNumber ?? "");
       setTeam(found.team ?? "");
 
-      setLocation((found as any).location ?? "");
+      setLocation(found.location ?? "");
 
-      setCondition(found.condition ?? "RAW");
+      setGradingStatus(found.gradingStatus ?? "RAW");
       setGrader(found.grader ?? "");
       setGrade(found.grade ?? "");
 
       setStatus(found.status ?? "HAVE");
       setPurchasePrice(typeof found.purchasePrice === "number" ? String(found.purchasePrice) : "");
-      setMarketValue(typeof found.marketValue === "number" ? String(found.marketValue) : "");
+      setMarketValue(typeof found.estimatedValue === "number" ? String(found.estimatedValue) : "");
       setPurchaseDate(found.purchaseDate ?? "");
 
-      setVariation((found as any).variation ?? "");
-      setInsert((found as any).insert ?? "");
-      setParallel((found as any).parallel ?? "");
+      setVariation(found.variation ?? "");
+      setInsert(found.insert ?? "");
+      setParallel(found.parallel ?? "");
 
-      setSerialNumber(
-        typeof (found as any).serialNumber === "number" ? String((found as any).serialNumber) : ""
-      );
-      setSerialTotal(
-        typeof (found as any).serialTotal === "number" ? String((found as any).serialTotal) : ""
-      );
+      setSerialNumber(typeof found.serialNumber === "number" ? String(found.serialNumber) : "");
+      setSerialTotal(typeof found.serialTotal === "number" ? String(found.serialTotal) : "");
 
-      setIsRookie(!!(found as any).isRookie);
-      setIsAutograph(!!(found as any).isAutograph);
-      setIsPatch(!!(found as any).isPatch);
+      setIsRookie(!!found.isRookie);
+      setIsAutograph(!!found.isAutograph);
+      setIsPatch(!!found.isPatch);
 
       setNotes(found.notes ?? "");
-      setImageUrl(
-        loadImageForCard(String(found.id)) ??
-          ((found as any).imageUrl as string | undefined) ??
-          null
-      );
+      setImageUrl(loadImageForCard(String(found.id)) ?? null);
       setImageRemoved(false);
 
       setLoading(false);
@@ -154,58 +153,49 @@ export default function EditCardPage({
     if (!canSave) return;
     setIsSaving(true);
     try {
+      const derivedSerialTotal =
+        serialTotal.trim() ||
+        (parallel.match(/\/\s*(\d+)\b/) ? parallel.match(/\/\s*(\d+)\b/)?.[1] ?? "" : "");
 
-    const now = new Date().toISOString();
-    const derivedSerialTotal =
-      serialTotal.trim() ||
-      (parallel.match(/\/\s*(\d+)\b/) ? parallel.match(/\/\s*(\d+)\b/)?.[1] ?? "" : "");
+      const patch: Partial<MyCardInput> = {
+        playerName: playerName.trim(),
+        year: year.trim(),
+        setName: setName.trim(),
+        cardNumber: cardNumber.trim() || undefined,
+        team: team.trim() || undefined,
 
-    const next: SportsCard = {
-      ...original,
+        location: location.trim() || undefined,
 
-      playerName: playerName.trim(),
-      year: year.trim(),
-      setName: setName.trim(),
-      cardNumber: cardNumber.trim() || undefined,
-      team: team.trim() || undefined,
+        gradingStatus,
+        grader: gradingStatus === "GRADED" ? (grader.trim() || undefined) : undefined,
+        grade: gradingStatus === "GRADED" ? (grade.trim() || undefined) : undefined,
 
-      location: location.trim() || undefined,
+        status,
 
-      condition,
-      grader: condition === "GRADED" ? (grader.trim() || undefined) : undefined,
-      grade: condition === "GRADED" ? (grade.trim() || undefined) : undefined,
+        purchasePrice: toNum(purchasePrice),
+        estimatedValue: toNum(marketValue),
+        purchaseDate: purchaseDate || undefined,
 
-      status,
+        variation: variation.trim() || undefined,
+        insert: insert.trim() || undefined,
+        parallel: parallel.trim() || undefined,
+        serialNumber: toNum(serialNumber),
+        serialTotal: toNum(derivedSerialTotal),
 
-      purchasePrice: toNum(purchasePrice),
-      marketValue: toNum(marketValue),
-      purchaseDate: purchaseDate || undefined,
+        isRookie: isRookie || undefined,
+        isAutograph: isAutograph || undefined,
+        isPatch: isPatch || undefined,
 
-      variation: variation.trim() || undefined,
-      insert: insert.trim() || undefined,
-      parallel: parallel.trim() || undefined,
-      serialNumber: toNum(serialNumber),
-      serialTotal: toNum(derivedSerialTotal),
+        notes: notes.trim() || undefined,
+        imageShared: imageUrl && !imageRemoved ? original.imageShared : false,
+      };
 
-      isRookie: isRookie || undefined,
-      isAutograph: isAutograph || undefined,
-      isPatch: isPatch || undefined,
+      if (imageRemoved) {
+        removeImageForCard(String(original.id));
+      }
 
-      notes: notes.trim() || undefined,
-      imageUrl: imageUrl || undefined,
-      imageShared: imageUrl ? (original as any).imageShared : undefined,
-
-      updatedAt: now,
-      createdAt: original.createdAt ?? now,
-    };
-
-    if (imageRemoved) {
-      removeImageForCard(String(original.id));
-      next.imageUrl = undefined;
-      next.imageShared = undefined;
-    }
-
-      await dbUpsertCard(next);
+      const profileId = await requireProfileId();
+      await updateMyCard(profileId, original.id, patch);
       if (!imageRemoved && imageUrl) {
         saveImageForCard(String(original.id), imageUrl);
         await saveThumbnailForCard(String(original.id), imageUrl);
@@ -264,8 +254,8 @@ export default function EditCardPage({
 
         <Select
           label="Condition"
-          value={condition}
-          onChange={(v) => setCondition(v as CardCondition)}
+          value={gradingStatus}
+          onChange={(v) => setGradingStatus(v as GradingStatus)}
           options={[
             ["RAW", "Raw"],
             ["GRADED", "Graded"],
@@ -273,7 +263,7 @@ export default function EditCardPage({
         />
 
         {/* ✅ No placeholders here (prevents weird empty grid gaps) */}
-        {condition === "GRADED" ? (
+        {gradingStatus === "GRADED" ? (
           <>
             <Field label="Grader" value={grader} onChange={setGrader} placeholder="PSA" />
             <Field label="Grade" value={grade} onChange={setGrade} placeholder="10" />

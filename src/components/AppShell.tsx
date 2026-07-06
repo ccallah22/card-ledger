@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
-import { dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
 import { heartbeatDeviceSession } from "@/lib/db/deviceSessions";
 
 type NavItem = {
@@ -15,9 +14,7 @@ type NavItem = {
 };
 
 const SIDEBAR_KEY = "thebinder:ui:sidebar-collapsed:v1";
-const SOLD_FEES_CLEANUP_KEY = "thebinder:cleanup:sold-fees:v1";
 const LEGACY_SIDEBAR_KEY = "card-ledger:ui:sidebar-collapsed:v1";
-const LEGACY_SOLD_FEES_CLEANUP_KEY = "card-ledger:cleanup:sold-fees:v1";
 
 function IconGrid() {
   return (
@@ -270,51 +267,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", update);
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        if (typeof window === "undefined") return;
-        if (localStorage.getItem(SOLD_FEES_CLEANUP_KEY) === "1") return;
-        if (localStorage.getItem(LEGACY_SOLD_FEES_CLEANUP_KEY) === "1") {
-          localStorage.setItem(SOLD_FEES_CLEANUP_KEY, "1");
-          localStorage.removeItem(LEGACY_SOLD_FEES_CLEANUP_KEY);
-          return;
-        }
-
-        const supabase = createClient();
-        const { data } = await supabase.auth.getUser();
-        if (!data?.user) return;
-
-        const cards = await dbLoadCards();
-        const toFix = cards.filter((c) => c.soldFees !== undefined);
-        if (!toFix.length) {
-          localStorage.setItem(SOLD_FEES_CLEANUP_KEY, "1");
-          localStorage.removeItem(LEGACY_SOLD_FEES_CLEANUP_KEY);
-          return;
-        }
-
-        const now = new Date().toISOString();
-        const updated = toFix.map((c) => ({
-          ...c,
-          soldFees: undefined,
-          updatedAt: now,
-        }));
-
-        await dbUpsertCards(updated);
-        if (active) {
-          localStorage.setItem(SOLD_FEES_CLEANUP_KEY, "1");
-          localStorage.removeItem(LEGACY_SOLD_FEES_CLEANUP_KEY);
-        }
-      } catch {
-        // Ignore cleanup errors; it will retry next load.
-      }
-    })();
-    return () => {
-      active = false;
     };
   }, []);
 

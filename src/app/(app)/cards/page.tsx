@@ -4,17 +4,33 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { Chip } from "@/components/cards/BinderUi";
+import { BinderStats } from "@/components/cards/BinderStats";
+import { BinderToolbar } from "@/components/cards/BinderToolbar";
+import { DeleteCardDialog } from "@/components/cards/DeleteCardDialog";
+import { CardRowMenu } from "@/components/cards/CardRowMenu";
+import { BinderGrid } from "@/components/cards/BinderGrid";
+import { BinderSet } from "@/components/cards/BinderSet";
+import { CardTile } from "@/components/cards/CardTile";
 
-import type { SportsCard } from "@/lib/types";
-import { dbDeleteCard, dbDeleteCards, dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
+import {
+  type MyCard,
+  listMyCards,
+  updateMyCard,
+  deleteMyCard,
+  deleteMyCards,
+} from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
-import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
-import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
-import { dbLoadSets, type SetEntry } from "@/lib/db/sets";
-import { createClient } from "@/lib/supabase/client";
 import { startTrace, captureError } from "@/lib/sentry";
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 const STALE_DAYS = 90;
 
@@ -230,15 +246,6 @@ function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-function currency(n: number, opts?: { accounting?: boolean }) {
-  const accounting = opts?.accounting ?? false;
-  const abs = Math.abs(n);
-  const formatted = abs.toLocaleString(undefined, { style: "currency", currency: "USD" });
-  if (n < 0 && accounting) return `(${formatted})`;
-  if (n < 0) return `-${formatted}`;
-  return formatted;
-}
-
 function parseLocalDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const d = new Date(`${dateStr}T00:00:00`);
@@ -256,7 +263,7 @@ function daysSince(dateStr?: string): number | null {
 }
 
 // Duplicates = same Player + Year + Set + Card #
-function dupKey(c: SportsCard) {
+function dupKey(c: MyCard) {
   const player = normalize(c.playerName);
   const year = String(c.year ?? "").trim();
   const set = normalize(c.setName);
@@ -265,29 +272,29 @@ function dupKey(c: SportsCard) {
 }
 
 // Collector helpers
-function hasParallel(c: SportsCard) {
-  const v = normalize((c as any).variation);
-  const p = normalize((c as any).parallel);
+function hasParallel(c: MyCard) {
+  const v = normalize(c.variation);
+  const p = normalize(c.parallel);
   return !!(v || p);
 }
-function isNumbered(c: SportsCard) {
-  const total = (c as any).serialTotal;
+function isNumbered(c: MyCard) {
+  const total = c.serialTotal;
   return typeof total === "number" && Number.isFinite(total) && total > 0;
 }
-function isAuto(c: SportsCard) {
-  return !!(c as any).isAutograph;
+function isAuto(c: MyCard) {
+  return !!c.isAutograph;
 }
-function isPatch(c: SportsCard) {
-  return !!(c as any).isPatch;
+function isPatch(c: MyCard) {
+  return !!c.isPatch;
 }
-function isRookie(c: SportsCard) {
-  return !!(c as any).isRookie;
+function isRookie(c: MyCard) {
+  return !!c.isRookie;
 }
 
 export default function CardsPage() {
   const router = useRouter();
 
-  const [cards, setCards] = useState<SportsCard[]>([]);
+  const [cards, setCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -342,10 +349,9 @@ export default function CardsPage() {
         setLoading(true);
         setError("");
 
-        // one-time migration removed (Supabase-only)
-
+        const profileId = await requireProfileId();
         const endTrace = startTrace("load-binder-cards");
-        const data = await dbLoadCards();
+        const data = await listMyCards(profileId);
         if (endTrace) endTrace();
         if (mounted) setCards(data);
       } catch (e: any) {
@@ -376,10 +382,10 @@ export default function CardsPage() {
             cardNumber: c.cardNumber,
             playerName: c.playerName,
             team: c.team,
-            insert: (c as any).insert ?? "",
-            variation: (c as any).variation ?? "",
-            parallel: (c as any).parallel ?? "",
-            serialTotal: (c as any).serialTotal,
+            insert: c.insert ?? "",
+            variation: c.variation ?? "",
+            parallel: c.parallel ?? "",
+            serialTotal: c.serialTotal,
           })
         )
       )
@@ -498,10 +504,9 @@ export default function CardsPage() {
       setLoading(true);
       setError("");
 
-      // one-time migration removed (Supabase-only)
-
+      const profileId = await requireProfileId();
       const endTrace = startTrace("refresh-binder-cards");
-      const data = await dbLoadCards();
+      const data = await listMyCards(profileId);
       if (endTrace) endTrace();
       setCards(data);
     } catch (e: any) {
@@ -545,38 +550,11 @@ export default function CardsPage() {
     clearCollectorFilters();
   }
 
-  const [setEntries, setSetEntries] = useState<SetEntry[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    dbLoadSets()
-      .then((sets) => {
-        if (active) setSetEntries(sets);
-      })
-      .catch(() => {
-        if (active) setSetEntries([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const setSportMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const entry of setEntries) {
-      if (!entry.sport) continue;
-      const key = `${normalize(entry.name)}__${String(entry.year ?? "").trim()}`;
-      map.set(key, entry.sport);
-    }
-    return map;
-  }, [setEntries]);
-
-  function resolveSport(c: SportsCard) {
-    const year = String(c.year ?? "").trim();
-    const setName = String(c.setName ?? "").trim();
-    if (!year || !setName) return "Unknown";
-    const key = `${normalize(setName)}__${year}`;
-    return setSportMap.get(key) ?? "Unknown";
+  // Sets don't carry a sport yet (no sport/league picker in the add-card
+  // form), so the Sport tab is a single "Unknown" bucket until that catalog
+  // path exists.
+  function resolveSport(_c: MyCard) {
+    return "Unknown";
   }
 
   // ✅ Hide SOLD and WANT cards in binder view
@@ -590,7 +568,7 @@ export default function CardsPage() {
   const afterSport = useMemo(() => {
     if (sportFilter === "ALL") return baseList;
     return baseList.filter((c) => resolveSport(c) === sportFilter);
-  }, [baseList, sportFilter, setSportMap]);
+  }, [baseList, sportFilter]);
 
   const sportOptions = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>();
@@ -606,14 +584,14 @@ export default function CardsPage() {
     return Array.from(map.entries())
       .map(([key, v]) => ({ key, label: v.label, count: v.count }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [baseList, setSportMap]);
+  }, [baseList]);
 
   // ✅ Location chips source
   const locationOptions = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>();
 
     for (const c of afterSport) {
-      const raw = (((c as any).location as string | undefined) ?? "").trim();
+      const raw = (c.location ?? "").trim();
       if (!raw) continue;
 
       const key = normalize(raw);
@@ -632,7 +610,7 @@ export default function CardsPage() {
     const map = new Map<string, { label: string; count: number }>();
 
     for (const c of afterSport) {
-      const raw = (((c as any).insert as string | undefined) ?? "").trim();
+      const raw = (c.insert ?? "").trim();
       if (!raw) continue;
 
       const key = normalize(raw);
@@ -651,7 +629,7 @@ export default function CardsPage() {
     const map = new Map<string, { label: string; count: number }>();
 
     for (const c of afterSport) {
-      const raw = (((c as any).parallel as string | undefined) ?? "").trim();
+      const raw = (c.parallel ?? "").trim();
       if (!raw) continue;
 
       const key = normalize(raw);
@@ -670,7 +648,7 @@ export default function CardsPage() {
     const map = new Map<string, { label: string; count: number }>();
 
     for (const c of afterSport) {
-      const total = (c as any).serialTotal as number | undefined;
+      const total = c.serialTotal;
       if (typeof total !== "number") continue;
       const key = String(total);
       const label = `/${total}`;
@@ -728,7 +706,7 @@ export default function CardsPage() {
   const afterLocation = useMemo(() => {
     if (locationKey === "ALL") return afterCollectorFlags;
     return afterCollectorFlags.filter((c) => {
-      const loc = (((c as any).location as string | undefined) ?? "").trim();
+      const loc = (c.location ?? "").trim();
       if (!loc) return false;
       return normalize(loc) === locationKey;
     });
@@ -738,7 +716,7 @@ export default function CardsPage() {
   const afterInsert = useMemo(() => {
     if (insertKey === "ALL") return afterLocation;
     return afterLocation.filter((c) => {
-      const ins = (((c as any).insert as string | undefined) ?? "").trim();
+      const ins = (c.insert ?? "").trim();
       if (!ins) return false;
       return normalize(ins) === insertKey;
     });
@@ -748,7 +726,7 @@ export default function CardsPage() {
   const afterParallel = useMemo(() => {
     if (parallelKey === "ALL") return afterInsert;
     return afterInsert.filter((c) => {
-      const raw = (((c as any).parallel as string | undefined) ?? "").trim();
+      const raw = (c.parallel ?? "").trim();
       if (!raw) return false;
       return normalize(raw) === parallelKey;
     });
@@ -758,7 +736,7 @@ export default function CardsPage() {
   const afterNumbered = useMemo(() => {
     if (numberedKey === "ALL") return afterParallel;
     return afterParallel.filter((c) => {
-      const total = (c as any).serialTotal as number | undefined;
+      const total = c.serialTotal;
       if (typeof total !== "number") return false;
       return String(total) === numberedKey;
     });
@@ -777,13 +755,13 @@ export default function CardsPage() {
         c.setName,
         c.cardNumber ?? "",
         c.team ?? "",
-        (c as any).location ?? "",
-        (c as any).insert ?? "",
+        c.location ?? "",
+        c.insert ?? "",
         c.grader ?? "",
         c.grade ?? "",
-        (c as any).variation ?? "",
-        (c as any).parallel ?? "",
-        (c as any).serialTotal ? `/${(c as any).serialTotal}` : "",
+        c.variation ?? "",
+        c.parallel ?? "",
+        c.serialTotal ? `/${c.serialTotal}` : "",
         c.notes ?? "",
       ]
         .join(" ")
@@ -827,8 +805,8 @@ export default function CardsPage() {
       }
 
       if (sortMode === "EST_VALUE_DESC") {
-        const ap = asNumber((a as any).estimatedValue) ?? -1;
-        const bp = asNumber((b as any).estimatedValue) ?? -1;
+        const ap = asNumber(a.estimatedValue) ?? -1;
+        const bp = asNumber(b.estimatedValue) ?? -1;
         if (bp !== ap) return bp - ap;
         return normalize(a.playerName).localeCompare(normalize(b.playerName));
       }
@@ -840,7 +818,7 @@ export default function CardsPage() {
   }, [searched, sortMode]);
 
   const groupedBySet = useMemo(() => {
-    const map = new Map<string, { label: string; cards: SportsCard[] }>();
+    const map = new Map<string, { label: string; cards: MyCard[] }>();
     const order: string[] = [];
 
     for (const c of filtered) {
@@ -913,27 +891,18 @@ export default function CardsPage() {
     setSelectedIds(new Set());
   }
 
-  async function applyBulkStatus(nextStatus: SportsCard["status"]) {
+  async function applyBulkStatus(nextStatus: MyCard["status"]) {
     if (!selectedIds.size || bulkBusy) return;
-    const now = new Date().toISOString();
-    const selectedCards = cards.filter((c) => selectedIds.has(c.id));
-    const updatedCards = selectedCards.map((c) => ({
-      ...c,
-      status: nextStatus,
-      updatedAt: now,
-    }));
 
     setBulkBusy(true);
     try {
-      await dbUpsertCards(updatedCards);
-      setCards((prev) =>
-        prev.map((c) => {
-          const updated = selectedIds.has(c.id)
-            ? updatedCards.find((u) => u.id === c.id)
-            : null;
-          return updated ?? c;
-        })
+      const profileId = await requireProfileId();
+      const ids = Array.from(selectedIds);
+      const updated = await Promise.all(
+        ids.map((id) => updateMyCard(profileId, id, { status: nextStatus })),
       );
+      const byId = new Map(updated.map((c) => [c.id, c]));
+      setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
       clearSelection();
       if (forSaleMode && nextStatus === "FOR_SALE") {
         router.push("/cards/for-sale");
@@ -952,7 +921,7 @@ export default function CardsPage() {
 
     setBulkBusy(true);
     try {
-      await dbDeleteCards(Array.from(selectedIds));
+      await deleteMyCards(Array.from(selectedIds));
       setCards((prev) => prev.filter((c) => !selectedIds.has(c.id)));
       clearSelection();
     } catch (e: any) {
@@ -993,13 +962,13 @@ export default function CardsPage() {
       .reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
 
     const soldCards = cardsInSport.filter((c) => (c.status ?? "HAVE") === "SOLD");
-    const totalSold = soldCards.reduce((sum, c) => sum + (asNumber((c as any).soldPrice) ?? 0), 0);
+    const totalSold = soldCards.reduce((sum, c) => sum + (asNumber(c.soldPrice) ?? 0), 0);
 
     const costOfSold = soldCards.reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
 
     const forSaleValue = cardsInSport
       .filter((c) => (c.status ?? "HAVE") === "FOR_SALE")
-      .reduce((sum, c) => sum + (asNumber((c as any).askingPrice) ?? 0), 0);
+      .reduce((sum, c) => sum + (asNumber(c.askingPrice) ?? 0), 0);
 
     const netPosition = totalSold - totalSpent;
 
@@ -1009,18 +978,18 @@ export default function CardsPage() {
     });
 
     const totalPortfolioValue = inventory.reduce(
-      (sum, c) => sum + (asNumber((c as any).marketValue) ?? 0),
+      (sum, c) => sum + (asNumber(c.estimatedValue) ?? 0),
       0
     );
 
     const totalNetGain = inventory.reduce((sum, c) => {
-      const marketValue = asNumber((c as any).marketValue);
-      if (typeof marketValue !== "number") return sum;
+      const estimatedValue = asNumber(c.estimatedValue);
+      if (typeof estimatedValue !== "number") return sum;
       const paid = asNumber(c.purchasePrice) ?? 0;
-      return sum + (marketValue - paid);
+      return sum + (estimatedValue - paid);
     }, 0);
 
-    const graded = inventory.filter((c) => c.condition === "GRADED").length;
+    const graded = inventory.filter((c) => c.gradingStatus === "GRADED").length;
     const raw = Math.max(0, inventory.length - graded);
 
     const ages: number[] = [];
@@ -1059,7 +1028,7 @@ export default function CardsPage() {
       avgAge,
       medianAge,
     };
-  }, [cards, sportFilter, setSportMap]);
+  }, [cards, sportFilter]);
 
   const netTone =
     totals.totalNetGain > 0 ? "positive" : totals.totalNetGain < 0 ? "negative" : "neutral";
@@ -1074,11 +1043,11 @@ export default function CardsPage() {
     (locationKey !== "ALL" ? 1 : 0) +
     (insertKey !== "ALL" ? 1 : 0);
 
-  function labelForCard(c: SportsCard) {
+  function labelForCard(c: MyCard) {
     return `${c.playerName} • ${c.year} • ${c.setName}${c.cardNumber ? ` #${c.cardNumber}` : ""}`;
   }
 
-  function confirmDelete(c: SportsCard) {
+  function confirmDelete(c: MyCard) {
     setOpenMenuId(null);
     setDeleteTarget({ id: c.id, label: labelForCard(c) });
   }
@@ -1087,7 +1056,7 @@ export default function CardsPage() {
     if (!deleteTarget) return;
 
     try {
-      await dbDeleteCard(deleteTarget.id);
+      await deleteMyCard(deleteTarget.id);
       setCards((prev) => prev.filter((c) => c.id !== deleteTarget.id));
     } catch (e: any) {
       alert(`Delete failed: ${e?.message ?? "unknown error"}`);
@@ -1197,56 +1166,47 @@ export default function CardsPage() {
         </div>
       ) : null}
 
-      {/* ✅ Clean control card */}
-      <div className="rounded-xl border bg-white p-3 space-y-3">
-        {/* Sport row */}
-        <div className="flex items-center justify-between gap-2">
-          {/* ✅ Mobile: dropdown */}
-          <div className="w-full sm:hidden">
-            <label className="block text-[11px] font-medium text-zinc-600 mb-1">Sport</label>
-            <select
-              value={sportFilter}
-              onChange={(e) => setSportAndReset(e.target.value)}
-              className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
-            >
-              <option value="ALL">All</option>
-              {sportOptions.map((o) => (
-                <option key={o.key} value={o.label}>
-                  {o.label}
-                  {o.count ? ` (${o.count})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* ✅ Desktop: tabs */}
-          <div className="hidden sm:flex gap-2 overflow-x-auto whitespace-nowrap pb-1">
-            <Tab active={sportFilter === "ALL"} onClick={() => setSportAndReset("ALL")}>
-              All
-            </Tab>
-            {sportOptions.map((o) => (
-              <Tab
-                key={o.key}
-                active={sportFilter === o.label}
-                onClick={() => setSportAndReset(o.label)}
-                variant={
-                  o.label === "Football" ? "football" : o.label === "Soccer" ? "soccer" : "default"
-                }
-              >
-                {o.label}
-                {o.count ? ` • ${o.count}` : ""}
-              </Tab>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            className="hidden sm:inline-flex w-18 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
-          >
-            Filters{activeFiltersCount ? ` • ${activeFiltersCount}` : ""}
-          </button>
-        </div>
+      <BinderToolbar
+  sportFilter={sportFilter}
+  sportOptions={sportOptions}
+  q={q}
+  sortMode={sortMode}
+  showFilters={showFilters}
+  activeFiltersCount={activeFiltersCount}
+  locationOptions={locationOptions}
+  insertOptions={insertOptions}
+  parallelOptions={parallelOptions}
+  numberedOptions={numberedOptions}
+  locationKey={locationKey}
+  insertKey={insertKey}
+  parallelKey={parallelKey}
+  numberedKey={numberedKey}
+  dupOnly={dupOnly}
+  autoOnly={autoOnly}
+  patchOnly={patchOnly}
+  rookieOnly={rookieOnly}
+  dupInfo={dupInfo}
+  setSportAndReset={setSportAndReset}
+  setQ={setQ}
+  setSortMode={setSortMode}
+  setShowFilters={setShowFilters}
+  setLocationKey={setLocationKey}
+  setInsertKey={setInsertKey}
+  setParallelKey={setParallelKey}
+  setNumberedKey={setNumberedKey}
+  setDupOnly={setDupOnly}
+  setAutoOnly={setAutoOnly}
+  setPatchOnly={setPatchOnly}
+  setRookieOnly={setRookieOnly}
+  clearCollectorFilters={clearCollectorFilters}
+  clearAllFilters={() => {
+    setQ("");
+    setSportFilter("ALL");
+    clearCollectorFilters();
+    setShowFilters(false);
+    refresh();
+  }}
+/>
 
         {/* Search + sort + actions */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1435,19 +1395,12 @@ export default function CardsPage() {
             </div>
           </div>
         ) : null}
-      </div>
 
       {/* Stats */}
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Stat label="Total cards" value={`${totals.totalCards}`} />
-        <Stat label="Total spent" value={currency(totals.totalSpent)} />
-        <Stat label="Portfolio value" value={currency(totals.totalPortfolioValue)} />
-        <Stat
-          label="Total net gain"
-          value={currency(totals.totalNetGain, { accounting: true })}
-          tone={netTone}
-        />
-      </div>
+<BinderStats
+  totals={totals}
+  netTone={netTone}
+/>
 
       {/* Duplicates info */}
       {dupOnly ? (
@@ -1460,7 +1413,7 @@ export default function CardsPage() {
       ) : null}
 
       {/* Binder */}
-      <div className="rounded-xl border border-black bg-zinc-50 overflow-hidden">
+<BinderGrid isEmpty={filtered.length === 0}>
         {filtered.length === 0 ? (
           <div className="empty-state space-y-3">
             <div>No cards yet — add your first one to get started.</div>
@@ -1484,115 +1437,18 @@ export default function CardsPage() {
                   : `${teamFilteredCards.length}/${group.cards.length}`;
 
               return (
-                <div key={group.key}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => toggleSetCollapse(group.key)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      toggleSetCollapse(group.key);
-                    }
-                  }}
-                  className={
-                    "flex w-full items-center gap-3 px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-white bg-[var(--brand-primary)] cursor-pointer " +
-                    (collapsedSets.has(group.key) && index === groupedBySet.length - 1
-                      ? "rounded-b-xl"
-                      : "")
-                  }
-                >
-                  <div className="inline-flex items-center gap-2 text-left">
-                    <span>{collapsedSets.has(group.key) ? "▸" : "▾"}</span>
-                    <span>{group.label}</span>
-                    <span className="text-[10px] font-medium text-zinc-400">
-                      ({countLabel})
-                    </span>
-                  </div>
-
-                  {group.cards.length ? (
-                    <div className="ml-auto flex flex-wrap items-center gap-1 text-[10px]">
-                      {/** team swatches */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTeamFilter(group.key, "ALL");
-                        }}
-                        className={
-                          "rounded-full border border-white/20 px-2 py-0.5 uppercase tracking-wide transition " +
-                          ((teamFiltersBySet[group.key] ?? "ALL") === "ALL"
-                            ? "bg-white text-zinc-900"
-                            : "bg-white/10 text-white hover:bg-white/20")
-                        }
-                      >
-                        All
-                      </button>
-                      {Array.from(
-                        new Set(
-                          group.cards
-                            .map((c) => (c.team ?? "").trim())
-                            .filter((t) => t.length > 0)
-                        )
-                      )
-                        .sort((a, b) => a.localeCompare(b))
-                        .map((team) => {
-                          const isCwcSet = group.key === CWC_SET_KEY;
-                          const selected = (teamFiltersBySet[group.key] ?? "ALL") === team;
-                          const resolvedCwc = isCwcSet ? resolveCwcTeam(team) : null;
-                          const resolvedNfl = !isCwcSet ? resolveNflTeam(team) : null;
-                          const swatchStyle = resolvedCwc
-                            ? cwcSwatchStyle(resolvedCwc)
-                            : resolvedNfl
-                            ? { backgroundColor: resolvedNfl.primaryColor, color: resolvedNfl.textColor }
-                            : teamSwatchStyle(team);
-                          const label = resolvedCwc?.abbr ?? resolvedNfl?.abbr ?? team;
-                          return (
-                            <button
-                              key={team}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setTeamFilter(group.key, team);
-                              }}
-                              style={swatchStyle}
-                              className={
-                                "h-6 w-6 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center justify-center shadow-sm transition " +
-                                (selected ? "ring-2 ring-white/80" : "hover:brightness-110")
-                              }
-                              title={resolvedCwc?.fullName ?? resolvedNfl?.fullName ?? team}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                    </div>
-                  ) : null}
-                </div>
-                {!collapsedSets.has(group.key) ? (
-                  <div className="grid grid-cols-2 gap-4 p-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+  <BinderSet
+    key={group.key}
+    groupKey={group.key}
+    label={group.label}
+    countLabel={countLabel}
+    collapsed={collapsedSets.has(group.key)}
+    isLast={index === groupedBySet.length - 1}
+    onToggle={() => toggleSetCollapse(group.key)}
+  >
+    <div className="grid grid-cols-2 gap-4 p-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {teamFilteredCards.map((c) => {
-                      const status = c.status ?? "HAVE";
-
-                      const variation = (c as any).variation as string | undefined;
-                      const parallel = (c as any).parallel as string | undefined;
-                      const parallelHasSerial = /\/\d+/.test(parallel ?? "");
-
-                      const serialNumber = (c as any).serialNumber as number | undefined;
-                      const serialTotal = (c as any).serialTotal as number | undefined;
-
-                      const serial =
-                        typeof serialNumber === "number" && typeof serialTotal === "number"
-                          ? `${serialNumber}/${serialTotal}`
-                          : typeof serialTotal === "number"
-                          ? `/${serialTotal}`
-                          : "";
-
-                      const asking = asNumber((c as any).askingPrice);
-                      const sold = asNumber((c as any).soldPrice);
-
-                      const insert = (((c as any).insert as string | undefined) ?? "").trim();
-
+                      const insert = (c.insert ?? "").trim();
                       const fingerprint = buildCardFingerprint({
                         year: c.year,
                         setName: c.setName,
@@ -1600,210 +1456,57 @@ export default function CardsPage() {
                         playerName: c.playerName,
                         team: c.team,
                         insert,
-                        variation,
-                        parallel,
-                        serialTotal,
+                        variation: c.variation,
+                        parallel: c.parallel,
+                        serialTotal: c.serialTotal,
                       });
                       const sharedImage = fingerprint ? sharedImages[fingerprint] : null;
                       const report = fingerprint ? reportMap[fingerprint] : undefined;
-                      const hideImage =
-                        !!report &&
-                        (report.status === "blocked" ||
-                          (report.reports ?? 0) >= REPORT_HIDE_THRESHOLD);
-                      const storedThumb = loadThumbnailForCard(c.id);
-                      const storedImage = loadImageForCard(c.id);
-                      const displayImage = hideImage
-                        ? ""
-                        : storedThumb ??
-                          storedImage ??
-                          ((c as any).imageUrl as string | undefined) ??
-                          sharedImage?.dataUrl ??
-                          "";
-
-                      const rowHref = `/cards/${c.id}`;
-
-                      const est = asNumber((c as any).estimatedValue);
-                      const priceLabel =
-                        status === "SOLD" && typeof sold === "number"
-                          ? currency(sold)
-                          : status === "FOR_SALE" && typeof asking === "number"
-                          ? currency(asking)
-                          : typeof est === "number"
-                          ? currency(est)
-                          : "—";
 
                       return (
-                        <div key={c.id} className="relative">
-                          <div className="absolute left-2 top-2 z-20">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(c.id)}
-                              onChange={(e) => {
-                                toggleSelected(c.id, e.target.checked);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className="h-4 w-4 accent-zinc-900"
-                            />
-                          </div>
-                          <Link
-                            href={rowHref}
-                            className="block h-full rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                          >
-                            <div className="p-3 h-full flex flex-col">
-                              <div className="flex flex-1 min-h-0 flex-col gap-2 rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2 sm:aspect-[2.5/3.5] overflow-hidden">
-                                <div className="flex-1 min-h-0 w-full rounded-md border border-zinc-200 bg-white/70 flex items-center justify-center overflow-hidden sm:aspect-[2.5/3.5]">
-                                  {displayImage ? (
-                                    <img
-                                      src={displayImage}
-                                      alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}
-                                      className="h-full w-full object-contain"
-                                      loading="lazy"
-                                      decoding="async"
-                                    />
-                                  ) : hideImage ? (
-                                    <div className="text-[10px] text-zinc-500 text-center px-2">
-                                      Image hidden (reported)
-                                    </div>
-                                  ) : (
-                                    <div className="text-[10px] text-zinc-500 text-center px-2">
-                                      No image
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="sm:hidden">
-                                  <div className="truncate text-sm font-semibold text-zinc-900">
-                                    {c.playerName}
-                                  </div>
-                                </div>
-
-                                <div className="hidden sm:block space-y-1">
-                                  <div className="text-[10px] uppercase tracking-wide text-zinc-500 break-words">
-                                    {c.year} • {c.setName}
-                                  </div>
-                                  <div className="text-[13px] font-semibold leading-snug text-zinc-900 break-words">
-                                    {c.playerName}
-                                  </div>
-                                  {c.cardNumber ? (
-                                    <div className="text-[10px] text-zinc-500">
-                                      No. {c.cardNumber}
-                                    </div>
-                                  ) : null}
-                                  {c.team ? (
-                                    <div className="text-[10px] text-zinc-500 break-words">
-                                      {c.team}
-                                    </div>
-                                  ) : null}
-                                  <div className="flex flex-wrap gap-1 text-[10px]">
-                                    {variation ? <MiniBadge>{variation}</MiniBadge> : null}
-                                    {insert ? <MiniBadge>{insert}</MiniBadge> : null}
-                                    {parallel ? (
-                                      <MiniBadge tone={parallelBadgeTone(parallel)}>
-                                        {parallel}
-                                      </MiniBadge>
-                                    ) : null}
-                                    {serial && !parallelHasSerial ? (
-                                      <MiniBadge>#{serial}</MiniBadge>
-                                    ) : null}
-                                    {(c as any).isRookie ? (
-                                      <MiniBadge>
-                                        <span className="uppercase tracking-wider">Rookie</span>
-                                      </MiniBadge>
-                                    ) : null}
-                                    {(c as any).isAutograph ? (
-                                      <MiniBadge tone="purple">Auto</MiniBadge>
-                                    ) : null}
-                                    {(c as any).isPatch ? (
-                                      <MiniBadge tone="amber">Patch</MiniBadge>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="mt-2 hidden sm:flex items-center justify-between text-xs">
-                                <span className="tabular-nums text-zinc-600">{priceLabel}</span>
-                              </div>
-                            </div>
-                          </Link>
-
-                          {/* ✅ Kebab button (does NOT navigate) */}
-                          <div className="absolute right-2 top-2 z-20" data-row-menu>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenuId((prev) => (prev === c.id ? null : c.id));
-                                if (openMenuId === c.id) return;
-                                setMenuAnchor(e.currentTarget as HTMLButtonElement);
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className="rounded-full bg-white/90 p-2 text-zinc-600 shadow-sm hover:bg-white hover:text-zinc-900"
-                              aria-label="Row actions"
-                              title="Actions"
-                            >
-                              <IconDots />
-                            </button>
-                          </div>
-                        </div>
+                        <CardTile
+                          key={c.id}
+                          card={c}
+                          selected={selectedIds.has(c.id)}
+                          onToggleSelected={toggleSelected}
+                          sharedImage={sharedImage}
+                          report={report}
+                          onOpenMenu={(e, id) => {
+                            setOpenMenuId((prev) => (prev === id ? null : id));
+                            if (openMenuId === id) return;
+                            setMenuAnchor(e.currentTarget as HTMLButtonElement);
+                          }}
+                        />
                       );
                     })}
                   </div>
-                ) : null}
-              </div>
-              );
+  </BinderSet>
+);
             })}
           </div>
         )}
-      </div>
+      </BinderGrid>
 
       {menuCard && menuPos && activeMenuId
-        ? createPortal(
-            <div
-              data-row-menu
-              onClick={(e) => e.stopPropagation()}
-              className={
-                "fixed z-[9999] w-44 overflow-hidden rounded-xl border bg-white shadow-xl " +
-                "origin-top-right transition duration-150 " +
-                (openMenuId ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95")
-              }
-              style={{ top: menuPos.top, left: menuPos.left }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenMenuId(null);
-                  router.push(`/cards/${menuCard.id}/edit`);
-                }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-              >
-                Edit
-              </button>
-
-              {(menuCard.status ?? "HAVE") !== "SOLD" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenMenuId(null);
-                    router.push(`/cards/${menuCard.id}/sold`);
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-                >
-                  Mark as Sold
-                </button>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={() => confirmDelete(menuCard)}
-                className="w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
-              >
-                Delete…
-              </button>
-            </div>,
-            document.body
-          )
-        : null}
+  ? createPortal(
+      <CardRowMenu
+        card={menuCard}
+        top={menuPos.top}
+        left={menuPos.left}
+        isOpen={!!openMenuId}
+        onEdit={() => {
+          setOpenMenuId(null);
+          router.push(`/cards/${menuCard.id}/edit`);
+        }}
+        onMarkSold={() => {
+          setOpenMenuId(null);
+          router.push(`/cards/${menuCard.id}/sold`);
+        }}
+        onDelete={() => confirmDelete(menuCard)}
+      />,
+      document.body
+    )
+  : null}
 
       <p className="text-xs text-zinc-500">
         Tip: On mobile, Sport is a dropdown. On desktop, it’s tabs. Use the ⋯ button on a row for
@@ -1812,238 +1515,13 @@ export default function CardsPage() {
 
       {/* ✅ Delete confirmation modal */}
       {deleteTarget ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4"
-          onClick={() => setDeleteTarget(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border bg-white p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-lg font-semibold">Delete card?</div>
-            <div className="mt-1 text-sm text-zinc-600">
-              This will permanently remove:
-              <div className="mt-2 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-800">
-                {deleteTarget.label}
-              </div>
-            </div>
-
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={doDelete}
-                className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+  <DeleteCardDialog
+    label={deleteTarget.label}
+    onCancel={() => setDeleteTarget(null)}
+    onConfirm={doDelete}
+  />
+) : null}
     </div>
   );
 }
 
-/* ---------- components ---------- */
-
-function Stat({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "positive" | "negative";
-}) {
-  const valueClass =
-    tone === "positive"
-      ? "text-emerald-700"
-      : tone === "negative"
-      ? "text-red-700"
-      : "text-zinc-900";
-
-  const borderClass =
-    tone === "positive"
-      ? "border-emerald-200 bg-emerald-50"
-      : tone === "negative"
-      ? "border-red-200 bg-red-50"
-      : "border-zinc-200 bg-white";
-
-  return (
-    <div className={`rounded-xl border p-4 ${borderClass}`}>
-      <div className="text-xs text-zinc-500">{label}</div>
-      <div className={`mt-1 text-xl font-semibold ${valueClass}`}>{value}</div>
-    </div>
-  );
-}
-
-function Tab({
-  active,
-  onClick,
-  children,
-  variant = "default",
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  variant?: "default" | "football" | "soccer";
-}) {
-  const base =
-    "inline-flex whitespace-nowrap items-center rounded-full px-3 py-2 text-sm font-semibold transition";
-  const cls =
-    variant === "football"
-      ? active
-        ? "border border-[#4a2a14] bg-[#7a3f22] text-[#fff3e1] shadow-[0_0_0_1px_rgba(210,164,108,0.55)]"
-        : "border border-[#5a2f18] bg-[#8b4a2b] text-[#fff3e1] hover:bg-[#7f4226]"
-      : variant === "soccer"
-      ? active
-        ? "border border-zinc-900 bg-white text-black shadow-[0_0_0_1px_rgba(24,24,27,0.35)]"
-        : "border border-zinc-900 bg-white text-black hover:bg-zinc-50"
-      : active
-      ? "bg-[var(--brand-primary)] text-white"
-      : "bg-zinc-100 text-zinc-800 hover:bg-zinc-200";
-
-  return (
-    <button type="button" onClick={onClick} className={`${base} ${cls}`}>
-      {children}
-    </button>
-  );
-}
-
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "inline-flex whitespace-nowrap items-center rounded-full border px-3 py-1 text-xs font-medium transition " +
-        (active
-          ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
-          : "border-zinc-400 bg-white text-zinc-800 hover:bg-zinc-50")
-      }
-    >
-      {children}
-    </button>
-  );
-}
-
-type BadgeTone =
-  | "zinc"
-  | "blue"
-  | "dots-blue"
-  | "purple"
-  | "amber"
-  | "red"
-  | "green"
-  | "orange"
-  | "yellow"
-  | "pink"
-  | "teal"
-  | "black"
-  | "white"
-  | "silver"
-  | "gold"
-  | "lava";
-
-function MiniBadge({
-  children,
-  tone = "zinc",
-}: {
-  children: React.ReactNode;
-  tone?: BadgeTone;
-}) {
-  const isDotsBlue = tone === "dots-blue";
-  const cls =
-    tone === "dots-blue"
-      ? "border-blue-200 bg-blue-50 text-blue-700"
-      : tone === "blue"
-      ? "border-zinc-300 bg-zinc-100 text-zinc-200"
-      : tone === "purple"
-      ? "border-purple-200 bg-purple-50 text-purple-700"
-      : tone === "amber"
-      ? "border-amber-200 bg-amber-50 text-amber-700"
-      : tone === "red"
-      ? "border-red-200 bg-red-50 text-red-700"
-      : tone === "green"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : tone === "orange"
-      ? "border-orange-200 bg-orange-50 text-orange-700"
-      : tone === "yellow"
-      ? "border-yellow-200 bg-yellow-50 text-yellow-800"
-      : tone === "pink"
-      ? "border-pink-200 bg-pink-50 text-pink-700"
-      : tone === "teal"
-      ? "border-teal-200 bg-teal-50 text-teal-700"
-      : tone === "lava"
-      ? "border-orange-300 bg-orange-100 text-red-700"
-      : tone === "black"
-      ? "border-zinc-800 bg-[var(--brand-primary)] text-white"
-      : tone === "white"
-      ? "border-zinc-200 bg-white text-zinc-900"
-      : tone === "silver"
-      ? "border-zinc-200 bg-zinc-100 text-zinc-800"
-      : tone === "gold"
-      ? "border-amber-200 bg-amber-50 text-amber-800"
-      : "border-zinc-200 bg-white text-zinc-700";
-
-  return (
-    <span
-      className={`rounded-full border px-2 py-0.5 font-medium ${cls}`}
-      style={
-        isDotsBlue
-          ? {
-              backgroundImage: "radial-gradient(rgba(59,130,246,0.22) 1px, transparent 1px)",
-              backgroundSize: "7px 7px",
-            }
-          : undefined
-      }
-    >
-      {children}
-    </span>
-  );
-}
-
-function parallelBadgeTone(parallel?: string): BadgeTone | undefined {
-  if (!parallel) return undefined;
-  const p = parallel.toLowerCase();
-  if (p.includes("dots blue")) return "dots-blue";
-  if (p.includes("lava")) return "lava";
-  if (p.includes("black")) return "black";
-  if (p.includes("white")) return "white";
-  if (p.includes("silver")) return "silver";
-  if (p.includes("gold")) return "gold";
-  if (p.includes("red")) return "red";
-  if (p.includes("blue")) return "blue";
-  if (p.includes("green")) return "green";
-  if (p.includes("orange")) return "orange";
-  if (p.includes("yellow")) return "yellow";
-  if (p.includes("pink")) return "pink";
-  if (p.includes("purple")) return "purple";
-  if (p.includes("teal")) return "teal";
-  return undefined;
-}
-
-function IconDots() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="6.5" r="1.3" />
-      <circle cx="12" cy="12" r="1.3" />
-      <circle cx="12" cy="17.5" r="1.3" />
-    </svg>
-  );
-}

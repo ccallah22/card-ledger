@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { SportsCard } from "@/lib/types";
-import { dbLoadCards, dbUpsertCards } from "@/lib/db/cards";
+import { type MyCard, listMyCards, updateMyCard } from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 function normalize(s?: string) {
   return (s ?? "").trim().toLowerCase();
@@ -16,7 +22,7 @@ type LocRow = {
 };
 
 export default function LocationsPage() {
-  const [cards, setCards] = useState<SportsCard[]>([]);
+  const [cards, setCards] = useState<MyCard[]>([]);
   const [edits, setEdits] = useState<Record<string, string>>({}); // key -> new label
   const [notice, setNotice] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -28,7 +34,8 @@ export default function LocationsPage() {
       try {
         setLoading(true);
         setError("");
-        const data = await dbLoadCards();
+        const profileId = await requireProfileId();
+        const data = await listMyCards(profileId);
         if (active) setCards(data);
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load cards");
@@ -45,7 +52,7 @@ export default function LocationsPage() {
     const map = new Map<string, { label: string; count: number }>();
 
     for (const c of cards) {
-      const raw = (((c as any).location as string | undefined) ?? "").trim();
+      const raw = (c.location ?? "").trim();
       if (!raw) continue;
 
       const key = normalize(raw);
@@ -80,27 +87,15 @@ export default function LocationsPage() {
     }
 
     // Bulk replace on all cards that match oldKey (case-insensitive match)
-    const updated = cards.map((c) => {
-      const raw = (((c as any).location as string | undefined) ?? "").trim();
-      if (!raw) return c;
-
-      if (normalize(raw) !== oldKey) return c;
-
-      return {
-        ...(c as any),
-        location: nextLabel,
-        updatedAt: new Date().toISOString(),
-      } as SportsCard;
-    });
+    const matching = cards.filter((c) => normalize((c.location ?? "").trim()) === oldKey);
 
     try {
-      const changed = updated.filter(
-        (c, idx) => ((cards[idx] as any).location ?? "") !== ((c as any).location ?? "")
+      const profileId = await requireProfileId();
+      const updated = await Promise.all(
+        matching.map((c) => updateMyCard(profileId, c.id, { location: nextLabel })),
       );
-      if (changed.length) {
-        await dbUpsertCards(changed);
-      }
-      setCards(updated);
+      const byId = new Map(updated.map((c) => [c.id, c]));
+      setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
     } catch (e: any) {
       setNotice("");
       setError(e?.message ?? "Failed to rename locations.");
@@ -122,29 +117,15 @@ export default function LocationsPage() {
     const oldLabel = locations.find((l) => l.key === oldKey)?.label ?? "";
     if (!oldLabel) return;
 
-    const updated = cards.map((c) => {
-      const raw = (((c as any).location as string | undefined) ?? "").trim();
-      if (!raw) return c;
-
-      if (normalize(raw) !== oldKey) return c;
-
-      const next = { ...(c as any) } as any;
-      delete next.location;
-
-      return {
-        ...next,
-        updatedAt: new Date().toISOString(),
-      } as SportsCard;
-    });
+    const matching = cards.filter((c) => normalize((c.location ?? "").trim()) === oldKey);
 
     try {
-      const changed = updated.filter(
-        (c, idx) => ((cards[idx] as any).location ?? "") !== ((c as any).location ?? "")
+      const profileId = await requireProfileId();
+      const updated = await Promise.all(
+        matching.map((c) => updateMyCard(profileId, c.id, { location: "" })),
       );
-      if (changed.length) {
-        await dbUpsertCards(changed);
-      }
-      setCards(updated);
+      const byId = new Map(updated.map((c) => [c.id, c]));
+      setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
     } catch (e: any) {
       setNotice("");
       setError(e?.message ?? "Failed to clear locations.");

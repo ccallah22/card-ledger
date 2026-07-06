@@ -2,21 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { SportsCard } from "@/lib/types";
-import { dbLoadCards } from "@/lib/db/cards";
+import { type MyCard, listMyCards } from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 
-function labelForCard(c: SportsCard) {
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
+
+function labelForCard(c: MyCard) {
   return `${c.playerName} • ${c.year} • ${c.setName}${c.cardNumber ? ` #${c.cardNumber}` : ""}`;
 }
 
-function serialLabel(c: SportsCard) {
-  const serialNumber = (c as any).serialNumber as number | undefined;
-  const serialTotal = (c as any).serialTotal as number | undefined;
-  if (typeof serialNumber === "number" && typeof serialTotal === "number") {
-    return `${serialNumber}/${serialTotal}`;
+function serialLabel(c: MyCard) {
+  if (typeof c.serialNumber === "number" && typeof c.serialTotal === "number") {
+    return `${c.serialNumber}/${c.serialTotal}`;
   }
-  if (typeof serialTotal === "number") return `/${serialTotal}`;
+  if (typeof c.serialTotal === "number") return `/${c.serialTotal}`;
   return "";
 }
 
@@ -39,7 +43,7 @@ function MiniBadge({
 }
 
 export default function WishlistPage() {
-  const [cards, setCards] = useState<SportsCard[]>([]);
+  const [cards, setCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -49,7 +53,8 @@ export default function WishlistPage() {
       try {
         setLoading(true);
         setError("");
-        const data = await dbLoadCards();
+        const profileId = await requireProfileId();
+        const data = await listMyCards(profileId);
         if (active) setCards(data);
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load cards");
@@ -125,15 +130,12 @@ export default function WishlistPage() {
         ) : (
           <div className="divide-y">
             {wishCards.map((c) => {
-              const variation = (c as any).variation as string | undefined;
-              const insert = (c as any).insert as string | undefined;
-              const parallel = (c as any).parallel as string | undefined;
+              const variation = c.variation;
+              const insert = c.insert;
+              const parallel = c.parallel;
               const serial = serialLabel(c);
               const imageUrl =
-                loadThumbnailForCard(String(c.id)) ??
-                loadImageForCard(String(c.id)) ??
-                ((c as any).imageUrl as string | undefined) ??
-                "";
+                loadThumbnailForCard(String(c.id)) ?? loadImageForCard(String(c.id)) ?? "";
               return (
                 <Link
                   key={c.id}
@@ -166,13 +168,13 @@ export default function WishlistPage() {
                       {insert ? <MiniBadge>{insert}</MiniBadge> : null}
                       {parallel ? <MiniBadge>{parallel}</MiniBadge> : null}
                       {serial ? <MiniBadge>#{serial}</MiniBadge> : null}
-                      {(c as any).isRookie ? (
+                      {c.isRookie ? (
                         <MiniBadge>
                           <span className="uppercase tracking-wider">Rookie</span>
                         </MiniBadge>
                       ) : null}
-                      {(c as any).isAutograph ? <MiniBadge tone="purple">Auto</MiniBadge> : null}
-                      {(c as any).isPatch ? <MiniBadge tone="amber">Patch</MiniBadge> : null}
+                      {c.isAutograph ? <MiniBadge tone="purple">Auto</MiniBadge> : null}
+                      {c.isPatch ? <MiniBadge tone="amber">Patch</MiniBadge> : null}
                     </div>
 
                     {c.notes ? (

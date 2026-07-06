@@ -5,7 +5,8 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/client";
-import { dbLoadCards } from "@/lib/db/cards";
+import { type MyCard, listMyCards } from "@/lib/repositories/myCards";
+import { getCurrentProfile } from "@/lib/repositories/profiles";
 import {
   getOrCreateDeviceId,
   listMyDeviceSessions,
@@ -13,7 +14,12 @@ import {
   type DeviceSession,
 } from "@/lib/db/deviceSessions";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
-import type { SportsCard } from "@/lib/types";
+
+async function requireProfileId(): Promise<string> {
+  const profile = await getCurrentProfile();
+  if (!profile) throw new Error("Not logged in");
+  return profile.id;
+}
 
 type Notice = { type: "success" | "error"; message: string } | null;
 
@@ -61,10 +67,10 @@ function browserLabel(ua: string) {
   return "Web Browser";
 }
 
-function toStats(cards: SportsCard[]): CollectionStats {
+function toStats(cards: MyCard[]): CollectionStats {
   const collectionCards = cards.filter((card) => card.status !== "WANT");
   const invested = collectionCards.reduce((sum, card) => sum + (card.purchasePrice ?? 0), 0);
-  const value = collectionCards.reduce((sum, card) => sum + (card.marketValue ?? 0), 0);
+  const value = collectionCards.reduce((sum, card) => sum + (card.estimatedValue ?? 0), 0);
   const locations = new Set(
     collectionCards.map((card) => (card.location ?? "").trim()).filter(Boolean)
   );
@@ -177,7 +183,9 @@ export default function AccountClient() {
     let active = true;
     (async () => {
       try {
-        const [cards] = await Promise.all([dbLoadCards().catch(() => [] as SportsCard[])]);
+        const cards = await requireProfileId()
+          .then((profileId) => listMyCards(profileId))
+          .catch(() => [] as MyCard[]);
 
         if (!active) return;
         setStats(toStats(cards));
@@ -354,7 +362,8 @@ export default function AccountClient() {
     setNotice(null);
     try {
       setBusy(true);
-      const cards = await dbLoadCards();
+      const profileId = await requireProfileId();
+      const cards = await listMyCards(profileId);
       const csv = cardsToCsv(cards);
       downloadCsv(`thebinder-${new Date().toISOString().slice(0, 10)}.csv`, csv);
 
