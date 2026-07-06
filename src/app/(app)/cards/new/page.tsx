@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
 import { type MyCardInput, createMyCard } from "@/lib/repositories/myCards";
 import { listLocations } from "@/lib/repositories/locations";
-import { listSets } from "@/lib/repositories/sets";
+import { searchSets } from "@/lib/repositories/sets";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage, saveSharedImage } from "@/lib/db/sharedImages";
@@ -1986,9 +1986,24 @@ function NewCardPageInner() {
 
   const [setEntries, setSetEntries] = useState<SetSuggestion[]>([]);
 
+  // Debounce the network lookup so we don't fire a query on every keystroke,
+  // matching the pattern already used for player search (PlayerExplorer).
+  const [debouncedSetQuery, setDebouncedSetQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSetQuery(setQuery), 150);
+    return () => clearTimeout(t);
+  }, [setQuery]);
+
   useEffect(() => {
     let active = true;
-    listSets()
+    const trimmed = debouncedSetQuery.trim();
+
+    if (!trimmed) {
+      setSetEntries([]);
+      return;
+    }
+
+    searchSets(trimmed)
       .then((sets) => {
         if (!active) return;
         setSetEntries(
@@ -2002,10 +2017,11 @@ function NewCardPageInner() {
       .catch(() => {
         if (active) setSetEntries([]);
       });
+
     return () => {
       active = false;
     };
-  }, []);
+  }, [debouncedSetQuery]);
 
   const setResults = useMemo(() => {
     const q = setQuery.trim().toLowerCase();
