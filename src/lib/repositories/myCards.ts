@@ -217,6 +217,38 @@ export async function listMyCards(profileId: string): Promise<MyCard[]> {
   return ((data ?? []) as unknown as UserCardJoined[]).map(toMyCard);
 }
 
+// Same shape as SELECT, but card_players is an inner join so it can be used
+// as a filter below (PostgREST only lets you filter on an embedded resource
+// when that embed is `!inner`, otherwise it's a left join and doesn't
+// restrict the outer rows).
+const SELECT_FOR_PLAYER = `
+  *,
+  cards!inner(*, sets(*), card_players!inner(players(*))),
+  card_variants(*, parallel_types(*)),
+  locations(*),
+  grading_companies(*)
+`;
+
+/**
+ * This profile's owned cards (user_cards) that feature a given catalog
+ * player, via user_cards.card_id -> cards -> card_players -> players.
+ */
+export async function listMyCardsForPlayer(
+  profileId: string,
+  playerId: number,
+): Promise<MyCard[]> {
+  const { data, error } = await supabase
+    .from("user_cards")
+    .select(SELECT_FOR_PLAYER)
+    .eq("profile_id", profileId)
+    .eq("cards.card_players.player_id", playerId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return ((data ?? []) as unknown as UserCardJoined[]).map(toMyCard);
+}
+
 export async function getMyCard(id: string): Promise<MyCard | null> {
   const { data, error } = await supabase
     .from("user_cards")

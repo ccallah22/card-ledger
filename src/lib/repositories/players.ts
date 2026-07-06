@@ -39,6 +39,20 @@ type PlayerWithContextRow = {
 
 const CONTEXT_SELECT = "id, full_name, slug, teams(name), leagues(name, sports(name))";
 
+// Filtering on a nested/embedded resource (leagues.sports) requires that
+// embed to be `!inner`, otherwise it's a left join and doesn't restrict the
+// outer `players` rows. Only swap to the inner-join select when a sportId
+// filter is actually requested, so unfiltered callers keep the cheaper
+// left-join select (players with no league still show up).
+const CONTEXT_SELECT_SPORT_FILTERED =
+  "id, full_name, slug, teams(name), leagues!inner(name, sports!inner(name))";
+
+export type PlayerFilters = {
+  sportId?: number;
+  leagueId?: number;
+  teamId?: number;
+};
+
 function toPlayerWithContext(row: PlayerWithContextRow): PlayerWithContext {
   return {
     id: row.id,
@@ -50,29 +64,44 @@ function toPlayerWithContext(row: PlayerWithContextRow): PlayerWithContext {
   };
 }
 
-export async function listPlayers(): Promise<PlayerWithContext[]> {
-  const { data, error } = await supabase
+export async function listPlayers(filters?: PlayerFilters): Promise<PlayerWithContext[]> {
+  let query = supabase
     .from("players")
-    .select(CONTEXT_SELECT)
+    .select(filters?.sportId ? CONTEXT_SELECT_SPORT_FILTERED : CONTEXT_SELECT)
     .order("full_name", { ascending: true })
     .limit(100);
+
+  if (filters?.teamId) query = query.eq("team_id", filters.teamId);
+  if (filters?.leagueId) query = query.eq("league_id", filters.leagueId);
+  if (filters?.sportId) query = query.eq("leagues.sports.id", filters.sportId);
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
   return ((data ?? []) as unknown as PlayerWithContextRow[]).map(toPlayerWithContext);
 }
 
-export async function searchPlayers(queryText: string): Promise<PlayerWithContext[]> {
+export async function searchPlayers(
+  queryText: string,
+  filters?: PlayerFilters,
+): Promise<PlayerWithContext[]> {
   const trimmed = queryText.trim();
 
   if (!trimmed) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("players")
-    .select(CONTEXT_SELECT)
+    .select(filters?.sportId ? CONTEXT_SELECT_SPORT_FILTERED : CONTEXT_SELECT)
     .or(`full_name.ilike.%${trimmed}%,search_text.ilike.%${trimmed}%`)
     .order("full_name", { ascending: true })
     .limit(25);
+
+  if (filters?.teamId) query = query.eq("team_id", filters.teamId);
+  if (filters?.leagueId) query = query.eq("league_id", filters.leagueId);
+  if (filters?.sportId) query = query.eq("leagues.sports.id", filters.sportId);
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
