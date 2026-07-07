@@ -78,6 +78,26 @@ export default function DashboardPage() {
     });
   }, [cards]);
 
+  const biggestUnrealizedGain = useMemo(() => {
+    const withGain = cards
+      .filter((c) => c.status !== "SOLD")
+      .filter(
+        (c): c is MyCard & { estimatedValue: number; purchasePrice: number } =>
+          typeof c.estimatedValue === "number" &&
+          Number.isFinite(c.estimatedValue) &&
+          typeof c.purchasePrice === "number" &&
+          Number.isFinite(c.purchasePrice)
+      )
+      .map((c) => ({ card: c, gain: c.estimatedValue - c.purchasePrice }));
+    if (withGain.length === 0) return null;
+    return withGain.reduce((best, entry) => {
+      if (entry.gain > best.gain) return entry;
+      if (entry.gain < best.gain) return best;
+      // Tie on gain: prefer the newest created card.
+      return (entry.card.createdAt ?? "") > (best.card.createdAt ?? "") ? entry : best;
+    });
+  }, [cards]);
+
   const isEmpty =
     !!summary &&
     summary.counts.have +
@@ -173,6 +193,33 @@ export default function DashboardPage() {
               </Link>
             ) : (
               <div className="empty-state">No estimated values available yet.</div>
+            )}
+            {biggestUnrealizedGain ? (
+              <Link
+                href={`/cards/${biggestUnrealizedGain.card.id}`}
+                className="block rounded-xl border bg-white p-4 hover:bg-zinc-50"
+              >
+                <div className="text-xs text-zinc-500">Biggest Unrealized Gain</div>
+                <div className="mt-1 font-medium text-zinc-900">
+                  {biggestUnrealizedGain.card.playerName}
+                </div>
+                <div className="text-xs text-zinc-500">
+                  {[
+                    biggestUnrealizedGain.card.year,
+                    biggestUnrealizedGain.card.setName,
+                    biggestUnrealizedGain.card.cardNumber
+                      ? `#${biggestUnrealizedGain.card.cardNumber}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </div>
+                <div className="mt-1 text-lg font-semibold text-zinc-900">
+                  {formatCurrency(biggestUnrealizedGain.gain, { accounting: true })}
+                </div>
+              </Link>
+            ) : (
+              <div className="empty-state">No unrealized gains available yet.</div>
             )}
           </section>
 
