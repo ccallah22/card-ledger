@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { type MyCard, listMyCards, updateMyCard } from "@/lib/repositories/myCards";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
+import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { formatCurrency } from "@/lib/format";
 import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 
@@ -49,6 +50,7 @@ function MiniBadge({
 
 export default function ForSalePage() {
   const [cards, setCards] = useState<MyCard[]>([]);
+  const [collectionSummary, setCollectionSummary] = useState<CollectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -61,8 +63,14 @@ export default function ForSalePage() {
         setLoading(true);
         setError("");
         const profileId = await requireProfileId();
-        const data = await listMyCards(profileId);
-        if (active) setCards(data);
+        const [data, summary] = await Promise.all([
+          listMyCards(profileId),
+          getCollectionSummary(profileId),
+        ]);
+        if (active) {
+          setCards(data);
+          setCollectionSummary(summary);
+        }
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load cards");
       } finally {
@@ -87,13 +95,19 @@ export default function ForSalePage() {
   }, [cards]);
 
   const totals = useMemo(() => {
+    if (collectionSummary) {
+      return {
+        count: collectionSummary.counts.forSale,
+        totalAsk: collectionSummary.financial.forSaleAskTotal,
+      };
+    }
     const count = forSaleCards.length;
     const totalAsk = forSaleCards.reduce(
       (sum, c) => sum + (asNumber(c.askingPrice) ?? 0),
       0
     );
     return { count, totalAsk };
-  }, [forSaleCards]);
+  }, [forSaleCards, collectionSummary]);
 
   const selectedCount = selectedIds.size;
   const allVisibleSelected =
@@ -138,6 +152,9 @@ export default function ForSalePage() {
       );
       const byId = new Map(updated.map((c) => [c.id, c]));
       setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
+      // Local mutation outruns the last fetched summary; fall back to
+      // recomputing from `forSaleCards` until the next full load.
+      setCollectionSummary(null);
       setSelectedIds(new Set());
     } catch (e: any) {
       setError(e?.message ?? "Failed to remove selected cards.");
@@ -306,6 +323,7 @@ export default function ForSalePage() {
                                 setCards((prev) =>
                                   prev.map((item) => (item.id === c.id ? next : item))
                                 );
+                                setCollectionSummary(null);
                               } catch (e: any) {
                                 setError(e?.message ?? "Failed to remove from For Sale.");
                               }
@@ -371,6 +389,7 @@ export default function ForSalePage() {
                           setCards((prev) =>
                             prev.map((item) => (item.id === c.id ? next : item))
                           );
+                          setCollectionSummary(null);
                         } catch (e: any) {
                           setError(e?.message ?? "Failed to remove from For Sale.");
                         }
