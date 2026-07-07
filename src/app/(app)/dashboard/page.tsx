@@ -7,6 +7,7 @@ import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories
 import { listMyCards, type MyCard } from "@/lib/repositories/myCards";
 import { getNextActions, type NextAction } from "@/lib/repositories/nextActions";
 import { getCollectionHealthScore } from "@/lib/repositories/collectionHealth";
+import { getDefaultCollectionGoal } from "@/lib/repositories/collectionGoals";
 import { Stat, MiniBadge } from "@/components/cards/BinderUi";
 import { formatCurrency } from "@/lib/format";
 
@@ -218,6 +219,8 @@ export default function DashboardPage() {
 
   const healthScore = useMemo(() => getCollectionHealthScore(cards), [cards]);
 
+  const collectionGoal = useMemo(() => getDefaultCollectionGoal(cards), [cards]);
+
   const totalCards = summary
     ? summary.counts.have + summary.counts.forSale + summary.counts.wanted + summary.counts.sold
     : 0;
@@ -250,6 +253,33 @@ export default function DashboardPage() {
                 <div className="text-xs text-zinc-500">Health Score</div>
                 <div className="mt-1 text-2xl font-semibold text-zinc-900">{healthScore} / 100</div>
                 <div className="mt-1 text-sm text-zinc-600">{healthLabel(healthScore)}</div>
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">Collection Goal</h2>
+            {collectionGoal === null ? (
+              <div className="empty-state">No goals available.</div>
+            ) : (
+              <div className="rounded-xl border bg-white p-4">
+                <div className="font-medium text-zinc-900">{collectionGoal.title}</div>
+                <div className="mt-1 text-sm text-zinc-600">{collectionGoal.description}</div>
+                <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
+                  <span>
+                    {collectionGoal.current} / {collectionGoal.target}
+                  </span>
+                  <span>{collectionGoal.percent}%</span>
+                </div>
+                <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+                  <div
+                    className="h-full rounded-full bg-blue-500"
+                    style={{ width: `${collectionGoal.percent}%` }}
+                  />
+                </div>
+                {collectionGoal.achieved ? (
+                  <div className="mt-3 text-sm font-medium text-emerald-700">Goal achieved!</div>
+                ) : null}
               </div>
             )}
           </section>
