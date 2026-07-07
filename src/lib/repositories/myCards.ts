@@ -26,6 +26,7 @@ import {
 export type MyCard = {
   id: string;
   playerName: string;
+  players?: { id: number; name: string; slug: string }[];
   year: string;
   setName: string;
   cardNumber?: string;
@@ -152,10 +153,15 @@ function toMyCard(row: UserCardJoined): MyCard {
   const playerNames = (card?.card_players ?? [])
     .map((cp) => cp.players?.full_name)
     .filter((name): name is string => !!name);
+  const players = (card?.card_players ?? [])
+    .map((cp) => cp.players)
+    .filter((p): p is PlayerRow => !!p)
+    .map((p) => ({ id: p.id, name: p.full_name, slug: p.slug }));
 
   return {
     id: row.id,
     playerName: playerNames.join(" / "),
+    players,
     year: set?.release_year != null ? String(set.release_year) : "",
     setName: set?.name ?? "",
     cardNumber: card?.card_number ?? undefined,

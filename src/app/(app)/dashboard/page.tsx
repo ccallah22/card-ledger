@@ -98,6 +98,43 @@ export default function DashboardPage() {
     });
   }, [cards]);
 
+  const mostCollectedPlayer = useMemo(() => {
+    type PlayerAgg = { id: number; name: string; slug: string; count: number; newestCreatedAt: string };
+    const byPlayerId = new Map<number, PlayerAgg>();
+
+    const qualifyingCards = cards.filter((c) => c.status !== "WANT" && c.status !== "SOLD");
+    for (const card of qualifyingCards) {
+      const seenOnThisCard = new Set<number>();
+      for (const player of card.players ?? []) {
+        if (seenOnThisCard.has(player.id)) continue;
+        seenOnThisCard.add(player.id);
+
+        const existing = byPlayerId.get(player.id);
+        const createdAt = card.createdAt ?? "";
+        if (!existing) {
+          byPlayerId.set(player.id, {
+            id: player.id,
+            name: player.name,
+            slug: player.slug,
+            count: 1,
+            newestCreatedAt: createdAt,
+          });
+        } else {
+          existing.count += 1;
+          if (createdAt > existing.newestCreatedAt) existing.newestCreatedAt = createdAt;
+        }
+      }
+    }
+
+    if (byPlayerId.size === 0) return null;
+    return Array.from(byPlayerId.values()).reduce((best, entry) => {
+      if (entry.count > best.count) return entry;
+      if (entry.count < best.count) return best;
+      // Tie on card count: prefer the player whose most recently added card is newest.
+      return entry.newestCreatedAt > best.newestCreatedAt ? entry : best;
+    });
+  }, [cards]);
+
   const isEmpty =
     !!summary &&
     summary.counts.have +
@@ -220,6 +257,26 @@ export default function DashboardPage() {
               </Link>
             ) : (
               <div className="empty-state">No unrealized gains available yet.</div>
+            )}
+            {mostCollectedPlayer ? (
+              <div className="block rounded-xl border bg-white p-4">
+                <div className="text-xs text-zinc-500">Most Collected Player</div>
+                {mostCollectedPlayer.slug ? (
+                  <Link
+                    href={`/players/${mostCollectedPlayer.slug}`}
+                    className="mt-1 block font-medium text-zinc-900 hover:underline"
+                  >
+                    {mostCollectedPlayer.name}
+                  </Link>
+                ) : (
+                  <div className="mt-1 font-medium text-zinc-900">{mostCollectedPlayer.name}</div>
+                )}
+                <div className="mt-1 text-lg font-semibold text-zinc-900">
+                  {mostCollectedPlayer.count} {mostCollectedPlayer.count === 1 ? "card" : "cards"}
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">No player data available yet.</div>
             )}
           </section>
 
