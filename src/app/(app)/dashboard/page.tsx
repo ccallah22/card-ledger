@@ -135,6 +135,46 @@ export default function DashboardPage() {
     });
   }, [cards]);
 
+  const mostCollectedSet = useMemo(() => {
+    type SetAgg = {
+      key: number | string;
+      name: string;
+      slug?: string;
+      count: number;
+      newestCreatedAt: string;
+    };
+    const bySetKey = new Map<number | string, SetAgg>();
+
+    const qualifyingCards = cards.filter((c) => c.status !== "WANT" && c.status !== "SOLD");
+    for (const card of qualifyingCards) {
+      if (!card.setName) continue;
+      const key = card.setId ?? card.setName;
+      const createdAt = card.createdAt ?? "";
+
+      const existing = bySetKey.get(key);
+      if (!existing) {
+        bySetKey.set(key, {
+          key,
+          name: card.setName,
+          slug: card.setSlug,
+          count: 1,
+          newestCreatedAt: createdAt,
+        });
+      } else {
+        existing.count += 1;
+        if (createdAt > existing.newestCreatedAt) existing.newestCreatedAt = createdAt;
+      }
+    }
+
+    if (bySetKey.size === 0) return null;
+    return Array.from(bySetKey.values()).reduce((best, entry) => {
+      if (entry.count > best.count) return entry;
+      if (entry.count < best.count) return best;
+      // Tie on card count: prefer the set whose newest qualifying card is newest.
+      return entry.newestCreatedAt > best.newestCreatedAt ? entry : best;
+    });
+  }, [cards]);
+
   const isEmpty =
     !!summary &&
     summary.counts.have +
@@ -277,6 +317,17 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="empty-state">No player data available yet.</div>
+            )}
+            {mostCollectedSet ? (
+              <div className="block rounded-xl border bg-white p-4">
+                <div className="text-xs text-zinc-500">Most Collected Set</div>
+                <div className="mt-1 font-medium text-zinc-900">{mostCollectedSet.name}</div>
+                <div className="mt-1 text-lg font-semibold text-zinc-900">
+                  {mostCollectedSet.count} {mostCollectedSet.count === 1 ? "card" : "cards"}
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">No set data available yet.</div>
             )}
           </section>
 

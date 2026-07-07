@@ -28,7 +28,9 @@ export type MyCard = {
   playerName: string;
   players?: { id: number; name: string; slug: string }[];
   year: string;
+  setId?: number;
   setName: string;
+  setSlug?: string;
   cardNumber?: string;
   team?: string;
 
@@ -163,7 +165,9 @@ function toMyCard(row: UserCardJoined): MyCard {
     playerName: playerNames.join(" / "),
     players,
     year: set?.release_year != null ? String(set.release_year) : "",
+    setId: set?.id ?? undefined,
     setName: set?.name ?? "",
+    setSlug: set?.slug ?? undefined,
     cardNumber: card?.card_number ?? undefined,
     team: row.team_name ?? undefined,
 
