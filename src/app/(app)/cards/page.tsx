@@ -272,6 +272,12 @@ function dupKey(c: MyCard) {
   return `${player}__${year}__${set}__${num}`;
 }
 
+function needsFilterLabel(needs: "photos" | "value" | "location") {
+  if (needs === "photos") return "missing photos";
+  if (needs === "value") return "missing an estimated value";
+  return "missing a storage location";
+}
+
 // Collector helpers
 function hasParallel(c: MyCard) {
   const v = normalize(c.variation);
@@ -301,6 +307,7 @@ export default function CardsPage() {
   const [error, setError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [forSaleMode, setForSaleMode] = useState(false);
+  const [needsFilter, setNeedsFilter] = useState<"photos" | "value" | "location" | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
@@ -582,6 +589,19 @@ export default function CardsPage() {
     return baseList.filter((c) => resolveSport(c) === sportFilter);
   }, [baseList, sportFilter]);
 
+  // ✅ "needs" filter (driven by the ?needs= query param, e.g. dashboard
+  // Next Actions links) — narrows to cards missing photos/value/location.
+  const afterNeeds = useMemo(() => {
+    if (!needsFilter) return afterSport;
+    return afterSport.filter((c) => {
+      if (needsFilter === "photos") return !c.imagePath;
+      if (needsFilter === "value") {
+        return typeof c.estimatedValue !== "number" || !Number.isFinite(c.estimatedValue);
+      }
+      return !c.location?.trim();
+    });
+  }, [afterSport, needsFilter]);
+
   const sportOptions = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>();
 
@@ -700,9 +720,9 @@ export default function CardsPage() {
   // ✅ stale filter
   // ✅ duplicates filter
   const afterDup = useMemo(() => {
-    if (!dupOnly) return afterSport;
-    return afterSport.filter((c) => dupInfo.dupKeys.has(dupKey(c)));
-  }, [afterSport, dupOnly, dupInfo.dupKeys]);
+    if (!dupOnly) return afterNeeds;
+    return afterNeeds.filter((c) => dupInfo.dupKeys.has(dupKey(c)));
+  }, [afterNeeds, dupOnly, dupInfo.dupKeys]);
 
   // ✅ collector flag filters
   const afterCollectorFlags = useMemo(() => {
@@ -875,6 +895,11 @@ export default function CardsPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     setForSaleMode(params.get("forSale") === "1");
+
+    const needs = params.get("needs");
+    if (needs === "photos" || needs === "value" || needs === "location") {
+      setNeedsFilter(needs);
+    }
   }, []);
 
   function toggleSelected(id: string, next?: boolean) {
@@ -1115,6 +1140,22 @@ export default function CardsPage() {
             </div>
           )}
         </div>
+
+        {needsFilter ? (
+          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            <span>Showing cards {needsFilterLabel(needsFilter)}.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setNeedsFilter(null);
+                router.replace("/cards");
+              }}
+              className="btn-link"
+            >
+              Clear filter
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {selectedCount > 0 ? (
