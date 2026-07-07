@@ -17,6 +17,7 @@ function cardWord(count: number) {
 export type DataQualitySignal = {
   id: string;
   label: string;
+  priority: "low" | "medium" | "high";
   appliesTo: (card: MyCard) => boolean;
   isComplete: (card: MyCard) => boolean;
   action: {
@@ -31,6 +32,7 @@ const SIGNALS: DataQualitySignal[] = [
   {
     id: "missing-photos",
     label: "missing photos",
+    priority: "low",
     appliesTo: () => true,
     isComplete: (card) => !!card.imagePath,
     action: {
@@ -43,6 +45,7 @@ const SIGNALS: DataQualitySignal[] = [
   {
     id: "missing-estimated-value",
     label: "missing an estimated value",
+    priority: "medium",
     appliesTo: () => true,
     isComplete: (card) =>
       typeof card.estimatedValue === "number" && Number.isFinite(card.estimatedValue),
@@ -56,6 +59,7 @@ const SIGNALS: DataQualitySignal[] = [
   {
     id: "missing-storage-location",
     label: "missing a storage location",
+    priority: "medium",
     appliesTo: () => true,
     isComplete: (card) => !!card.location?.trim(),
     action: {
@@ -69,6 +73,7 @@ const SIGNALS: DataQualitySignal[] = [
   {
     id: "missing-purchase-price",
     label: "missing a purchase price",
+    priority: "low",
     appliesTo: (card) => card.status === "HAVE" || card.status === "FOR_SALE",
     isComplete: (card) =>
       typeof card.purchasePrice === "number" && Number.isFinite(card.purchasePrice),
@@ -83,6 +88,7 @@ const SIGNALS: DataQualitySignal[] = [
   {
     id: "missing-asking-price",
     label: "missing an asking price",
+    priority: "high",
     appliesTo: (card) => card.status === "FOR_SALE",
     isComplete: (card) =>
       typeof card.askingPrice === "number" && Number.isFinite(card.askingPrice),
@@ -97,6 +103,7 @@ const SIGNALS: DataQualitySignal[] = [
   {
     id: "missing-grading-details",
     label: "missing grading details",
+    priority: "medium",
     appliesTo: (card) => card.gradingStatus === "GRADED",
     // certNumber exists on MyCard, so both grade and certNumber are checked.
     isComplete: (card) => !!card.grade && !!card.certNumber,
