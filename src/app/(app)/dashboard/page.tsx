@@ -6,6 +6,7 @@ import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { listMyCards, type MyCard } from "@/lib/repositories/myCards";
 import { getNextActions, type NextAction } from "@/lib/repositories/nextActions";
+import { getCollectionHealthScore } from "@/lib/repositories/collectionHealth";
 import { Stat, MiniBadge } from "@/components/cards/BinderUi";
 import { formatCurrency } from "@/lib/format";
 
@@ -31,6 +32,14 @@ function gainTone(n: number): "positive" | "negative" | "neutral" {
 
 function severityBadgeTone(severity: NextAction["severity"]): "amber" | "blue" | "green" {
   return severity === "warning" ? "amber" : severity === "success" ? "green" : "blue";
+}
+
+function healthLabel(score: number): string {
+  if (score >= 95) return "Excellent";
+  if (score >= 80) return "Great";
+  if (score >= 65) return "Good";
+  if (score >= 50) return "Needs Attention";
+  return "Critical";
 }
 
 export default function DashboardPage() {
@@ -207,6 +216,8 @@ export default function DashboardPage() {
 
   const nextActions = useMemo(() => getNextActions(cards), [cards]);
 
+  const healthScore = useMemo(() => getCollectionHealthScore(cards), [cards]);
+
   const totalCards = summary
     ? summary.counts.have + summary.counts.forSale + summary.counts.wanted + summary.counts.sold
     : 0;
@@ -230,6 +241,19 @@ export default function DashboardPage() {
         </div>
       ) : summary ? (
         <>
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">Collection Health</h2>
+            {healthScore === null ? (
+              <div className="empty-state">Add cards to begin tracking your collection health.</div>
+            ) : (
+              <div className="rounded-xl border bg-white p-4">
+                <div className="text-xs text-zinc-500">Health Score</div>
+                <div className="mt-1 text-2xl font-semibold text-zinc-900">{healthScore} / 100</div>
+                <div className="mt-1 text-sm text-zinc-600">{healthLabel(healthScore)}</div>
+              </div>
+            )}
+          </section>
+
           <section className="space-y-2">
             <h2 className="text-lg font-semibold tracking-tight">Next Actions</h2>
             {nextActions.length === 0 ? (
