@@ -4,6 +4,18 @@ function cardWord(count: number) {
   return count === 1 ? "card" : "cards";
 }
 
+function hasFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function hasText(value: string | null | undefined): boolean {
+  return !!value?.trim();
+}
+
+function appliesToStatuses(...statuses: MyCard["status"][]) {
+  return (card: MyCard) => statuses.includes(card.status);
+}
+
 // A single data-quality signal: a per-card presence/absence check shared by
 // both nextActions.ts (surfaces missing cards as an actionable card) and
 // collectionHealth.ts (scores completeness across all qualifying cards).
@@ -47,8 +59,7 @@ const SIGNALS: DataQualitySignal[] = [
     label: "missing an estimated value",
     priority: "medium",
     appliesTo: () => true,
-    isComplete: (card) =>
-      typeof card.estimatedValue === "number" && Number.isFinite(card.estimatedValue),
+    isComplete: (card) => hasFiniteNumber(card.estimatedValue),
     action: {
       titleForCount: (count) => `${count} ${cardWord(count)} missing an estimated value`,
       description: "Set an estimated value so these cards count toward your portfolio stats.",
@@ -61,7 +72,7 @@ const SIGNALS: DataQualitySignal[] = [
     label: "missing a storage location",
     priority: "medium",
     appliesTo: () => true,
-    isComplete: (card) => !!card.location?.trim(),
+    isComplete: (card) => hasText(card.location),
     action: {
       titleForCount: (count) => `${count} ${cardWord(count)} missing a storage location`,
       description:
@@ -74,9 +85,8 @@ const SIGNALS: DataQualitySignal[] = [
     id: "missing-purchase-price",
     label: "missing a purchase price",
     priority: "low",
-    appliesTo: (card) => card.status === "HAVE" || card.status === "FOR_SALE",
-    isComplete: (card) =>
-      typeof card.purchasePrice === "number" && Number.isFinite(card.purchasePrice),
+    appliesTo: appliesToStatuses("HAVE", "FOR_SALE"),
+    isComplete: (card) => hasFiniteNumber(card.purchasePrice),
     action: {
       titleForCount: (count) =>
         `${count} ${cardWord(count)} ${count === 1 ? "needs" : "need"} purchase prices`,
@@ -89,9 +99,8 @@ const SIGNALS: DataQualitySignal[] = [
     id: "missing-asking-price",
     label: "missing an asking price",
     priority: "high",
-    appliesTo: (card) => card.status === "FOR_SALE",
-    isComplete: (card) =>
-      typeof card.askingPrice === "number" && Number.isFinite(card.askingPrice),
+    appliesTo: appliesToStatuses("FOR_SALE"),
+    isComplete: (card) => hasFiniteNumber(card.askingPrice),
     action: {
       titleForCount: (count) =>
         `${count} for-sale ${cardWord(count)} ${count === 1 ? "needs" : "need"} asking prices`,
@@ -106,7 +115,9 @@ const SIGNALS: DataQualitySignal[] = [
     priority: "medium",
     appliesTo: (card) => card.gradingStatus === "GRADED",
     // certNumber exists on MyCard, so both grade and certNumber are checked.
-    isComplete: (card) => !!card.grade && !!card.certNumber,
+    // Uses hasText (not a plain truthy check) so whitespace-only values are
+    // correctly treated as missing.
+    isComplete: (card) => hasText(card.grade) && hasText(card.certNumber),
     action: {
       titleForCount: (count) =>
         `${count} graded ${cardWord(count)} ${count === 1 ? "needs" : "need"} grading details`,
