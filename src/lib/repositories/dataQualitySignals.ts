@@ -66,6 +66,48 @@ const SIGNALS: DataQualitySignal[] = [
       href: "/cards?needs=location",
     },
   },
+  {
+    id: "missing-purchase-price",
+    label: "missing a purchase price",
+    appliesTo: (card) => card.status === "HAVE" || card.status === "FOR_SALE",
+    isComplete: (card) =>
+      typeof card.purchasePrice === "number" && Number.isFinite(card.purchasePrice),
+    action: {
+      titleForCount: (count) =>
+        `${count} ${cardWord(count)} ${count === 1 ? "needs" : "need"} purchase prices`,
+      description: "Add purchase prices so cost basis, gains, and ROI are more accurate.",
+      severity: "info",
+      href: "/cards",
+    },
+  },
+  {
+    id: "missing-asking-price",
+    label: "missing an asking price",
+    appliesTo: (card) => card.status === "FOR_SALE",
+    isComplete: (card) =>
+      typeof card.askingPrice === "number" && Number.isFinite(card.askingPrice),
+    action: {
+      titleForCount: (count) =>
+        `${count} for-sale ${cardWord(count)} ${count === 1 ? "needs" : "need"} asking prices`,
+      description: "Add asking prices so your for-sale listings are ready.",
+      severity: "warning",
+      href: "/cards/for-sale",
+    },
+  },
+  {
+    id: "missing-grading-details",
+    label: "missing grading details",
+    appliesTo: (card) => card.gradingStatus === "GRADED",
+    // certNumber exists on MyCard, so both grade and certNumber are checked.
+    isComplete: (card) => !!card.grade && !!card.certNumber,
+    action: {
+      titleForCount: (count) =>
+        `${count} graded ${cardWord(count)} ${count === 1 ? "needs" : "need"} grading details`,
+      description: "Add grade details so your graded-card records are complete.",
+      severity: "info",
+      href: "/cards",
+    },
+  },
 ];
 
 // Add a new data-quality signal later by appending another entry here --
