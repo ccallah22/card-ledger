@@ -175,6 +175,31 @@ export default function DashboardPage() {
     });
   }, [cards]);
 
+  const growthTimeline = useMemo(() => {
+    const now = new Date();
+    const months: { key: string; label: string; count: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleString("en-US", { month: "short", year: "numeric" });
+      months.push({ key, label, count: 0 });
+    }
+    const byKey = new Map(months.map((m) => [m.key, m]));
+
+    for (const card of cards) {
+      if (!card.createdAt) continue;
+      const d = new Date(card.createdAt);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const bucket = byKey.get(key);
+      if (bucket) bucket.count += 1;
+    }
+
+    return months;
+  }, [cards]);
+
+  const growthMax = Math.max(1, ...growthTimeline.map((m) => m.count));
+
   const totalCards = summary
     ? summary.counts.have + summary.counts.forSale + summary.counts.wanted + summary.counts.sold
     : 0;
@@ -379,6 +404,27 @@ export default function DashboardPage() {
                 })}
               </ul>
             )}
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">Collection Growth</h2>
+            <div className="rounded-xl border bg-white p-4">
+              <div className="flex h-32 items-end gap-3">
+                {growthTimeline.map((month) => {
+                  const pct = Math.round((month.count / growthMax) * 100);
+                  return (
+                    <div
+                      key={month.key}
+                      className="flex h-full flex-1 flex-col items-center justify-end gap-1"
+                    >
+                      <div className="text-xs font-medium text-zinc-700">{month.count}</div>
+                      <div className="w-full rounded-t bg-blue-500" style={{ height: `${pct}%` }} />
+                      <div className="text-xs text-zinc-500">{month.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </section>
         </>
       ) : null}
