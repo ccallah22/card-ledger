@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
+import { listMyCards, type MyCard } from "@/lib/repositories/myCards";
 import { Stat } from "@/components/cards/BinderUi";
 import { formatCurrency } from "@/lib/format";
+
+const RECENT_ADDITIONS_LIMIT = 5;
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -26,6 +30,7 @@ function gainTone(n: number): "positive" | "negative" | "neutral" {
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<CollectionSummary | null>(null);
+  const [recentCards, setRecentCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -36,8 +41,16 @@ export default function DashboardPage() {
         setLoading(true);
         setError("");
         const profileId = await requireProfileId();
-        const data = await getCollectionSummary(profileId);
-        if (active) setSummary(data);
+        const [summaryData, cards] = await Promise.all([
+          getCollectionSummary(profileId),
+          listMyCards(profileId),
+        ]);
+        if (active) {
+          setSummary(summaryData);
+          // listMyCards is already ordered by created_at desc, so this is
+          // simply the most-recently-added cards.
+          setRecentCards(cards.slice(0, RECENT_ADDITIONS_LIMIT));
+        }
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load your dashboard");
       } finally {
@@ -116,6 +129,36 @@ export default function DashboardPage() {
                 value={summary.counts.sold > 0 ? formatPercent(summary.financial.winRate) : "—"}
               />
             </div>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">Recent Additions</h2>
+            {recentCards.length === 0 ? (
+              <div className="empty-state">No cards added yet.</div>
+            ) : (
+              <ul className="divide-y rounded-xl border bg-white">
+                {recentCards.map((card) => {
+                  const primaryParts = [
+                    card.year,
+                    card.setName,
+                    card.cardNumber ? `#${card.cardNumber}` : null,
+                  ].filter(Boolean);
+                  return (
+                    <li key={card.id}>
+                      <Link
+                        href={`/cards/${card.id}`}
+                        className="block px-4 py-3 text-sm text-zinc-700 hover:bg-zinc-50"
+                      >
+                        <div className="font-medium text-zinc-900">{card.playerName}</div>
+                        <div className="text-xs text-zinc-500">
+                          {[primaryParts.join(" • "), card.status].filter(Boolean).join(" • ")}
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
         </>
       ) : null}
