@@ -22,6 +22,7 @@ import {
 } from "@/lib/repositories/myCards";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
+import { getDataQualitySignals } from "@/lib/repositories/dataQualitySignals";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
@@ -277,6 +278,14 @@ function needsFilterLabel(needs: "photos" | "value" | "location") {
   if (needs === "value") return "missing an estimated value";
   return "missing a storage location";
 }
+
+// Maps the ?needs= URL values to the shared dataQualitySignals.ts signal
+// ids they correspond to.
+const NEEDS_FILTER_SIGNAL_ID: Record<"photos" | "value" | "location", string> = {
+  photos: "missing-photos",
+  value: "missing-estimated-value",
+  location: "missing-storage-location",
+};
 
 // Collector helpers
 function hasParallel(c: MyCard) {
@@ -590,16 +599,15 @@ export default function CardsPage() {
   }, [baseList, sportFilter]);
 
   // ✅ "needs" filter (driven by the ?needs= query param, e.g. dashboard
-  // Next Actions links) — narrows to cards missing photos/value/location.
+  // Next Actions links) — narrows to cards missing photos/value/location,
+  // using the shared dataQualitySignals.ts engine instead of hand-written
+  // completeness checks.
   const afterNeeds = useMemo(() => {
     if (!needsFilter) return afterSport;
-    return afterSport.filter((c) => {
-      if (needsFilter === "photos") return !c.imagePath;
-      if (needsFilter === "value") {
-        return typeof c.estimatedValue !== "number" || !Number.isFinite(c.estimatedValue);
-      }
-      return !c.location?.trim();
-    });
+    const signalId = NEEDS_FILTER_SIGNAL_ID[needsFilter];
+    const signal = getDataQualitySignals().find((s) => s.id === signalId);
+    if (!signal) return afterSport;
+    return afterSport.filter((c) => signal.appliesTo(c) && !signal.isComplete(c));
   }, [afterSport, needsFilter]);
 
   const sportOptions = useMemo(() => {
