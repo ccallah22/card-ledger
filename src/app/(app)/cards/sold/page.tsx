@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { type MyCard, listMyCards } from "@/lib/repositories/myCards";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
+import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { formatCurrency } from "@/lib/format";
 
 async function requireProfileId(): Promise<string> {
@@ -124,6 +125,7 @@ type Extreme = {
 
 export default function SoldHistoryPage() {
   const [cards, setCards] = useState<MyCard[]>([]);
+  const [collectionSummary, setCollectionSummary] = useState<CollectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -134,8 +136,14 @@ export default function SoldHistoryPage() {
         setLoading(true);
         setError("");
         const profileId = await requireProfileId();
-        const data = await listMyCards(profileId);
-        if (active) setCards(data);
+        const [data, summary] = await Promise.all([
+          listMyCards(profileId),
+          getCollectionSummary(profileId),
+        ]);
+        if (active) {
+          setCards(data);
+          setCollectionSummary(summary);
+        }
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load cards");
       } finally {
@@ -159,6 +167,25 @@ export default function SoldHistoryPage() {
   }, [cards]);
 
   const totals = useMemo(() => {
+    if (collectionSummary) {
+      return {
+        totalSold: collectionSummary.financial.soldRevenue,
+        totalPaid: collectionSummary.financial.soldCostBasis,
+        realizedNet: collectionSummary.financial.realizedNet,
+        wins: collectionSummary.financial.wins,
+        losses: collectionSummary.financial.losses,
+        winRate: collectionSummary.financial.winRate,
+        avgProfit: collectionSummary.financial.avgProfitPerSale,
+        count: collectionSummary.counts.sold,
+        roi: collectionSummary.financial.roi,
+        best: collectionSummary.bestSale,
+        worst: collectionSummary.worstSale,
+        avgDaysToSell: collectionSummary.holdTime.avgDaysToSell,
+        medianDaysToSell: collectionSummary.holdTime.medianDaysToSell,
+        holdCount: collectionSummary.holdTime.holdCount,
+      };
+    }
+
     const totalSold = soldCards.reduce((sum, c) => sum + (asNumber(c.soldPrice) ?? 0), 0);
     const totalPaid = soldCards.reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
     const realizedNet = totalSold - totalPaid;
@@ -230,7 +257,7 @@ export default function SoldHistoryPage() {
       medianDaysToSell,
       holdCount,
     };
-  }, [soldCards]);
+  }, [soldCards, collectionSummary]);
 
   const trend = useMemo<TrendPoint[]>(() => {
     const byMonth = new Map<string, number>();
