@@ -21,6 +21,7 @@ import {
   deleteMyCards,
 } from "@/lib/repositories/myCards";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
+import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
@@ -295,6 +296,7 @@ export default function CardsPage() {
   const router = useRouter();
 
   const [cards, setCards] = useState<MyCard[]>([]);
+  const [collectionSummary, setCollectionSummary] = useState<CollectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -351,9 +353,15 @@ export default function CardsPage() {
 
         const profileId = await requireProfileId();
         const endTrace = startTrace("load-binder-cards");
-        const data = await listMyCards(profileId);
+        const [data, summary] = await Promise.all([
+          listMyCards(profileId),
+          getCollectionSummary(profileId),
+        ]);
         if (endTrace) endTrace();
-        if (mounted) setCards(data);
+        if (mounted) {
+          setCards(data);
+          setCollectionSummary(summary);
+        }
       } catch (e: any) {
         captureError(e, { area: "binder-load" });
         if (mounted) setError(e?.message || "Failed to load cards");
@@ -506,9 +514,13 @@ export default function CardsPage() {
 
       const profileId = await requireProfileId();
       const endTrace = startTrace("refresh-binder-cards");
-      const data = await listMyCards(profileId);
+      const [data, summary] = await Promise.all([
+        listMyCards(profileId),
+        getCollectionSummary(profileId),
+      ]);
       if (endTrace) endTrace();
       setCards(data);
+      setCollectionSummary(summary);
     } catch (e: any) {
       captureError(e, { area: "binder-refresh" });
       setError(e?.message || "Failed to load cards");
@@ -903,6 +915,9 @@ export default function CardsPage() {
       );
       const byId = new Map(updated.map((c) => [c.id, c]));
       setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
+      // Local mutation outruns the last fetched summary; fall back to
+      // recomputing from `cards` until the next full refresh.
+      setCollectionSummary(null);
       clearSelection();
       if (forSaleMode && nextStatus === "FOR_SALE") {
         router.push("/cards/for-sale");
@@ -923,6 +938,7 @@ export default function CardsPage() {
     try {
       await deleteMyCards(Array.from(selectedIds));
       setCards((prev) => prev.filter((c) => !selectedIds.has(c.id)));
+      setCollectionSummary(null);
       clearSelection();
     } catch (e: any) {
       alert(`Bulk delete failed: ${e?.message ?? "unknown error"}`);
@@ -952,14 +968,23 @@ export default function CardsPage() {
     const cardsInSport =
       sportFilter === "ALL" ? cards : cards.filter((c) => resolveSport(c) === sportFilter);
 
-    const totalCards = cardsInSport.filter((c) => {
-      const s = c.status ?? "HAVE";
-      return s !== "SOLD" && s !== "WANT";
-    }).length;
+    // The shared collection summary has no sport dimension, so it's only a
+    // safe substitute for the unfiltered (sportFilter === "ALL") case; a
+    // specific sport tab still needs the local, per-sport computation below.
+    const useSharedSummary = sportFilter === "ALL" && collectionSummary !== null;
 
-    const totalSpent = cardsInSport
-      .filter((c) => (c.status ?? "HAVE") !== "WANT")
-      .reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
+    const totalCards = useSharedSummary
+      ? collectionSummary.counts.have + collectionSummary.counts.forSale
+      : cardsInSport.filter((c) => {
+          const s = c.status ?? "HAVE";
+          return s !== "SOLD" && s !== "WANT";
+        }).length;
+
+    const totalSpent = useSharedSummary
+      ? collectionSummary.financial.totalSpent
+      : cardsInSport
+          .filter((c) => (c.status ?? "HAVE") !== "WANT")
+          .reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
 
     const soldCards = cardsInSport.filter((c) => (c.status ?? "HAVE") === "SOLD");
     const totalSold = soldCards.reduce((sum, c) => sum + (asNumber(c.soldPrice) ?? 0), 0);
@@ -977,17 +1002,18 @@ export default function CardsPage() {
       return s !== "SOLD" && s !== "WANT";
     });
 
-    const totalPortfolioValue = inventory.reduce(
-      (sum, c) => sum + (asNumber(c.estimatedValue) ?? 0),
-      0
-    );
+    const totalPortfolioValue = useSharedSummary
+      ? collectionSummary.financial.portfolioValue
+      : inventory.reduce((sum, c) => sum + (asNumber(c.estimatedValue) ?? 0), 0);
 
-    const totalNetGain = inventory.reduce((sum, c) => {
-      const estimatedValue = asNumber(c.estimatedValue);
-      if (typeof estimatedValue !== "number") return sum;
-      const paid = asNumber(c.purchasePrice) ?? 0;
-      return sum + (estimatedValue - paid);
-    }, 0);
+    const totalNetGain = useSharedSummary
+      ? collectionSummary.financial.unrealizedNetGain
+      : inventory.reduce((sum, c) => {
+          const estimatedValue = asNumber(c.estimatedValue);
+          if (typeof estimatedValue !== "number") return sum;
+          const paid = asNumber(c.purchasePrice) ?? 0;
+          return sum + (estimatedValue - paid);
+        }, 0);
 
     const graded = inventory.filter((c) => c.gradingStatus === "GRADED").length;
     const raw = Math.max(0, inventory.length - graded);
@@ -1028,7 +1054,7 @@ export default function CardsPage() {
       avgAge,
       medianAge,
     };
-  }, [cards, sportFilter]);
+  }, [cards, sportFilter, collectionSummary]);
 
   const netTone =
     totals.totalNetGain > 0 ? "positive" : totals.totalNetGain < 0 ? "negative" : "neutral";
@@ -1058,6 +1084,7 @@ export default function CardsPage() {
     try {
       await deleteMyCard(deleteTarget.id);
       setCards((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+      setCollectionSummary(null);
     } catch (e: any) {
       alert(`Delete failed: ${e?.message ?? "unknown error"}`);
     } finally {
