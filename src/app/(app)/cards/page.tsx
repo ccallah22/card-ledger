@@ -15,6 +15,7 @@ import { CardTile } from "@/components/cards/CardTile";
 
 import {
   type MyCard,
+  type MyCardInput,
   listMyCards,
   updateMyCard,
   deleteMyCard,
@@ -970,15 +971,26 @@ export default function CardsPage() {
     setSelectedIds(new Set());
   }
 
-  async function applyBulkStatus(nextStatus: MyCard["status"]) {
-    if (!selectedIds.size || bulkBusy) return;
+  // Shared by every bulk field-update handler (status, location, and future
+  // fields like purchase/asking price). Pass an empty confirmMessage to
+  // skip the confirmation step. Returns true only if the update actually
+  // ran, so callers can gate their own post-success side effects on it.
+  async function applyBulkCardUpdate(
+    patch: Partial<MyCardInput>,
+    confirmMessage: string,
+  ): Promise<boolean> {
+    if (!selectedIds.size || bulkBusy) return false;
+    if (confirmMessage) {
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) return false;
+    }
 
     setBulkBusy(true);
     try {
       const profileId = await requireProfileId();
       const ids = Array.from(selectedIds);
       const updated = await Promise.all(
-        ids.map((id) => updateMyCard(profileId, id, { status: nextStatus })),
+        ids.map((id) => updateMyCard(profileId, id, patch)),
       );
       const byId = new Map(updated.map((c) => [c.id, c]));
       setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
@@ -986,44 +998,28 @@ export default function CardsPage() {
       // recomputing from `cards` until the next full refresh.
       setCollectionSummary(null);
       clearSelection();
-      if (forSaleMode && nextStatus === "FOR_SALE") {
-        router.push("/cards/for-sale");
-      }
+      return true;
     } catch (e: any) {
       alert(`Bulk update failed: ${e?.message ?? "unknown error"}`);
+      return false;
     } finally {
       setBulkBusy(false);
     }
   }
 
-  async function applyBulkLocation() {
-    if (!selectedIds.size || bulkBusy) return;
-    const confirmed = window.confirm(
-      bulkLocationValue
-        ? `Set location to "${bulkLocationValue}" for ${selectedIds.size} cards?`
-        : `Clear location for ${selectedIds.size} cards?`
-    );
-    if (!confirmed) return;
-
-    setBulkBusy(true);
-    try {
-      const profileId = await requireProfileId();
-      const ids = Array.from(selectedIds);
-      const updated = await Promise.all(
-        ids.map((id) => updateMyCard(profileId, id, { location: bulkLocationValue })),
-      );
-      const byId = new Map(updated.map((c) => [c.id, c]));
-      setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
-      // Local mutation outruns the last fetched summary; fall back to
-      // recomputing from `cards` until the next full refresh.
-      setCollectionSummary(null);
-      clearSelection();
-      setBulkLocationValue("");
-    } catch (e: any) {
-      alert(`Bulk location update failed: ${e?.message ?? "unknown error"}`);
-    } finally {
-      setBulkBusy(false);
+  async function applyBulkStatus(nextStatus: MyCard["status"]) {
+    const applied = await applyBulkCardUpdate({ status: nextStatus }, "");
+    if (applied && forSaleMode && nextStatus === "FOR_SALE") {
+      router.push("/cards/for-sale");
     }
+  }
+
+  async function applyBulkLocation() {
+    const confirmMessage = bulkLocationValue
+      ? `Set location to "${bulkLocationValue}" for ${selectedIds.size} cards?`
+      : `Clear location for ${selectedIds.size} cards?`;
+    const applied = await applyBulkCardUpdate({ location: bulkLocationValue }, confirmMessage);
+    if (applied) setBulkLocationValue("");
   }
 
   async function applyBulkDelete() {
