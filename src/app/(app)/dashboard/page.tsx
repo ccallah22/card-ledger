@@ -175,13 +175,11 @@ export default function DashboardPage() {
     });
   }, [cards]);
 
-  const isEmpty =
-    !!summary &&
-    summary.counts.have +
-      summary.counts.forSale +
-      summary.counts.wanted +
-      summary.counts.sold ===
-      0;
+  const totalCards = summary
+    ? summary.counts.have + summary.counts.forSale + summary.counts.wanted + summary.counts.sold
+    : 0;
+
+  const isEmpty = !!summary && totalCards === 0;
 
   return (
     <div className="space-y-6">
@@ -207,6 +205,28 @@ export default function DashboardPage() {
               <Stat label="Wishlist" value={`${summary.counts.wanted}`} />
               <Stat label="For Sale" value={`${summary.counts.forSale}`} />
               <Stat label="Sold" value={`${summary.counts.sold}`} />
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">Collection Breakdown</h2>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Stat
+                label="Owned"
+                value={`${summary.counts.have} (${formatPercent(summary.counts.have / totalCards)})`}
+              />
+              <Stat
+                label="Wishlist"
+                value={`${summary.counts.wanted} (${formatPercent(summary.counts.wanted / totalCards)})`}
+              />
+              <Stat
+                label="For Sale"
+                value={`${summary.counts.forSale} (${formatPercent(summary.counts.forSale / totalCards)})`}
+              />
+              <Stat
+                label="Sold"
+                value={`${summary.counts.sold} (${formatPercent(summary.counts.sold / totalCards)})`}
+              />
             </div>
           </section>
 
