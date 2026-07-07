@@ -104,14 +104,18 @@ export function CardTile({
   return (
     <div className="relative">
       <div className="absolute left-2 top-2 z-20">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={(e) => onToggleSelected(c.id, e.target.checked)}
+        <label
+          className="flex h-11 w-11 items-center justify-center"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
-          className="h-4 w-4 accent-zinc-900"
-        />
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => onToggleSelected(c.id, e.target.checked)}
+            className="h-4 w-4 accent-zinc-900"
+          />
+        </label>
       </div>
       <Link
         href={rowHref}
