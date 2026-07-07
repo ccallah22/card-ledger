@@ -26,7 +26,7 @@ function ruleMissingPhotos(cards: MyCard[]): NextAction | null {
     title: `${missing.length} ${cardWord(missing.length)} missing photos`,
     description: "Add a photo so these cards are easier to identify, share, and sell.",
     severity: "warning",
-    href: "/cards",
+    href: "/cards?needs=photos",
   };
 }
 
@@ -41,7 +41,7 @@ function ruleMissingEstimatedValue(cards: MyCard[]): NextAction | null {
     title: `${missing.length} ${cardWord(missing.length)} missing an estimated value`,
     description: "Set an estimated value so these cards count toward your portfolio stats.",
     severity: "info",
-    href: "/cards",
+    href: "/cards?needs=value",
   };
 }
 
@@ -54,7 +54,7 @@ function ruleMissingStorageLocation(cards: MyCard[]): NextAction | null {
     title: `${missing.length} ${cardWord(missing.length)} missing a storage location`,
     description: "Assign a location so you can find these cards later and filter by Binder / Box / Safe.",
     severity: "info",
-    href: "/cards",
+    href: "/cards?needs=location",
   };
 }
 
