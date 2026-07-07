@@ -328,6 +328,7 @@ export default function CardsPage() {
   const [qualityFilter, setQualityFilter] = useState<QualityFilterOption>("ALL");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkLocationValue, setBulkLocationValue] = useState("");
+  const [bulkPurchasePriceValue, setBulkPurchasePriceValue] = useState("");
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
     Record<string, { reports: number; status?: string }>
@@ -1022,6 +1023,30 @@ export default function CardsPage() {
     if (applied) setBulkLocationValue("");
   }
 
+  async function applyBulkPurchasePrice() {
+    if (!selectedIds.size || bulkBusy) return;
+
+    const trimmed = bulkPurchasePriceValue.trim();
+    if (!trimmed) {
+      // MyCardInput.purchasePrice is typed as `number | undefined` (no
+      // `null`), so updateMyCard has no supported way to clear an existing
+      // purchase price -- only to set it to a number. Surface that instead
+      // of silently no-op'ing.
+      alert("Enter a number to update purchase price. Clearing purchase price isn't supported yet.");
+      return;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      alert("Enter a valid number for purchase price.");
+      return;
+    }
+
+    const confirmMessage = `Set purchase price to ${parsed} for ${selectedIds.size} cards?`;
+    const applied = await applyBulkCardUpdate({ purchasePrice: parsed }, confirmMessage);
+    if (applied) setBulkPurchasePriceValue("");
+  }
+
   async function applyBulkDelete() {
     if (!selectedIds.size || bulkBusy) return;
     const confirmed = window.confirm(`Delete ${selectedIds.size} cards? This cannot be undone.`);
@@ -1294,6 +1319,23 @@ export default function CardsPage() {
               className="btn-secondary"
             >
               Apply Location
+            </button>
+
+            <input
+              type="number"
+              inputMode="decimal"
+              value={bulkPurchasePriceValue}
+              onChange={(e) => setBulkPurchasePriceValue(e.target.value)}
+              placeholder="Purchase price"
+              className="w-32 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
+            />
+            <button
+              type="button"
+              onClick={applyBulkPurchasePrice}
+              disabled={bulkBusy}
+              className="btn-secondary"
+            >
+              Apply Purchase Price
             </button>
           </div>
         </div>
