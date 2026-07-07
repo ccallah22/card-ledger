@@ -273,19 +273,27 @@ function dupKey(c: MyCard) {
   return `${player}__${year}__${set}__${num}`;
 }
 
-function needsFilterLabel(needs: "photos" | "value" | "location") {
-  if (needs === "photos") return "missing photos";
-  if (needs === "value") return "missing an estimated value";
-  return "missing a storage location";
-}
-
-// Maps the ?needs= URL values to the shared dataQualitySignals.ts signal
-// ids they correspond to.
+// Maps the legacy ?needs= URL values to the shared dataQualitySignals.ts
+// signal ids they correspond to.
 const NEEDS_FILTER_SIGNAL_ID: Record<"photos" | "value" | "location", string> = {
   photos: "missing-photos",
   value: "missing-estimated-value",
   location: "missing-storage-location",
 };
+
+const QUALITY_FILTER_BUCKETS = ["ALL", "NEEDS_ATTENTION", "HIGH_PRIORITY", "COMPLETE"] as const;
+type QualityFilterBucket = (typeof QUALITY_FILTER_BUCKETS)[number];
+// A DataQualitySignal id (string) is also a valid value, selecting cards
+// incomplete for that one specific signal.
+type QualityFilterOption = QualityFilterBucket | string;
+
+function qualityFilterLabel(filter: QualityFilterOption) {
+  if (filter === "NEEDS_ATTENTION") return "needing attention";
+  if (filter === "HIGH_PRIORITY") return "with high-priority issues";
+  if (filter === "COMPLETE") return "that are complete";
+  const signal = getDataQualitySignals().find((s) => s.id === filter);
+  return signal ? signal.label : "matching this filter";
+}
 
 // Collector helpers
 function hasParallel(c: MyCard) {
@@ -316,7 +324,7 @@ export default function CardsPage() {
   const [error, setError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [forSaleMode, setForSaleMode] = useState(false);
-  const [needsFilter, setNeedsFilter] = useState<"photos" | "value" | "location" | null>(null);
+  const [qualityFilter, setQualityFilter] = useState<QualityFilterOption>("ALL");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
@@ -598,17 +606,31 @@ export default function CardsPage() {
     return baseList.filter((c) => resolveSport(c) === sportFilter);
   }, [baseList, sportFilter]);
 
-  // ✅ "needs" filter (driven by the ?needs= query param, e.g. dashboard
-  // Next Actions links) — narrows to cards missing photos/value/location,
-  // using the shared dataQualitySignals.ts engine instead of hand-written
-  // completeness checks.
-  const afterNeeds = useMemo(() => {
-    if (!needsFilter) return afterSport;
-    const signalId = NEEDS_FILTER_SIGNAL_ID[needsFilter];
-    const signal = getDataQualitySignals().find((s) => s.id === signalId);
+  // ✅ Data quality filter (driven by the ?needs= query param, e.g.
+  // dashboard Next Actions links, and later by in-page filter controls) —
+  // narrows to cards matching a data-quality bucket or a specific
+  // dataQualitySignals.ts signal.
+  const afterQuality = useMemo(() => {
+    if (qualityFilter === "ALL") return afterSport;
+
+    const signals = getDataQualitySignals();
+
+    if (qualityFilter === "NEEDS_ATTENTION") {
+      return afterSport.filter((c) => signals.some((s) => s.appliesTo(c) && !s.isComplete(c)));
+    }
+    if (qualityFilter === "HIGH_PRIORITY") {
+      return afterSport.filter((c) =>
+        signals.some((s) => s.priority === "high" && s.appliesTo(c) && !s.isComplete(c))
+      );
+    }
+    if (qualityFilter === "COMPLETE") {
+      return afterSport.filter((c) => signals.every((s) => !s.appliesTo(c) || s.isComplete(c)));
+    }
+
+    const signal = signals.find((s) => s.id === qualityFilter);
     if (!signal) return afterSport;
     return afterSport.filter((c) => signal.appliesTo(c) && !signal.isComplete(c));
-  }, [afterSport, needsFilter]);
+  }, [afterSport, qualityFilter]);
 
   const sportOptions = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>();
@@ -728,9 +750,9 @@ export default function CardsPage() {
   // ✅ stale filter
   // ✅ duplicates filter
   const afterDup = useMemo(() => {
-    if (!dupOnly) return afterNeeds;
-    return afterNeeds.filter((c) => dupInfo.dupKeys.has(dupKey(c)));
-  }, [afterNeeds, dupOnly, dupInfo.dupKeys]);
+    if (!dupOnly) return afterQuality;
+    return afterQuality.filter((c) => dupInfo.dupKeys.has(dupKey(c)));
+  }, [afterQuality, dupOnly, dupInfo.dupKeys]);
 
   // ✅ collector flag filters
   const afterCollectorFlags = useMemo(() => {
@@ -906,7 +928,7 @@ export default function CardsPage() {
 
     const needs = params.get("needs");
     if (needs === "photos" || needs === "value" || needs === "location") {
-      setNeedsFilter(needs);
+      setQualityFilter(NEEDS_FILTER_SIGNAL_ID[needs]);
     }
   }, []);
 
@@ -1149,13 +1171,13 @@ export default function CardsPage() {
           )}
         </div>
 
-        {needsFilter ? (
+        {qualityFilter !== "ALL" ? (
           <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-            <span>Showing cards {needsFilterLabel(needsFilter)}.</span>
+            <span>Showing cards {qualityFilterLabel(qualityFilter)}.</span>
             <button
               type="button"
               onClick={() => {
-                setNeedsFilter(null);
+                setQualityFilter("ALL");
                 router.replace("/cards");
               }}
               className="btn-link"
