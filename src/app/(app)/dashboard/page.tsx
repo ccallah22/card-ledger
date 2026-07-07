@@ -5,7 +5,8 @@ import Link from "next/link";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { listMyCards, type MyCard } from "@/lib/repositories/myCards";
-import { Stat } from "@/components/cards/BinderUi";
+import { getNextActions, type NextAction } from "@/lib/repositories/nextActions";
+import { Stat, MiniBadge } from "@/components/cards/BinderUi";
 import { formatCurrency } from "@/lib/format";
 
 const RECENT_ADDITIONS_LIMIT = 5;
@@ -26,6 +27,10 @@ function formatDays(n: number) {
 
 function gainTone(n: number): "positive" | "negative" | "neutral" {
   return n > 0 ? "positive" : n < 0 ? "negative" : "neutral";
+}
+
+function severityBadgeTone(severity: NextAction["severity"]): "amber" | "blue" | "green" {
+  return severity === "warning" ? "amber" : severity === "success" ? "green" : "blue";
 }
 
 export default function DashboardPage() {
@@ -200,6 +205,8 @@ export default function DashboardPage() {
 
   const growthMax = Math.max(1, ...growthTimeline.map((m) => m.count));
 
+  const nextActions = useMemo(() => getNextActions(cards), [cards]);
+
   const totalCards = summary
     ? summary.counts.have + summary.counts.forSale + summary.counts.wanted + summary.counts.sold
     : 0;
@@ -223,6 +230,42 @@ export default function DashboardPage() {
         </div>
       ) : summary ? (
         <>
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">Next Actions</h2>
+            {nextActions.length === 0 ? (
+              <div className="empty-state">Everything looks great!</div>
+            ) : (
+              <div className="space-y-2">
+                {nextActions.map((action) => {
+                  const content = (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <MiniBadge tone={severityBadgeTone(action.severity)}>
+                          {action.severity}
+                        </MiniBadge>
+                        <div className="font-medium text-zinc-900">{action.title}</div>
+                      </div>
+                      <div className="mt-1 text-sm text-zinc-600">{action.description}</div>
+                    </>
+                  );
+                  return action.href ? (
+                    <Link
+                      key={action.id}
+                      href={action.href}
+                      className="block rounded-xl border bg-white p-4 hover:bg-zinc-50"
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <div key={action.id} className="block rounded-xl border bg-white p-4">
+                      {content}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
           <section className="space-y-2">
             <h2 className="text-lg font-semibold tracking-tight">Collection</h2>
             <div className="grid gap-3 sm:grid-cols-4">
