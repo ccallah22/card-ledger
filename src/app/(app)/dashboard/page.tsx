@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
@@ -30,7 +30,7 @@ function gainTone(n: number): "positive" | "negative" | "neutral" {
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<CollectionSummary | null>(null);
-  const [recentCards, setRecentCards] = useState<MyCard[]>([]);
+  const [cards, setCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -41,15 +41,13 @@ export default function DashboardPage() {
         setLoading(true);
         setError("");
         const profileId = await requireProfileId();
-        const [summaryData, cards] = await Promise.all([
+        const [summaryData, cardsData] = await Promise.all([
           getCollectionSummary(profileId),
           listMyCards(profileId),
         ]);
         if (active) {
           setSummary(summaryData);
-          // listMyCards is already ordered by created_at desc, so this is
-          // simply the most-recently-added cards.
-          setRecentCards(cards.slice(0, RECENT_ADDITIONS_LIMIT));
+          setCards(cardsData);
         }
       } catch (e: any) {
         if (active) setError(e?.message ?? "Failed to load your dashboard");
@@ -61,6 +59,24 @@ export default function DashboardPage() {
       active = false;
     };
   }, []);
+
+  // listMyCards is already ordered by created_at desc, so this is simply
+  // the most-recently-added cards.
+  const recentCards = useMemo(() => cards.slice(0, RECENT_ADDITIONS_LIMIT), [cards]);
+
+  const mostValuableCard = useMemo(() => {
+    const withValue = cards.filter(
+      (c): c is MyCard & { estimatedValue: number } =>
+        typeof c.estimatedValue === "number" && Number.isFinite(c.estimatedValue)
+    );
+    if (withValue.length === 0) return null;
+    return withValue.reduce((best, c) => {
+      if (c.estimatedValue > best.estimatedValue) return c;
+      if (c.estimatedValue < best.estimatedValue) return best;
+      // Tie on estimated value: prefer the newest created card.
+      return (c.createdAt ?? "") > (best.createdAt ?? "") ? c : best;
+    });
+  }, [cards]);
 
   const isEmpty =
     !!summary &&
@@ -129,6 +145,35 @@ export default function DashboardPage() {
                 value={summary.counts.sold > 0 ? formatPercent(summary.financial.winRate) : "—"}
               />
             </div>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">Collection Insights</h2>
+            {mostValuableCard ? (
+              <Link
+                href={`/cards/${mostValuableCard.id}`}
+                className="block rounded-xl border bg-white p-4 hover:bg-zinc-50"
+              >
+                <div className="text-xs text-zinc-500">Most Valuable Card</div>
+                <div className="mt-1 font-medium text-zinc-900">
+                  {mostValuableCard.playerName}
+                </div>
+                <div className="text-xs text-zinc-500">
+                  {[
+                    mostValuableCard.year,
+                    mostValuableCard.setName,
+                    mostValuableCard.cardNumber ? `#${mostValuableCard.cardNumber}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </div>
+                <div className="mt-1 text-lg font-semibold text-zinc-900">
+                  {formatCurrency(mostValuableCard.estimatedValue)}
+                </div>
+              </Link>
+            ) : (
+              <div className="empty-state">No estimated values available yet.</div>
+            )}
           </section>
 
           <section className="space-y-2">
