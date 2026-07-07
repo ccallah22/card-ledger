@@ -632,6 +632,17 @@ export default function CardsPage() {
     return afterSport.filter((c) => signal.appliesTo(c) && !signal.isComplete(c));
   }, [afterSport, qualityFilter]);
 
+  // ✅ Data Quality chips source -- one option per shared signal, in the
+  // signal's own declared order (not alphabetized like the other groups).
+  const qualityOptions = useMemo(() => {
+    return getDataQualitySignals().map((signal) => {
+      const count = afterSport.filter(
+        (c) => signal.appliesTo(c) && !signal.isComplete(c)
+      ).length;
+      return { key: signal.id, label: signal.label, count };
+    });
+  }, [afterSport]);
+
   const sportOptions = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>();
 
@@ -1275,6 +1286,8 @@ export default function CardsPage() {
   insertOptions={insertOptions}
   parallelOptions={parallelOptions}
   numberedOptions={numberedOptions}
+  qualityFilter={qualityFilter}
+  qualityOptions={qualityOptions}
   locationKey={locationKey}
   insertKey={insertKey}
   parallelKey={parallelKey}
@@ -1292,6 +1305,7 @@ export default function CardsPage() {
   setInsertKey={setInsertKey}
   setParallelKey={setParallelKey}
   setNumberedKey={setNumberedKey}
+  setQualityFilter={setQualityFilter}
   setDupOnly={setDupOnly}
   setAutoOnly={setAutoOnly}
   setPatchOnly={setPatchOnly}
@@ -1301,6 +1315,7 @@ export default function CardsPage() {
     setQ("");
     setSportFilter("ALL");
     clearCollectorFilters();
+    setQualityFilter("ALL");
     setShowFilters(false);
     refresh();
   }}
@@ -1342,6 +1357,7 @@ export default function CardsPage() {
                 setQ("");
                 setSportFilter("ALL");
                 clearCollectorFilters();
+                setQualityFilter("ALL");
                 setShowFilters(false);
                 refresh();
               }}
@@ -1471,11 +1487,48 @@ export default function CardsPage() {
               )}
             </div>
 
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs font-medium text-zinc-600 mr-1">Data Quality</div>
+
+              <Chip active={qualityFilter === "ALL"} onClick={() => setQualityFilter("ALL")}>
+                All
+              </Chip>
+              <Chip
+                active={qualityFilter === "NEEDS_ATTENTION"}
+                onClick={() => setQualityFilter("NEEDS_ATTENTION")}
+              >
+                Needs Attention
+              </Chip>
+              <Chip
+                active={qualityFilter === "COMPLETE"}
+                onClick={() => setQualityFilter("COMPLETE")}
+              >
+                Complete
+              </Chip>
+              <Chip
+                active={qualityFilter === "HIGH_PRIORITY"}
+                onClick={() => setQualityFilter("HIGH_PRIORITY")}
+              >
+                High Priority
+              </Chip>
+              {qualityOptions.map((opt) => (
+                <Chip
+                  key={opt.key}
+                  active={qualityFilter === opt.key}
+                  onClick={() => setQualityFilter(opt.key)}
+                >
+                  {opt.label}
+                  {opt.count ? ` • ${opt.count}` : ""}
+                </Chip>
+              ))}
+            </div>
+
             <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={() => {
                   clearCollectorFilters();
+                  setQualityFilter("ALL");
                   setShowFilters(false);
                 }}
                 className="btn-secondary"

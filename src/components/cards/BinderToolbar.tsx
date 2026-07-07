@@ -30,6 +30,8 @@ export function BinderToolbar({
   insertOptions,
   parallelOptions,
   numberedOptions,
+  qualityFilter,
+  qualityOptions,
   locationKey,
   insertKey,
   parallelKey,
@@ -47,6 +49,7 @@ export function BinderToolbar({
   setInsertKey,
   setParallelKey,
   setNumberedKey,
+  setQualityFilter,
   setDupOnly,
   setAutoOnly,
   setPatchOnly,
@@ -64,6 +67,8 @@ export function BinderToolbar({
   insertOptions: FilterOption[];
   parallelOptions: FilterOption[];
   numberedOptions: FilterOption[];
+  qualityFilter: string;
+  qualityOptions: FilterOption[];
   locationKey: string;
   insertKey: string;
   parallelKey: string;
@@ -81,6 +86,7 @@ export function BinderToolbar({
   setInsertKey: (next: string) => void;
   setParallelKey: (next: string) => void;
   setNumberedKey: (next: string) => void;
+  setQualityFilter: (next: string) => void;
   setDupOnly: React.Dispatch<React.SetStateAction<boolean>>;
   setAutoOnly: React.Dispatch<React.SetStateAction<boolean>>;
   setPatchOnly: React.Dispatch<React.SetStateAction<boolean>>;
@@ -293,11 +299,45 @@ export function BinderToolbar({
             )}
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-xs font-medium text-zinc-600 mr-1">Data Quality</div>
+
+            <Chip active={qualityFilter === "ALL"} onClick={() => setQualityFilter("ALL")}>
+              All
+            </Chip>
+            <Chip
+              active={qualityFilter === "NEEDS_ATTENTION"}
+              onClick={() => setQualityFilter("NEEDS_ATTENTION")}
+            >
+              Needs Attention
+            </Chip>
+            <Chip active={qualityFilter === "COMPLETE"} onClick={() => setQualityFilter("COMPLETE")}>
+              Complete
+            </Chip>
+            <Chip
+              active={qualityFilter === "HIGH_PRIORITY"}
+              onClick={() => setQualityFilter("HIGH_PRIORITY")}
+            >
+              High Priority
+            </Chip>
+            {qualityOptions.map((opt) => (
+              <Chip
+                key={opt.key}
+                active={qualityFilter === opt.key}
+                onClick={() => setQualityFilter(opt.key)}
+              >
+                {opt.label}
+                {opt.count ? ` • ${opt.count}` : ""}
+              </Chip>
+            ))}
+          </div>
+
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => {
                 clearCollectorFilters();
+                setQualityFilter("ALL");
                 setShowFilters(false);
               }}
               className="btn-secondary"
