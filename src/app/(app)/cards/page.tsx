@@ -330,6 +330,10 @@ export default function CardsPage() {
   const [bulkLocationValue, setBulkLocationValue] = useState("");
   const [bulkPurchasePriceValue, setBulkPurchasePriceValue] = useState("");
   const [bulkAskingPriceValue, setBulkAskingPriceValue] = useState("");
+  // Mobile-only: whether the location/purchase-price/asking-price bulk
+  // fields are expanded below the always-visible status actions. Ignored
+  // above the sm breakpoint, where those fields are always shown.
+  const [showBulkFields, setShowBulkFields] = useState(false);
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
     Record<string, { reports: number; status?: string }>
@@ -1306,79 +1310,121 @@ export default function CardsPage() {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => applyBulkStatus("FOR_SALE")} disabled={bulkBusy} className="btn-secondary">
-              Mark For Sale
-            </button>
-            {forSaleMode ? (
-              <button type="button" onClick={() => router.push("/cards/for-sale")} className="btn-secondary">
-                Cancel
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex gap-2 sm:contents">
+              <button
+                type="button"
+                onClick={() => applyBulkStatus("FOR_SALE")}
+                disabled={bulkBusy}
+                className="btn-secondary flex-1 sm:flex-none"
+              >
+                Mark For Sale
               </button>
-            ) : (
-              <>
-                <button type="button" onClick={() => applyBulkStatus("SOLD")} disabled={bulkBusy} className="btn-secondary">
-                  Mark Sold
+              {forSaleMode ? (
+                <button
+                  type="button"
+                  onClick={() => router.push("/cards/for-sale")}
+                  className="btn-secondary flex-1 sm:flex-none"
+                >
+                  Cancel
                 </button>
-                <button type="button" onClick={applyBulkDelete} disabled={bulkBusy} className="btn-destructive">
-                  Delete
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => applyBulkStatus("SOLD")}
+                    disabled={bulkBusy}
+                    className="btn-secondary flex-1 sm:flex-none"
+                  >
+                    Mark Sold
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyBulkDelete}
+                    disabled={bulkBusy}
+                    className="btn-destructive flex-1 sm:flex-none"
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowBulkFields((v) => !v)}
+              className="btn-link sm:hidden"
+            >
+              {showBulkFields ? "Hide fields" : "Edit fields (location, price)"}
+            </button>
+
+            <div
+              className={
+                (showBulkFields ? "flex" : "hidden") +
+                " flex-col gap-2 sm:contents"
+              }
+            >
+              <div className="flex flex-col gap-2 sm:contents">
+                <select
+                  value={bulkLocationValue}
+                  onChange={(e) => setBulkLocationValue(e.target.value)}
+                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-auto"
+                >
+                  <option value="">No location</option>
+                  {locationOptions.map((opt) => (
+                    <option key={opt.key} value={opt.label}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={applyBulkLocation}
+                  disabled={bulkBusy}
+                  className="btn-secondary w-full sm:w-auto"
+                >
+                  Apply Location
                 </button>
-              </>
-            )}
+              </div>
 
-            <select
-              value={bulkLocationValue}
-              onChange={(e) => setBulkLocationValue(e.target.value)}
-              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
-            >
-              <option value="">No location</option>
-              {locationOptions.map((opt) => (
-                <option key={opt.key} value={opt.label}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={applyBulkLocation}
-              disabled={bulkBusy}
-              className="btn-secondary"
-            >
-              Apply Location
-            </button>
+              <div className="flex flex-col gap-2 sm:contents">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={bulkPurchasePriceValue}
+                  onChange={(e) => setBulkPurchasePriceValue(e.target.value)}
+                  placeholder="Purchase price"
+                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-32"
+                />
+                <button
+                  type="button"
+                  onClick={applyBulkPurchasePrice}
+                  disabled={bulkBusy}
+                  className="btn-secondary w-full sm:w-auto"
+                >
+                  Apply Purchase Price
+                </button>
+              </div>
 
-            <input
-              type="number"
-              inputMode="decimal"
-              value={bulkPurchasePriceValue}
-              onChange={(e) => setBulkPurchasePriceValue(e.target.value)}
-              placeholder="Purchase price"
-              className="w-32 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
-            />
-            <button
-              type="button"
-              onClick={applyBulkPurchasePrice}
-              disabled={bulkBusy}
-              className="btn-secondary"
-            >
-              Apply Purchase Price
-            </button>
-
-            <input
-              type="number"
-              inputMode="decimal"
-              value={bulkAskingPriceValue}
-              onChange={(e) => setBulkAskingPriceValue(e.target.value)}
-              placeholder="Asking price"
-              className="w-32 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
-            />
-            <button
-              type="button"
-              onClick={applyBulkAskingPrice}
-              disabled={bulkBusy}
-              className="btn-secondary"
-            >
-              Apply Asking Price
-            </button>
+              <div className="flex flex-col gap-2 sm:contents">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={bulkAskingPriceValue}
+                  onChange={(e) => setBulkAskingPriceValue(e.target.value)}
+                  placeholder="Asking price"
+                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-32"
+                />
+                <button
+                  type="button"
+                  onClick={applyBulkAskingPrice}
+                  disabled={bulkBusy}
+                  className="btn-secondary w-full sm:w-auto"
+                >
+                  Apply Asking Price
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
