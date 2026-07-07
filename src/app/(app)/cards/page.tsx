@@ -326,6 +326,7 @@ export default function CardsPage() {
   const [forSaleMode, setForSaleMode] = useState(false);
   const [qualityFilter, setQualityFilter] = useState<QualityFilterOption>("ALL");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkLocationValue, setBulkLocationValue] = useState("");
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
     Record<string, { reports: number; status?: string }>
@@ -995,6 +996,36 @@ export default function CardsPage() {
     }
   }
 
+  async function applyBulkLocation() {
+    if (!selectedIds.size || bulkBusy) return;
+    const confirmed = window.confirm(
+      bulkLocationValue
+        ? `Set location to "${bulkLocationValue}" for ${selectedIds.size} cards?`
+        : `Clear location for ${selectedIds.size} cards?`
+    );
+    if (!confirmed) return;
+
+    setBulkBusy(true);
+    try {
+      const profileId = await requireProfileId();
+      const ids = Array.from(selectedIds);
+      const updated = await Promise.all(
+        ids.map((id) => updateMyCard(profileId, id, { location: bulkLocationValue })),
+      );
+      const byId = new Map(updated.map((c) => [c.id, c]));
+      setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
+      // Local mutation outruns the last fetched summary; fall back to
+      // recomputing from `cards` until the next full refresh.
+      setCollectionSummary(null);
+      clearSelection();
+      setBulkLocationValue("");
+    } catch (e: any) {
+      alert(`Bulk location update failed: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function applyBulkDelete() {
     if (!selectedIds.size || bulkBusy) return;
     const confirmed = window.confirm(`Delete ${selectedIds.size} cards? This cannot be undone.`);
@@ -1247,6 +1278,27 @@ export default function CardsPage() {
                 </button>
               </>
             )}
+
+            <select
+              value={bulkLocationValue}
+              onChange={(e) => setBulkLocationValue(e.target.value)}
+              className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
+            >
+              <option value="">No location</option>
+              {locationOptions.map((opt) => (
+                <option key={opt.key} value={opt.label}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={applyBulkLocation}
+              disabled={bulkBusy}
+              className="btn-secondary"
+            >
+              Apply Location
+            </button>
           </div>
         </div>
       ) : null}
