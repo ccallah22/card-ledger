@@ -329,6 +329,7 @@ export default function CardsPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkLocationValue, setBulkLocationValue] = useState("");
   const [bulkPurchasePriceValue, setBulkPurchasePriceValue] = useState("");
+  const [bulkAskingPriceValue, setBulkAskingPriceValue] = useState("");
   const [sharedImages, setSharedImages] = useState<Record<string, SharedImage>>({});
   const [reportMap, setReportMap] = useState<
     Record<string, { reports: number; status?: string }>
@@ -1047,6 +1048,30 @@ export default function CardsPage() {
     if (applied) setBulkPurchasePriceValue("");
   }
 
+  async function applyBulkAskingPrice() {
+    if (!selectedIds.size || bulkBusy) return;
+
+    const trimmed = bulkAskingPriceValue.trim();
+    if (!trimmed) {
+      // MyCardInput.askingPrice is typed as `number | undefined` (no
+      // `null`), so updateMyCard has no supported way to clear an existing
+      // asking price -- only to set it to a number. Surface that instead
+      // of silently no-op'ing.
+      alert("Enter a number to update asking price. Clearing asking price isn't supported yet.");
+      return;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      alert("Enter a valid number for asking price.");
+      return;
+    }
+
+    const confirmMessage = `Set asking price to ${parsed} for ${selectedIds.size} cards?`;
+    const applied = await applyBulkCardUpdate({ askingPrice: parsed }, confirmMessage);
+    if (applied) setBulkAskingPriceValue("");
+  }
+
   async function applyBulkDelete() {
     if (!selectedIds.size || bulkBusy) return;
     const confirmed = window.confirm(`Delete ${selectedIds.size} cards? This cannot be undone.`);
@@ -1336,6 +1361,23 @@ export default function CardsPage() {
               className="btn-secondary"
             >
               Apply Purchase Price
+            </button>
+
+            <input
+              type="number"
+              inputMode="decimal"
+              value={bulkAskingPriceValue}
+              onChange={(e) => setBulkAskingPriceValue(e.target.value)}
+              placeholder="Asking price"
+              className="w-32 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
+            />
+            <button
+              type="button"
+              onClick={applyBulkAskingPrice}
+              disabled={bulkBusy}
+              className="btn-secondary"
+            >
+              Apply Asking Price
             </button>
           </div>
         </div>
