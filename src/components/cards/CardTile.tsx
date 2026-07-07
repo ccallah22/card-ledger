@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { IconDots, MiniBadge, type BadgeTone } from "@/components/cards/BinderUi";
 import type { MyCard } from "@/lib/repositories/myCards";
+import { getDataQualitySignals } from "@/lib/repositories/dataQualitySignals";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 import type { SharedImage } from "@/lib/db/sharedImages";
@@ -72,6 +73,13 @@ export function CardTile({
   const sold = asNumber(c.soldPrice);
 
   const insert = (c.insert ?? "").trim();
+
+  const incompleteSignals = getDataQualitySignals().filter(
+    (signal) => signal.appliesTo(c) && !signal.isComplete(c)
+  );
+  const hasHighPriorityIssue = incompleteSignals.some(
+    (signal) => signal.priority === "high"
+  );
 
   const hideImage =
     !!report &&
@@ -160,6 +168,11 @@ export function CardTile({
                 ) : null}
                 {c.isAutograph ? <MiniBadge tone="purple">Auto</MiniBadge> : null}
                 {c.isPatch ? <MiniBadge tone="amber">Patch</MiniBadge> : null}
+                {incompleteSignals.length > 0 ? (
+                  <MiniBadge tone={hasHighPriorityIssue ? "red" : "amber"}>
+                    Missing {incompleteSignals.length}
+                  </MiniBadge>
+                ) : null}
               </div>
             </div>
           </div>
