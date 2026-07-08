@@ -7,6 +7,7 @@ import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { formatCurrency } from "@/lib/format";
 import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -165,17 +166,12 @@ export default function ForSalePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">For Sale</h1>
-          <p className="text-sm text-zinc-600">Cards currently listed for sale.</p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/cards?forSale=1" className="btn-primary">
-            Choose From Binder
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="For Sale"
+        subtitle="Cards currently listed for sale."
+        variant="default"
+        action={{ label: "Choose From Binder", href: "/cards?forSale=1", variant: "primary" }}
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-white p-4">

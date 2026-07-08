@@ -5,6 +5,7 @@ import Link from "next/link";
 import { type MyCard, listMyCards } from "@/lib/repositories/myCards";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -81,17 +82,12 @@ export default function WishlistPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Wishlist</h1>
-          <p className="text-sm text-zinc-600">Cards you want to add to the binder.</p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/cards/wishlist/search" className="btn-primary">
-            Add to Wishlist
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Wishlist"
+        subtitle="Cards you want to add to the binder."
+        variant="default"
+        action={{ label: "Add to Wishlist", href: "/cards/wishlist/search", variant: "primary" }}
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-white p-4">
