@@ -9,6 +9,7 @@ import { getNextActions, type NextAction } from "@/lib/repositories/nextActions"
 import { getCollectionHealthScore } from "@/lib/repositories/collectionHealth";
 import { getDefaultCollectionGoal } from "@/lib/repositories/collectionGoals";
 import { Stat, MiniBadge } from "@/components/cards/BinderUi";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 import { formatCurrency } from "@/lib/format";
 
 const RECENT_ADDITIONS_LIMIT = 5;
@@ -245,7 +246,7 @@ export default function DashboardPage() {
       ) : summary ? (
         <>
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Collection Health</h2>
+            <SectionHeader title="Collection Health" />
             {healthScore === null ? (
               <div className="empty-state">Add cards to begin tracking your collection health.</div>
             ) : (
@@ -258,7 +259,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Collection Goal</h2>
+            <SectionHeader title="Collection Goal" />
             {collectionGoal === null ? (
               <div className="empty-state">No goals available.</div>
             ) : (
@@ -285,7 +286,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Next Actions</h2>
+            <SectionHeader title="Next Actions" />
             {nextActions.length === 0 ? (
               <div className="empty-state">Everything looks great!</div>
             ) : (
@@ -321,7 +322,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Collection</h2>
+            <SectionHeader title="Collection" />
             <div className="grid gap-3 sm:grid-cols-4">
               <Stat label="Owned" value={`${summary.counts.have}`} />
               <Stat label="Wishlist" value={`${summary.counts.wanted}`} />
@@ -331,7 +332,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Collection Breakdown</h2>
+            <SectionHeader title="Collection Breakdown" />
             <div className="grid gap-3 sm:grid-cols-4">
               <Stat
                 label="Owned"
@@ -353,7 +354,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Financial</h2>
+            <SectionHeader title="Financial" />
             <div className="grid gap-3 sm:grid-cols-4">
               <Stat label="Portfolio Value" value={formatCurrency(summary.financial.portfolioValue)} />
               <Stat label="Total Spent" value={formatCurrency(summary.financial.totalSpent)} />
@@ -371,7 +372,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Quality</h2>
+            <SectionHeader title="Quality" />
             <div className="grid gap-3 sm:grid-cols-4">
               <Stat label="Graded" value={`${summary.counts.graded}`} />
               <Stat label="Raw" value={`${summary.counts.raw}`} />
@@ -387,7 +388,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Collection Insights</h2>
+            <SectionHeader title="Collection Insights" />
             {mostValuableCard ? (
               <Link
                 href={`/cards/${mostValuableCard.id}`}
@@ -474,7 +475,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Recent Additions</h2>
+            <SectionHeader title="Recent Additions" />
             {recentCards.length === 0 ? (
               <div className="empty-state">No cards added yet.</div>
             ) : (
@@ -504,7 +505,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">Collection Growth</h2>
+            <SectionHeader title="Collection Growth" />
             <div className="rounded-xl border bg-white p-4">
               <div className="flex h-32 items-end gap-3">
                 {growthTimeline.map((month) => {
