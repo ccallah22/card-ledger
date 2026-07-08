@@ -25,6 +25,7 @@ import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { getDataQualitySignals } from "@/lib/repositories/dataQualitySignals";
 import { getNextActions } from "@/lib/repositories/nextActions";
+import { getCollectionHealthScore } from "@/lib/repositories/collectionHealth";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
@@ -295,6 +296,17 @@ function qualityFilterLabel(filter: QualityFilterOption) {
   if (filter === "COMPLETE") return "that are complete";
   const signal = getDataQualitySignals().find((s) => s.id === filter);
   return signal ? signal.label : "matching this filter";
+}
+
+// Presentation-only bucket labels for the score returned by
+// getCollectionHealthScore -- mirrors the Dashboard's own (page-local,
+// unexported) healthLabel(). The score itself is never recomputed here.
+function healthScoreLabel(score: number) {
+  if (score >= 95) return "Excellent";
+  if (score >= 80) return "Great";
+  if (score >= 65) return "Good";
+  if (score >= 50) return "Needs Attention";
+  return "Critical";
 }
 
 // Collector helpers
@@ -1233,6 +1245,10 @@ export default function CardsPage() {
     };
   }, [sportFilter, collectionSummary, cards]);
 
+  // ✅ Condensed Collection Health for the top of the Binder page -- reuses
+  // the shared collectionHealth engine as-is (no duplicated scoring logic).
+  const healthScore = useMemo(() => getCollectionHealthScore(cards), [cards]);
+
   // ✅ Condensed Next Actions for the top of the Binder page -- reuses the
   // shared nextActions engine as-is (no duplicated completeness/priority
   // logic). Only the top 2 are shown here; the full list still lives on
@@ -1333,6 +1349,21 @@ export default function CardsPage() {
           <span className="font-semibold text-zinc-900">{snapshotCounts.sold}</span>
         </div>
       </div>
+
+      {/* Condensed Collection Health */}
+      {healthScore !== null ? (
+        <button
+          type="button"
+          onClick={() => setQualityFilter("NEEDS_ATTENTION")}
+          className="block w-full rounded-xl border bg-white p-3 text-left hover:bg-zinc-50"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-zinc-900">Collection Health</span>
+            <span className="text-lg font-semibold text-zinc-900">{healthScore} / 100</span>
+          </div>
+          <div className="mt-1 text-sm text-zinc-600">{healthScoreLabel(healthScore)}</div>
+        </button>
+      ) : null}
 
       {/* Condensed Next Actions */}
       <div className="rounded-xl border bg-white p-3">
