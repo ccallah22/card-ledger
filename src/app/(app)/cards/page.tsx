@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Chip } from "@/components/cards/BinderUi";
@@ -24,6 +24,7 @@ import {
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { getCollectionSummary, type CollectionSummary } from "@/lib/repositories/collectionSummary";
 import { getDataQualitySignals } from "@/lib/repositories/dataQualitySignals";
+import { getNextActions } from "@/lib/repositories/nextActions";
 import { cardsToCsv, downloadCsv } from "@/lib/csv";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImagesByFingerprints, type SharedImage } from "@/lib/db/sharedImages";
@@ -318,6 +319,7 @@ function isRookie(c: MyCard) {
 
 export default function CardsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [cards, setCards] = useState<MyCard[]>([]);
   const [collectionSummary, setCollectionSummary] = useState<CollectionSummary | null>(null);
@@ -941,15 +943,17 @@ export default function CardsPage() {
   const someVisibleSelected = visibleCardIds.some((id) => selectedIds.has(id));
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    setForSaleMode(params.get("forSale") === "1");
+    // Reads via the reactive useSearchParams() (not a mount-only
+    // window.location.search snapshot) so this also re-applies when a
+    // same-route Link only changes the query string -- e.g. the Binder
+    // page's own Next Actions links -- not just on a fresh navigation.
+    setForSaleMode(searchParams.get("forSale") === "1");
 
-    const needs = params.get("needs");
+    const needs = searchParams.get("needs");
     if (needs === "photos" || needs === "value" || needs === "location") {
       setQualityFilter(NEEDS_FILTER_SIGNAL_ID[needs]);
     }
-  }, []);
+  }, [searchParams]);
 
   function toggleSelected(id: string, next?: boolean) {
     setSelectedIds((prev) => {
@@ -1229,6 +1233,13 @@ export default function CardsPage() {
     };
   }, [sportFilter, collectionSummary, cards]);
 
+  // ✅ Condensed Next Actions for the top of the Binder page -- reuses the
+  // shared nextActions engine as-is (no duplicated completeness/priority
+  // logic). Only the top 2 are shown here; the full list still lives on
+  // the Dashboard.
+  const nextActions = useMemo(() => getNextActions(cards), [cards]);
+  const topNextActions = useMemo(() => nextActions.slice(0, 2), [nextActions]);
+
   const activeFiltersCount =
     (dupOnly ? 1 : 0) +
     (parallelKey !== "ALL" ? 1 : 0) +
@@ -1321,6 +1332,43 @@ export default function CardsPage() {
           <span className="text-zinc-500">Sold</span>
           <span className="font-semibold text-zinc-900">{snapshotCounts.sold}</span>
         </div>
+      </div>
+
+      {/* Condensed Next Actions */}
+      <div className="rounded-xl border bg-white p-3">
+        <h2 className="mb-2 text-sm font-semibold text-zinc-900">Next Actions</h2>
+        {nextActions.length === 0 ? (
+          <div className="text-sm text-zinc-600">✓ Your collection looks great.</div>
+        ) : (
+          <div className="space-y-2">
+            {topNextActions.map((action) => {
+              const content = (
+                <div className="text-sm font-medium text-zinc-900">{action.title}</div>
+              );
+              return action.href ? (
+                <Link
+                  key={action.id}
+                  href={action.href}
+                  className="block rounded-lg border border-zinc-200 px-3 py-2 hover:bg-zinc-50"
+                >
+                  {content}
+                </Link>
+              ) : (
+                <div key={action.id} className="block rounded-lg border border-zinc-200 px-3 py-2">
+                  {content}
+                </div>
+              );
+            })}
+            {nextActions.length > 2 ? (
+              <Link
+                href="/dashboard"
+                className="block text-sm font-medium text-blue-700 hover:underline"
+              >
+                View all ({nextActions.length})
+              </Link>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {selectedCount > 0 ? (
