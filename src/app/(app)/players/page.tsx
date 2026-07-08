@@ -7,6 +7,7 @@ export default function PlayersPage() {
       <PageHeader
         title="Player Explorer"
         subtitle="Search players, teams, sports, and future card connections."
+        variant="large"
       />
 
       <PlayerExplorer />
