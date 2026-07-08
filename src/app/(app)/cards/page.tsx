@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Chip } from "@/components/cards/BinderUi";
+import { SummaryChip } from "@/components/ui/SummaryChip";
 import { BinderStats } from "@/components/cards/BinderStats";
 import { BinderToolbar } from "@/components/cards/BinderToolbar";
 import { DeleteCardDialog } from "@/components/cards/DeleteCardDialog";
@@ -1332,22 +1333,10 @@ export default function CardsPage() {
 
       {/* Collection snapshot strip */}
       <div className="flex flex-wrap gap-2">
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
-          <span className="text-zinc-500">Owned</span>
-          <span className="font-semibold text-zinc-900">{snapshotCounts.have}</span>
-        </div>
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
-          <span className="text-zinc-500">Wishlist</span>
-          <span className="font-semibold text-zinc-900">{snapshotCounts.wanted}</span>
-        </div>
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
-          <span className="text-zinc-500">For Sale</span>
-          <span className="font-semibold text-zinc-900">{snapshotCounts.forSale}</span>
-        </div>
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
-          <span className="text-zinc-500">Sold</span>
-          <span className="font-semibold text-zinc-900">{snapshotCounts.sold}</span>
-        </div>
+        <SummaryChip label="Owned" value={snapshotCounts.have} />
+        <SummaryChip label="Wishlist" value={snapshotCounts.wanted} />
+        <SummaryChip label="For Sale" value={snapshotCounts.forSale} />
+        <SummaryChip label="Sold" value={snapshotCounts.sold} />
       </div>
 
       {/* Condensed Collection Health */}
