@@ -1206,6 +1206,29 @@ export default function CardsPage() {
   const netTone =
     totals.totalNetGain > 0 ? "positive" : totals.totalNetGain < 0 ? "negative" : "neutral";
 
+  // ✅ Collection snapshot counts (Owned/Wishlist/For Sale/Sold) for the
+  // condensed strip at the top of the page. Same "shared summary when
+  // unfiltered by sport" pattern already used by `totals` above -- no new
+  // fetch, just reusing collectionSummary/cards that are already loaded.
+  const snapshotCounts = useMemo(() => {
+    if (sportFilter === "ALL" && collectionSummary) {
+      return {
+        have: collectionSummary.counts.have,
+        wanted: collectionSummary.counts.wanted,
+        forSale: collectionSummary.counts.forSale,
+        sold: collectionSummary.counts.sold,
+      };
+    }
+    const cardsInSport =
+      sportFilter === "ALL" ? cards : cards.filter((c) => resolveSport(c) === sportFilter);
+    return {
+      have: cardsInSport.filter((c) => (c.status ?? "HAVE") === "HAVE").length,
+      wanted: cardsInSport.filter((c) => (c.status ?? "HAVE") === "WANT").length,
+      forSale: cardsInSport.filter((c) => (c.status ?? "HAVE") === "FOR_SALE").length,
+      sold: cardsInSport.filter((c) => (c.status ?? "HAVE") === "SOLD").length,
+    };
+  }, [sportFilter, collectionSummary, cards]);
+
   const activeFiltersCount =
     (dupOnly ? 1 : 0) +
     (parallelKey !== "ALL" ? 1 : 0) +
@@ -1278,6 +1301,26 @@ export default function CardsPage() {
             </button>
           </div>
         ) : null}
+      </div>
+
+      {/* Collection snapshot strip */}
+      <div className="flex flex-wrap gap-2">
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
+          <span className="text-zinc-500">Owned</span>
+          <span className="font-semibold text-zinc-900">{snapshotCounts.have}</span>
+        </div>
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
+          <span className="text-zinc-500">Wishlist</span>
+          <span className="font-semibold text-zinc-900">{snapshotCounts.wanted}</span>
+        </div>
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
+          <span className="text-zinc-500">For Sale</span>
+          <span className="font-semibold text-zinc-900">{snapshotCounts.forSale}</span>
+        </div>
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700">
+          <span className="text-zinc-500">Sold</span>
+          <span className="font-semibold text-zinc-900">{snapshotCounts.sold}</span>
+        </div>
       </div>
 
       {selectedCount > 0 ? (
