@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Chip } from "@/components/cards/BinderUi";
 import { SummaryChip } from "@/components/ui/SummaryChip";
@@ -331,6 +331,14 @@ function isRookie(c: MyCard) {
 }
 
 export default function CardsPage() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading your binder…</div>}>
+      <CardsPageInner />
+    </Suspense>
+  );
+}
+
+function CardsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
