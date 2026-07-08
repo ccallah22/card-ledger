@@ -10,6 +10,7 @@ import { getCollectionHealthScore } from "@/lib/repositories/collectionHealth";
 import { getDefaultCollectionGoal } from "@/lib/repositories/collectionGoals";
 import { Stat, MiniBadge } from "@/components/cards/BinderUi";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { StatCard } from "@/components/ui/StatCard";
 import { formatCurrency } from "@/lib/format";
 
 const RECENT_ADDITIONS_LIMIT = 5;
@@ -250,11 +251,11 @@ export default function DashboardPage() {
             {healthScore === null ? (
               <div className="empty-state">Add cards to begin tracking your collection health.</div>
             ) : (
-              <div className="rounded-xl border bg-white p-4">
-                <div className="text-xs text-zinc-500">Health Score</div>
-                <div className="mt-1 text-2xl font-semibold text-zinc-900">{healthScore} / 100</div>
-                <div className="mt-1 text-sm text-zinc-600">{healthLabel(healthScore)}</div>
-              </div>
+              <StatCard
+                title="Health Score"
+                value={`${healthScore} / 100`}
+                subtitle={healthLabel(healthScore)}
+              />
             )}
           </section>
 
