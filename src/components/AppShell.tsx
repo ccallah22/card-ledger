@@ -696,6 +696,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
       ) : null}
+      {!isAuthScreen && !isMarketing && !pathname.startsWith("/cards/new") ? (
+        <Link
+          href="/cards/new"
+          aria-label="Add card"
+          className="sm:hidden fixed z-[999] flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white shadow-lg"
+          style={{
+            bottom: `calc(${Math.max(mobileNavHeight, 56)}px + env(safe-area-inset-bottom) + 16px)`,
+            right: "calc(env(safe-area-inset-right) + 16px)",
+          }}
+        >
+          <IconPlus />
+        </Link>
+      ) : null}
       {moreOpen && !isMarketing && typeof document !== "undefined"
         ? createPortal(
             <div
