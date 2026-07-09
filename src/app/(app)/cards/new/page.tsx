@@ -25,6 +25,7 @@ import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr } from "@/lib/ocr";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
+import { rankCatalogMatches } from "@/lib/catalog/rankingEngine";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -95,10 +96,18 @@ function NewCardPageInner() {
     setCatalogLoading(true);
     searchCatalog(trimmed)
       .then((results) => {
-        if (active) setCatalogResults(results);
+        if (!active) return;
+        setCatalogResults(rankCatalogMatches(trimmed, results));
+        // Reveal the dropdown once a search actually completes, not just on
+        // manual focus/typing -- otherwise a programmatically-set query
+        // (e.g. from OCR) fetches/ranks results correctly but never shows
+        // them, since showCatalogResults would still be false.
+        setShowCatalogResults(true);
       })
       .catch(() => {
-        if (active) setCatalogResults([]);
+        if (!active) return;
+        setCatalogResults([]);
+        setShowCatalogResults(true);
       })
       .finally(() => {
         if (active) setCatalogLoading(false);
