@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import {
   stripBom,
   detectDelimiter,
@@ -30,7 +31,7 @@ import {
  *     database of sports/teams.
  */
 
-function slugify(input: string): string {
+export function slugify(input: string): string {
   return input
     .trim()
     .toLowerCase()
@@ -38,21 +39,21 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-type Manufacturer = { id: string; name: string };
-type Brand = { id: string; name: string; manufacturerId: string };
-type Sport = { id: string; name: string };
-type League = { id: string; name: string; sportId: string };
-type Team = { id: string; name: string; leagueId: string };
-type Player = { id: string; name: string };
-type CardSet = {
+export type Manufacturer = { id: string; name: string };
+export type Brand = { id: string; name: string; manufacturerId: string };
+export type Sport = { id: string; name: string };
+export type League = { id: string; name: string; sportId: string };
+export type Team = { id: string; name: string; leagueId: string };
+export type Player = { id: string; name: string };
+export type CardSet = {
   id: string;
   name: string;
   releaseYear: string;
   manufacturerId: string;
   brandId: string;
 };
-type Card = { id: string; setId: string; cardNumber: string };
-type CardVariant = {
+export type Card = { id: string; setId: string; cardNumber: string };
+export type CardVariant = {
   id: string;
   cardId: string;
   parallelName: string | null;
@@ -60,7 +61,7 @@ type CardVariant = {
   isAutograph: boolean;
   isMemorabilia: boolean;
 };
-type CardPlayer = { id: string; cardId: string; playerId: string };
+export type CardPlayer = { id: string; cardId: string; playerId: string };
 
 const KNOWN_MANUFACTURERS = ["Panini", "Topps", "Upper Deck", "Bowman", "Donruss", "Leaf"];
 
@@ -97,7 +98,7 @@ function resolveSportLeague(teamName: string): { sport: string; league: string }
   return { sport: "Unknown", league: "Unknown" };
 }
 
-type EntityCollections = {
+export type EntityCollections = {
   manufacturers: Map<string, Manufacturer>;
   brands: Map<string, Brand>;
   sports: Map<string, Sport>;
@@ -125,7 +126,7 @@ function createCollections(): EntityCollections {
   };
 }
 
-function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
+export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
   const c = createCollections();
 
   for (const row of rows) {
@@ -303,4 +304,6 @@ function main() {
   );
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
