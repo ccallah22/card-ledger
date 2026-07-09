@@ -9,6 +9,11 @@ export type CardVariantRow = {
 
   serial_numbered: boolean;
   print_run: number | null;
+  // Catalog v2: jersey-tag/manufacturer-logo descriptor text (e.g. "Brand
+  // Logo", "NFL Shield", "Die-Cut") -- see
+  // docs/database/catalog-v2-migration-plan.md. Nullable; existing variants
+  // simply have none.
+  swatch_descriptor: string | null;
 
   has_autograph: boolean;
   has_memorabilia: boolean;
@@ -117,4 +122,66 @@ export async function findOrCreateCardVariant(
   );
   if (existing) return existing;
   return createCardVariant(input);
+}
+
+// ---- Catalog v2 (card_id, parallel_type_id, print_run, swatch_descriptor)
+// identity ----
+//
+// Additive alongside the functions above, which remain unchanged for
+// compatibility with existing callers (see
+// docs/database/catalog-v2-migration-plan.md). Nothing here is wired up to
+// any caller yet.
+
+export type CreateCardVariantV2Input = {
+  cardId: number;
+  parallelTypeId: number | null;
+  printRun: number | null;
+  swatchDescriptor?: string | null;
+
+  isAutograph: boolean;
+  isMemorabilia: boolean;
+};
+
+export async function findCardVariantV2(
+  input: CreateCardVariantV2Input,
+): Promise<CardVariantRow | null> {
+  let query = supabase.from("card_variants").select("*").eq("card_id", input.cardId);
+  query = input.parallelTypeId
+    ? query.eq("parallel_type_id", input.parallelTypeId)
+    : query.is("parallel_type_id", null);
+  query =
+    input.printRun !== null ? query.eq("print_run", input.printRun) : query.is("print_run", null);
+  query = input.swatchDescriptor
+    ? query.eq("swatch_descriptor", input.swatchDescriptor)
+    : query.is("swatch_descriptor", null);
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) throw error;
+
+  return data as CardVariantRow | null;
+}
+
+export async function findOrCreateCardVariantV2(
+  input: CreateCardVariantV2Input,
+): Promise<CardVariantRow> {
+  const existing = await findCardVariantV2(input);
+  if (existing) return existing;
+
+  const { data, error } = await supabase
+    .from("card_variants")
+    .insert({
+      card_id: input.cardId,
+      parallel_type_id: input.parallelTypeId,
+      print_run: input.printRun,
+      swatch_descriptor: input.swatchDescriptor ?? null,
+      has_autograph: input.isAutograph,
+      has_memorabilia: input.isMemorabilia,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return data as CardVariantRow;
 }
