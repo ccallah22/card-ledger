@@ -309,8 +309,9 @@ function NewCardPageInner() {
   const canSave = useMemo(() => {
     const baseOk = Boolean(playerName.trim() && year.trim() && setName.trim());
     if (!imageUrl) return baseOk;
+    if (imageCheckStatus === "checking") return false;
     return baseOk && cardPhotoConfirm;
-  }, [playerName, year, setName, imageUrl, cardPhotoConfirm]);
+  }, [playerName, year, setName, imageUrl, cardPhotoConfirm, imageCheckStatus]);
 
   const {
     checklistQuery,
