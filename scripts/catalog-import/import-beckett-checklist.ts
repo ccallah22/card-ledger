@@ -10,9 +10,14 @@ import { readFileSync } from "node:fs";
  * Does NOT connect to Supabase, does NOT insert/update/delete/upsert
  * anything, and does not assume a final CSV format -- this is purely an
  * inspection/normalization preview ahead of building the real importer.
+ *
+ * Parsing/normalization/validation are exported as standalone functions
+ * (see the `export`s below) so a future Supabase-writing importer can
+ * reuse this exact logic without re-implementing it or pulling in the CLI
+ * printing/argv handling at the bottom of this file.
  */
 
-type InternalField =
+export type InternalField =
   | "card_number"
   | "player_name"
   | "team_name"
@@ -26,7 +31,7 @@ type InternalField =
   | "print_run"
   | "notes";
 
-const ALL_FIELDS: InternalField[] = [
+export const ALL_FIELDS: InternalField[] = [
   "card_number",
   "player_name",
   "team_name",
@@ -42,7 +47,7 @@ const ALL_FIELDS: InternalField[] = [
 ];
 
 // Fields without which a row can't usefully identify a card.
-const IMPORTANT_FIELDS: InternalField[] = ["card_number", "player_name", "set_name"];
+export const IMPORTANT_FIELDS: InternalField[] = ["card_number", "player_name", "set_name"];
 
 const BOOLEAN_FIELDS: InternalField[] = ["is_rookie", "is_autograph", "is_memorabilia"];
 
@@ -63,11 +68,25 @@ const FIELD_ALIASES: Record<InternalField, string[]> = {
   notes: ["notes", "comments", "comment", "description", "note"],
 };
 
-function stripBom(text: string): string {
+/** Result of NormalizedBeckettRow. */
+export type NormalizedBeckettRow = Record<InternalField, string | null>;
+
+export type HeaderMapping = Partial<Record<InternalField, number>>;
+
+export type ValidationResult = {
+  /** Important fields (see IMPORTANT_FIELDS) with no source column found at all. */
+  missingFieldMappings: InternalField[];
+  /** Per-row problems for fields that are mapped but empty on a given row. */
+  rowWarnings: Array<{ rowIndex: number; field: InternalField; message: string }>;
+  /** Human-readable summary lines, in the same shape the CLI prints. */
+  summary: string[];
+};
+
+export function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
-function detectDelimiter(firstLine: string, filePath: string): "\t" | "," {
+export function detectDelimiter(firstLine: string, filePath: string): "\t" | "," {
   const tabCount = (firstLine.match(/\t/g) ?? []).length;
   const commaCount = (firstLine.match(/,/g) ?? []).length;
   if (tabCount > commaCount) return "\t";
@@ -82,7 +101,7 @@ function detectDelimiter(firstLine: string, filePath: string): "\t" | "," {
  * ("" -> "), scanning character-by-character rather than splitting by
  * line first, since a quoted field can legitimately span multiple lines.
  */
-function parseDelimited(text: string, delimiter: string): string[][] {
+export function parseDelimitedText(text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -141,15 +160,15 @@ function parseDelimited(text: string, delimiter: string): string[][] {
   return rows;
 }
 
-function normalizeHeader(header: string): string {
+export function normalizeHeader(header: string): string {
   return header.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function buildHeaderMapping(headers: string[]): {
-  mapping: Partial<Record<InternalField, number>>;
+export function mapHeaders(headers: string[]): {
+  mapping: HeaderMapping;
   unmapped: string[];
 } {
-  const mapping: Partial<Record<InternalField, number>> = {};
+  const mapping: HeaderMapping = {};
   const unmapped: string[] = [];
 
   headers.forEach((header, index) => {
@@ -187,15 +206,13 @@ function extractPrintRun(value: string | undefined): string | null {
   return match ? match[0] : null;
 }
 
-type NormalizedRow = Record<InternalField, string | null>;
-
-function normalizeRow(raw: string[], mapping: Partial<Record<InternalField, number>>): NormalizedRow {
+function normalizeSingleRow(raw: string[], mapping: HeaderMapping): NormalizedBeckettRow {
   function get(field: InternalField): string | undefined {
     const index = mapping[field];
     return index === undefined ? undefined : raw[index]?.trim();
   }
 
-  const result = {} as NormalizedRow;
+  const result = {} as NormalizedBeckettRow;
   for (const field of ALL_FIELDS) {
     if (BOOLEAN_FIELDS.includes(field)) {
       result[field] = parseBoolean(get(field));
@@ -206,6 +223,60 @@ function normalizeRow(raw: string[], mapping: Partial<Record<InternalField, numb
     }
   }
   return result;
+}
+
+/** Normalizes every raw data row (post-header) into NormalizedBeckettRow shape. */
+export function normalizeBeckettRows(
+  rows: string[][],
+  mapping: HeaderMapping
+): NormalizedBeckettRow[] {
+  return rows.map((row) => normalizeSingleRow(row, mapping));
+}
+
+/**
+ * Checks IMPORTANT_FIELDS for missing column mappings and per-row empty
+ * values. Returns both a human-readable summary (matching the CLI's
+ * existing printed text) and structured per-row warnings a future
+ * Supabase-writing consumer could use to decide whether to skip a row.
+ */
+export function validateNormalizedRows(
+  rows: NormalizedBeckettRow[],
+  mapping: HeaderMapping
+): ValidationResult {
+  const missingFieldMappings: InternalField[] = [];
+  const rowWarnings: ValidationResult["rowWarnings"] = [];
+  const summary: string[] = [];
+
+  for (const field of IMPORTANT_FIELDS) {
+    if (mapping[field] === undefined) {
+      missingFieldMappings.push(field);
+      summary.push(
+        `WARNING: no column detected for required field "${field}" -- every row will be missing it.`
+      );
+      continue;
+    }
+
+    rows.forEach((row, rowIndex) => {
+      if (!row[field]) {
+        rowWarnings.push({
+          rowIndex,
+          field,
+          message: `row ${rowIndex + 1} has an empty "${field}" value`,
+        });
+      }
+    });
+
+    const missingCount = rows.filter((r) => !r[field]).length;
+    if (missingCount > 0) {
+      summary.push(`WARNING: ${missingCount} row(s) have an empty "${field}" value.`);
+    }
+  }
+
+  if (summary.length === 0) {
+    summary.push("None -- all required fields are mapped and populated.");
+  }
+
+  return { missingFieldMappings, rowWarnings, summary };
 }
 
 function main() {
@@ -241,7 +312,7 @@ function main() {
   const delimiter = detectDelimiter(firstLine, filePath);
   console.log(`Detected delimiter: ${delimiter === "\t" ? "tab" : "comma"}`);
 
-  const rows = parseDelimited(raw, delimiter);
+  const rows = parseDelimitedText(raw, delimiter);
   if (rows.length === 0) {
     console.error("FAILED: no rows could be parsed from this file.");
     process.exitCode = 1;
@@ -253,7 +324,7 @@ function main() {
 
   console.log(`Detected headers (${headers.length}): ${headers.join(" | ")}`);
 
-  const { mapping, unmapped } = buildHeaderMapping(headers);
+  const { mapping, unmapped } = mapHeaders(headers);
 
   console.log("\nNormalized field mapping:");
   for (const field of ALL_FIELDS) {
@@ -268,7 +339,7 @@ function main() {
 
   console.log(`\nTotal data rows: ${dataRows.length}`);
 
-  const normalizedRows = dataRows.map((row) => normalizeRow(row, mapping));
+  const normalizedRows = normalizeBeckettRows(dataRows, mapping);
 
   console.log("\n--- First 10 normalized rows ---");
   normalizedRows.slice(0, 10).forEach((row, i) => {
@@ -276,23 +347,9 @@ function main() {
   });
 
   console.log("\n--- Validation warnings ---");
-  let warningCount = 0;
-  for (const field of IMPORTANT_FIELDS) {
-    if (mapping[field] === undefined) {
-      console.log(
-        `  WARNING: no column detected for required field "${field}" -- every row will be missing it.`
-      );
-      warningCount++;
-    } else {
-      const missingCount = normalizedRows.filter((r) => !r[field]).length;
-      if (missingCount > 0) {
-        console.log(`  WARNING: ${missingCount} row(s) have an empty "${field}" value.`);
-        warningCount++;
-      }
-    }
-  }
-  if (warningCount === 0) {
-    console.log("  None -- all required fields are mapped and populated.");
+  const { summary } = validateNormalizedRows(normalizedRows, mapping);
+  for (const line of summary) {
+    console.log(`  ${line}`);
   }
 
   console.log(
