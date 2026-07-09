@@ -2,16 +2,41 @@ import type { OCRResult } from "@/lib/ocr/types";
 
 export type { OCRResult, OCRTextLine, OcrEngine } from "@/lib/ocr/types";
 
+const EMPTY_RESULT: OCRResult = {
+  lines: [],
+  rawText: "",
+  confidence: 0,
+  engine: "openai",
+};
+
 /**
- * Stub engine: no provider, no API call, no real recognition yet. Always
- * resolves with empty text so callers can build and verify the full
- * crop -> OCR -> catalog-match pipeline before a real engine is chosen.
+ * Calls the server-side /api/ocr route (OpenAI Vision) so OPENAI_API_KEY
+ * stays server-side. Never throws/rejects -- any failure (network error,
+ * non-ok response, malformed JSON) resolves to a safe empty result so
+ * callers can always .then()/.finally() without a .catch().
  */
 export async function runOcr(imageDataUrl: string): Promise<OCRResult> {
-  return {
-    lines: [],
-    rawText: "",
-    confidence: 0,
-    engine: "stub",
-  };
+  try {
+    const res = await fetch("/api/ocr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageDataUrl }),
+    });
+
+    if (!res.ok) return EMPTY_RESULT;
+
+    const data = await res.json();
+    if (!data || typeof data.rawText !== "string" || !Array.isArray(data.lines)) {
+      return EMPTY_RESULT;
+    }
+
+    return {
+      lines: data.lines,
+      rawText: data.rawText,
+      confidence: typeof data.confidence === "number" ? data.confidence : 0,
+      engine: typeof data.engine === "string" ? data.engine : "openai",
+    };
+  } catch {
+    return EMPTY_RESULT;
+  }
 }
