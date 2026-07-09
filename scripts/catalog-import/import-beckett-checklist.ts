@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 /**
  * Offline preview/normalization tool for Beckett.com / Google Sheets
@@ -357,4 +358,10 @@ function main() {
   );
 }
 
-main();
+// Only run the CLI when this file is executed directly (e.g. via `node
+// import-beckett-checklist.ts <file>`) -- not when another script imports
+// its exported functions, which would otherwise also trigger this CLI's
+// own argv parsing/console output as an unwanted side effect.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
