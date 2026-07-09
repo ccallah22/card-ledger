@@ -3,6 +3,10 @@ import { supabase } from "@/lib/supabaseClient";
 export type CardRow = {
   id: number;
   set_id: number;
+  // Catalog v2: nullable during the transition (see
+  // docs/database/catalog-v2-migration-plan.md) -- not yet backfilled or
+  // required, so existing rows may still have this null.
+  checklist_section_id: number | null;
   card_number: string;
   title: string | null;
   rookie_card: boolean;
@@ -338,4 +342,64 @@ export async function findOrCreateCard(input: CreateCardInput): Promise<CardRow>
   const existing = await findCardBySetAndNumber(input.set_id, input.card_number);
   if (existing) return existing;
   return createCard(input);
+}
+
+// ---- Catalog v2 (checklist_section_id, card_number) identity ----
+//
+// Additive alongside the functions above, which remain unchanged for
+// compatibility with existing callers (see
+// docs/database/catalog-v2-migration-plan.md). Nothing here is wired up to
+// any caller yet.
+
+/** Reusable (checklist_section_id, card_number) lookup shape for callers. */
+export type CardLookupInput = {
+  checklistSectionId: number;
+  cardNumber: string;
+};
+
+export async function findCardBySectionAndNumber(
+  checklistSectionId: number,
+  cardNumber: string,
+): Promise<CardRow | null> {
+  const { data, error } = await supabase
+    .from("cards")
+    .select("*")
+    .eq("checklist_section_id", checklistSectionId)
+    .eq("card_number", cardNumber)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data as CardRow | null;
+}
+
+export type CreateCardV2Input = {
+  checklistSectionId: number;
+  // Temporary compatibility: cards.set_id is kept during the Catalog v2
+  // transition (see the migration plan), so it's still supplied on create.
+  setId: number;
+  cardNumber: string;
+  title?: string | null;
+  isInsert?: boolean;
+};
+
+export async function findOrCreateCardV2(input: CreateCardV2Input): Promise<CardRow> {
+  const existing = await findCardBySectionAndNumber(input.checklistSectionId, input.cardNumber);
+  if (existing) return existing;
+
+  const { data, error } = await supabase
+    .from("cards")
+    .insert({
+      set_id: input.setId,
+      checklist_section_id: input.checklistSectionId,
+      card_number: input.cardNumber,
+      title: input.title ?? null,
+      is_insert: input.isInsert ?? false,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return data as CardRow;
 }
