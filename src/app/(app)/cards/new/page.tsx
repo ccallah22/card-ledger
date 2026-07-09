@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
@@ -35,6 +35,12 @@ function NewCardPageInner() {
   const searchParams = useSearchParams();
   const isWishlist = searchParams.get("wishlist") === "1";
   const isForSaleIntent = searchParams.get("forSale") === "1";
+
+  // Mobile-only "Scan Card" / "Enter Manually" entry choice. Desktop always
+  // shows the form regardless of this state (see the className toggles
+  // below), so the default here only matters for the mobile-width case.
+  const [entryMode, setEntryMode] = useState<"choice" | "form">("choice");
+  const scanInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -182,6 +188,11 @@ function NewCardPageInner() {
     confirmCrop,
     handleImageFile,
   } = useCardImage();
+
+  function handleScanCard() {
+    setEntryMode("form");
+    scanInputRef.current?.click();
+  }
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -413,7 +424,35 @@ function NewCardPageInner() {
         </Link>
       </div>
 
-      <div className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2">
+      <input
+        ref={scanInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          handleImageFile(e.target.files?.[0] ?? null);
+          e.target.value = "";
+        }}
+      />
+
+      {entryMode === "choice" ? (
+        <div className="sm:hidden grid gap-3 rounded-xl border bg-white p-6 text-center">
+          <button type="button" onClick={handleScanCard} className="btn-primary">
+            📷 Scan Card
+          </button>
+          <button type="button" onClick={() => setEntryMode("form")} className="btn-secondary">
+            ⌨ Enter Manually
+          </button>
+        </div>
+      ) : null}
+
+      <div
+        className={
+          (entryMode === "form" ? "grid " : "hidden ") +
+          "gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2 sm:grid"
+        }
+      >
         <div className="sm:col-span-2">
           <label className="block text-xs font-semibold text-zinc-900">Set lookup</label>
           <div className="relative">
