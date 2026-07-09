@@ -23,6 +23,7 @@ import { useCardImage } from "@/hooks/cards/useCardImage";
 import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
+import { runOcr } from "@/lib/ocr";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -193,6 +194,45 @@ function NewCardPageInner() {
     setEntryMode("form");
     scanInputRef.current?.click();
   }
+
+  // OCR: runs once per confirmed crop. confirmCrop() doesn't return the
+  // freshly-cropped imageUrl (and useCardImage isn't modified to add that),
+  // so a pending-flag + effect on imageUrl is used instead of reading
+  // imageUrl right after awaiting confirmCrop(), which would still see the
+  // stale pre-crop value from this closure.
+  const [ocrStatus, setOcrStatus] = useState<"idle" | "running" | "done">("idle");
+  const pendingOcrRef = useRef(false);
+
+  async function handleConfirmCrop() {
+    pendingOcrRef.current = true;
+    await confirmCrop();
+  }
+
+  useEffect(() => {
+    if (!pendingOcrRef.current) return;
+    pendingOcrRef.current = false;
+    if (!imageUrl) return;
+
+    let active = true;
+    setOcrStatus("running");
+    // The stub engine resolves instantly (no real recognition work yet), so a
+    // small minimum display time keeps "Reading card…" from flashing for an
+    // imperceptible instant. A real engine's own latency will make this
+    // unnecessary, but it's harmless to keep.
+    const minDisplay = new Promise((resolve) => setTimeout(resolve, 400));
+    Promise.all([runOcr(imageUrl), minDisplay])
+      .then(([result]) => {
+        if (!active) return;
+        if (result.rawText) setCatalogQuery(result.rawText);
+      })
+      .finally(() => {
+        if (active) setOcrStatus("done");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [imageUrl]);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -506,6 +546,9 @@ function NewCardPageInner() {
 
         <div className="sm:col-span-2">
           <label className="block text-xs font-semibold text-zinc-900">Catalog match</label>
+          {ocrStatus === "running" ? (
+            <div className="mt-1 text-xs text-zinc-500">Reading card…</div>
+          ) : null}
           <div className="relative">
             <input
               value={catalogQuery}
@@ -841,7 +884,7 @@ function NewCardPageInner() {
         cropRotationBase={cropRotationBase}
         cropRotationFine={cropRotationFine}
         applyCropRotation={applyCropRotation}
-        confirmCrop={confirmCrop}
+        confirmCrop={handleConfirmCrop}
         cropBoxWidth={cropBoxWidth}
         cropBoxHeight={cropBoxHeight}
         cropZoomMin={cropZoomMin}
