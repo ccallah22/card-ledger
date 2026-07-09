@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
-  stripBom,
-  detectDelimiter,
-  parseDelimitedText,
   mapHeaders,
   normalizeBeckettRows,
+  loadChecklistRows,
+  isXlsxFile,
+  applyXlsxDerivations,
   type NormalizedBeckettRow,
 } from "./import-beckett-checklist.ts";
+import { analyzeCardSet, normalizeParallelName } from "./analyze-card-set-patterns.ts";
 
 /**
  * Offline transformer: turns normalized Beckett/Sheets checklist rows into
@@ -19,16 +19,35 @@ import {
  * anything, and assigns no database ids -- this is purely a preview of
  * what the eventual entity set would look like.
  *
- * Heuristic note: the normalized Beckett fields (see
- * import-beckett-checklist.ts) have no explicit manufacturer/brand/
- * sport/league columns, so those four are *derived*, not read directly:
- *   - manufacturer/brand: split from set_name using a small known-
- *     manufacturer prefix list (e.g. "Panini Prizm" -> manufacturer
- *     "Panini", brand "Prizm"). Falls back to manufacturer "Unknown".
- *   - sport/league: looked up from team_name against a small known-team
- *     list. Falls back to "Unknown"/"Unknown". This is intentionally
- *     minimal (just enough to cover realistic fixtures) and is not a
- *     database of sports/teams.
+ * Heuristic note: some checklist formats (Beckett's plain CSV/TSV exports,
+ * or pasted Sheets text) have no explicit manufacturer/brand/sport columns,
+ * so those are *derived* when not directly present:
+ *   - manufacturer/brand: preferred from row.set_manufacturer/set_brand
+ *     when present (real columns on Beckett's XLSX "Master Checklist"
+ *     exports -- see import-beckett-checklist.ts); otherwise split from
+ *     set_name using a small known-manufacturer prefix list (e.g. "Panini
+ *     Prizm" -> manufacturer "Panini", brand "Prizm"). Falls back to
+ *     manufacturer "Unknown".
+ *   - sport: preferred from row.sport when present; otherwise looked up
+ *     from team_name against a small known-team list.
+ *   - league: derived from sport, not from team_name -- a real checklist
+ *     can reference many decades' worth of NFL teams (retired/relocated
+ *     included), far more than any small hardcoded team list could cover,
+ *     so matching league by team name reliably produced "Unknown" for
+ *     ordinary rows. Football -> NFL is the only rule modeled today; a
+ *     non-football sport (or no sport at all) falls back to "Unknown".
+ *
+ * Entity hierarchy: Set -> ChecklistSection -> Card -> Variant. set_name is
+ * the *release* (e.g. "2025 Panini Select Football"); CARD SET (subset_or_
+ * insert) is decomposed via analyze-card-set-patterns.ts's analyzeCardSet()
+ * into a ChecklistSection (e.g. "Base Club Level", "Rookie Signatures") and
+ * a per-row parallel/trailing-modifier/flags that live on the Variant.
+ * Because different sections within one release commonly restart card
+ * numbering from 1, Card ids are keyed by section + card number (not just
+ * card number) so two different sections' "#1" don't collide and silently
+ * overwrite each other under the same Set. Parallel names are normalized
+ * (normalizeParallelName) so word-order variants of the same parallel
+ * (e.g. "Disco Black Prizm" / "Black Disco Prizm") collapse to one identity.
  */
 
 export function slugify(input: string): string {
@@ -52,11 +71,20 @@ export type CardSet = {
   manufacturerId: string;
   brandId: string;
 };
-export type Card = { id: string; setId: string; cardNumber: string };
+export type ChecklistSection = {
+  id: string;
+  setId: string;
+  name: string;
+  isAutograph: boolean;
+  isMemorabilia: boolean;
+  classification: "base" | "insert";
+};
+export type Card = { id: string; setId: string; checklistSectionId: string; cardNumber: string };
 export type CardVariant = {
   id: string;
   cardId: string;
   parallelName: string | null;
+  trailingModifier: string | null;
   printRun: string | null;
   isAutograph: boolean;
   isMemorabilia: boolean;
@@ -91,11 +119,16 @@ const KNOWN_NFL_TEAMS = new Set(
   ].map((t) => t.toLowerCase())
 );
 
-function resolveSportLeague(teamName: string): { sport: string; league: string } {
-  if (KNOWN_NFL_TEAMS.has(teamName.toLowerCase())) {
-    return { sport: "Football", league: "NFL" };
-  }
-  return { sport: "Unknown", league: "Unknown" };
+// Sport fallback for formats with no explicit SPORT column (e.g. Beckett's
+// plain CSV exports, identified only by team name).
+function resolveSportFromTeam(teamName: string): string {
+  return KNOWN_NFL_TEAMS.has(teamName.toLowerCase()) ? "Football" : "Unknown";
+}
+
+// League is derived from sport, not team name -- see the file header
+// comment for why. Only football/NFL is modeled today.
+function resolveLeagueForSport(sport: string): string {
+  return sport.toLowerCase() === "football" ? "NFL" : "Unknown";
 }
 
 export type EntityCollections = {
@@ -106,6 +139,7 @@ export type EntityCollections = {
   teams: Map<string, Team>;
   players: Map<string, Player>;
   sets: Map<string, CardSet>;
+  checklistSections: Map<string, ChecklistSection>;
   cards: Map<string, Card>;
   cardVariants: Map<string, CardVariant>;
   cardPlayers: Map<string, CardPlayer>;
@@ -120,6 +154,7 @@ function createCollections(): EntityCollections {
     teams: new Map(),
     players: new Map(),
     sets: new Map(),
+    checklistSections: new Map(),
     cards: new Map(),
     cardVariants: new Map(),
     cardPlayers: new Map(),
@@ -134,7 +169,11 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
     // downstream of it) to -- skip the row rather than guessing.
     if (!row.set_name || !row.release_year || !row.card_number) continue;
 
-    const { manufacturer, brand } = splitManufacturerBrand(row.set_name);
+    // Prefer real BRAND/PROGRAM columns (Beckett's XLSX "Master Checklist"
+    // format) over the set_name prefix heuristic when they're present.
+    const { manufacturer, brand } = row.set_manufacturer
+      ? { manufacturer: row.set_manufacturer, brand: row.set_brand || row.set_manufacturer }
+      : splitManufacturerBrand(row.set_name);
     const manufacturerId = `manufacturer:${slugify(manufacturer)}`;
     if (!c.manufacturers.has(manufacturerId)) {
       c.manufacturers.set(manufacturerId, { id: manufacturerId, name: manufacturer });
@@ -157,34 +196,78 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
       });
     }
 
-    const cardNumberSlug = slugify(row.card_number);
-    const cardId = `card:${row.release_year}-${setSlug}-${cardNumberSlug}`;
-    if (!c.cards.has(cardId)) {
-      c.cards.set(cardId, { id: cardId, setId, cardNumber: row.card_number });
+    // Decompose CARD SET (subset_or_insert) into its checklist section,
+    // parallel, trailing modifier, and flags -- see
+    // analyze-card-set-patterns.ts for the parsing rules. Every row has raw
+    // CARD SET text (possibly empty for older CSV formats with no such
+    // column), so this always resolves to at least a section name.
+    const parsed = analyzeCardSet(row.subset_or_insert ?? "");
+
+    // Different checklist sections within the same release commonly
+    // restart card numbering from 1 -- key the Card by section + card
+    // number (not just card number) so e.g. "Signatures Prizm #1" and
+    // "Alter Ego #1" don't collide under one Set. (The real DB's
+    // `cards (set_id, card_number)` constraint doesn't yet have this
+    // dimension; see the schema-plan task's report for that open question.)
+    const sectionSlug = slugify(parsed.section);
+    const checklistSectionId = `section:${row.release_year}-${setSlug}-${sectionSlug}`;
+    if (!c.checklistSections.has(checklistSectionId)) {
+      c.checklistSections.set(checklistSectionId, {
+        id: checklistSectionId,
+        setId,
+        name: parsed.section,
+        isAutograph: parsed.isAutograph,
+        isMemorabilia: parsed.isMemorabilia,
+        classification: parsed.classification,
+      });
     }
 
-    const isAutograph = row.is_autograph === "true";
-    const isMemorabilia = row.is_memorabilia === "true";
+    const cardNumberSlug = slugify(row.card_number);
+    const cardId = `card:${row.release_year}-${setSlug}-${sectionSlug}-${cardNumberSlug}`;
+    if (!c.cards.has(cardId)) {
+      c.cards.set(cardId, {
+        id: cardId,
+        setId,
+        checklistSectionId,
+        cardNumber: row.card_number,
+      });
+    }
+
+    // Prefer the CARD-SET-derived parallel (from CARD SET text) over the
+    // older explicit Parallel column (row.parallel_name, used by Beckett's
+    // plain CSV format, which has no CARD SET decomposition of its own) --
+    // whichever is present wins, and the result is normalized so word-order
+    // variants of the same parallel don't fork into separate identities.
+    const rawParallel = parsed.parallel || row.parallel_name || null;
+    const normalizedParallel = rawParallel ? normalizeParallelName(rawParallel) : null;
+    const isAutograph = row.is_autograph === "true" || parsed.isAutograph;
+    const isMemorabilia = row.is_memorabilia === "true" || parsed.isMemorabilia;
+
     const variantSuffixParts = [
-      row.parallel_name ? slugify(row.parallel_name) : null,
+      normalizedParallel ? slugify(normalizedParallel) : null,
+      parsed.trailingModifier ? slugify(parsed.trailingModifier) : null,
       isAutograph ? "au" : null,
       isMemorabilia ? "mem" : null,
     ].filter((part): part is string => !!part);
     const variantSuffix = variantSuffixParts.length > 0 ? variantSuffixParts.join("-") : "base";
-    const variantId = `variant:${row.release_year}-${setSlug}-${cardNumberSlug}-${variantSuffix}`;
+    const variantId = `variant:${cardId}-${variantSuffix}`;
     if (!c.cardVariants.has(variantId)) {
       c.cardVariants.set(variantId, {
         id: variantId,
         cardId,
-        parallelName: row.parallel_name || null,
-        printRun: row.print_run,
+        parallelName: normalizedParallel,
+        trailingModifier: parsed.trailingModifier,
+        printRun: parsed.printRun ?? row.print_run,
         isAutograph,
         isMemorabilia,
       });
     }
 
     if (row.team_name) {
-      const { sport, league } = resolveSportLeague(row.team_name);
+      // SPORT is a real column on Beckett's XLSX "Master Checklist" format
+      // -- prefer it over the team-name heuristic when present.
+      const sport = row.sport || resolveSportFromTeam(row.team_name);
+      const league = resolveLeagueForSport(sport);
 
       const sportId = `sport:${slugify(sport)}`;
       if (!c.sports.has(sportId)) c.sports.set(sportId, { id: sportId, name: sport });
@@ -206,9 +289,7 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
         c.players.set(playerId, { id: playerId, name: row.player_name });
       }
 
-      const cardPlayerId = `cardplayer:${row.release_year}-${setSlug}-${cardNumberSlug}-${slugify(
-        row.player_name
-      )}`;
+      const cardPlayerId = `cardplayer:${cardId}-${slugify(row.player_name)}`;
       if (!c.cardPlayers.has(cardPlayerId)) {
         c.cardPlayers.set(cardPlayerId, { id: cardPlayerId, cardId, playerId });
       }
@@ -218,8 +299,8 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
   return c;
 }
 
-function printFirstFive<T>(label: string, map: Map<string, T>): void {
-  const entries = Array.from(map.values()).slice(0, 5);
+function printFirstN<T>(label: string, map: Map<string, T>, n = 10): void {
+  const entries = Array.from(map.values()).slice(0, n);
   console.log(`\nFirst ${entries.length} ${label}:`);
   if (entries.length === 0) {
     console.log("  (none)");
@@ -230,11 +311,11 @@ function printFirstFive<T>(label: string, map: Map<string, T>): void {
   }
 }
 
-function main() {
+async function main() {
   const filePath = process.argv[2];
   if (!filePath) {
     console.error(
-      "Usage: node --experimental-strip-types scripts/catalog-import/build-catalog-entities.ts <path-to-file.csv|.tsv|.txt>"
+      "Usage: node --experimental-strip-types scripts/catalog-import/build-catalog-entities.ts <path-to-file.csv|.tsv|.txt|.xlsx>"
     );
     process.exitCode = 1;
     return;
@@ -242,9 +323,9 @@ function main() {
 
   console.log("=== Catalog Entity Builder (offline, no database access) ===\n");
 
-  let raw: string;
+  let rows: string[][];
   try {
-    raw = stripBom(readFileSync(filePath, "utf8"));
+    rows = (await loadChecklistRows(filePath)).rows;
   } catch (err) {
     console.error(
       `FAILED: could not read file "${filePath}": ${err instanceof Error ? err.message : String(err)}`
@@ -253,15 +334,6 @@ function main() {
     return;
   }
 
-  if (!raw.trim()) {
-    console.error("FAILED: file is empty.");
-    process.exitCode = 1;
-    return;
-  }
-
-  const firstLine = raw.split(/\r\n|\r|\n/, 1)[0] ?? "";
-  const delimiter = detectDelimiter(firstLine, filePath);
-  const rows = parseDelimitedText(raw, delimiter);
   if (rows.length === 0) {
     console.error("FAILED: no rows could be parsed from this file.");
     process.exitCode = 1;
@@ -271,7 +343,10 @@ function main() {
   const headers = rows[0];
   const dataRows = rows.slice(1);
   const { mapping } = mapHeaders(headers);
-  const normalizedRows = normalizeBeckettRows(dataRows, mapping);
+  let normalizedRows = normalizeBeckettRows(dataRows, mapping);
+  if (isXlsxFile(filePath)) {
+    normalizedRows = applyXlsxDerivations(normalizedRows);
+  }
 
   const entities = buildEntities(normalizedRows);
 
@@ -283,20 +358,22 @@ function main() {
   console.log(`Teams: ${entities.teams.size}`);
   console.log(`Players: ${entities.players.size}`);
   console.log(`Sets: ${entities.sets.size}`);
+  console.log(`ChecklistSections: ${entities.checklistSections.size}`);
   console.log(`Cards: ${entities.cards.size}`);
   console.log(`Variants: ${entities.cardVariants.size}`);
   console.log(`CardPlayers: ${entities.cardPlayers.size}`);
 
-  printFirstFive("manufacturers", entities.manufacturers);
-  printFirstFive("brands", entities.brands);
-  printFirstFive("sports", entities.sports);
-  printFirstFive("leagues", entities.leagues);
-  printFirstFive("teams", entities.teams);
-  printFirstFive("players", entities.players);
-  printFirstFive("sets", entities.sets);
-  printFirstFive("cards", entities.cards);
-  printFirstFive("card_variants", entities.cardVariants);
-  printFirstFive("card_players", entities.cardPlayers);
+  printFirstN("manufacturers", entities.manufacturers);
+  printFirstN("brands", entities.brands);
+  printFirstN("sports", entities.sports);
+  printFirstN("leagues", entities.leagues);
+  printFirstN("teams", entities.teams);
+  printFirstN("players", entities.players);
+  printFirstN("sets", entities.sets);
+  printFirstN("checklist_sections", entities.checklistSections);
+  printFirstN("cards", entities.cards);
+  printFirstN("card_variants", entities.cardVariants);
+  printFirstN("card_players", entities.cardPlayers);
 
   console.log(
     "\nThis was an offline entity-building preview only. No database connection was made, no ids " +
@@ -305,5 +382,8 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  main().catch((err) => {
+    console.error("FAILED:", err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
 }

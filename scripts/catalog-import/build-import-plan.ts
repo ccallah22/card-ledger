@@ -1,11 +1,11 @@
-import { readFileSync } from "node:fs";
-import { createClient } from "@supabase/supabase-js";
+import { pathToFileURL } from "node:url";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
-  stripBom,
-  detectDelimiter,
-  parseDelimitedText,
   mapHeaders,
   normalizeBeckettRows,
+  loadChecklistRows,
+  isXlsxFile,
+  applyXlsxDerivations,
 } from "./import-beckett-checklist.ts";
 import {
   buildEntities,
@@ -69,12 +69,16 @@ import {
  * non-null value, it's a "Conflict" (the two sources disagree). Boolean flags
  * (has_autograph/has_memorabilia) are never null in the DB, so any mismatch
  * there is always a "Conflict", never an "Update".
+ *
+ * The comparison logic lives in the exported `buildImportPlan()` function so
+ * other scripts (e.g. build-import-report.ts) can reuse it directly instead
+ * of re-implementing the same natural-key matching.
  */
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-type PlanCounts = {
+export type PlanCounts = {
   existing: number;
   create: number;
   update: number;
@@ -85,7 +89,30 @@ function emptyCounts(): PlanCounts {
   return { existing: 0, create: 0, update: 0, conflict: 0 };
 }
 
-type PlannedCreate = { entityType: string; id: string; summary: string };
+export type PlannedCreate = { entityType: string; id: string; summary: string };
+export type PlannedConflict = { entityType: string; id: string; summary: string; reason: string };
+
+export type ImportPlan = {
+  counts: Record<string, PlanCounts>;
+  totals: PlanCounts;
+  creates: PlannedCreate[];
+  conflicts: PlannedConflict[];
+};
+
+// Entity type keys (matching EntityCollections) paired with their display
+// labels, in report order. Exported so callers don't need to re-list them.
+export const ENTITY_SECTIONS: Array<[string, string]> = [
+  ["manufacturers", "Manufacturers"],
+  ["brands", "Brands"],
+  ["sports", "Sports"],
+  ["leagues", "Leagues"],
+  ["teams", "Teams"],
+  ["players", "Players"],
+  ["sets", "Sets"],
+  ["cards", "Cards"],
+  ["card_variants", "Variants"],
+  ["card_players", "CardPlayers"],
+];
 
 // ---- DB row shapes (select-only, matching the real schema columns) ----
 
@@ -136,71 +163,15 @@ function variantKey(cardK: string, parallelName: string | null, printRun: string
   return `${cardK}|${slugify(parallelName ?? "")}|${printRun ?? ""}`;
 }
 
-async function main() {
-  console.log("=== Catalog Dependency Resolver / Import Plan (read-only) ===\n");
-
-  const filePath = process.argv[2];
-  if (!filePath) {
-    console.error(
-      "Usage: node --env-file=.env.local --experimental-strip-types scripts/catalog-import/build-import-plan.ts <path-to-file.csv|.tsv|.txt>"
-    );
-    process.exitCode = 1;
-    return;
-  }
-  if (!SUPABASE_URL) {
-    console.error(
-      "FAILED: NEXT_PUBLIC_SUPABASE_URL is not set. Aborting -- no queries were run, nothing was read or changed."
-    );
-    process.exitCode = 1;
-    return;
-  }
-  if (!SERVICE_ROLE_KEY) {
-    console.error(
-      "FAILED: SUPABASE_SERVICE_ROLE_KEY is not set. This script reads the full catalog tables " +
-        "directly for comparison, which requires the service role key. Aborting -- no queries were " +
-        "run, nothing was read or changed."
-    );
-    process.exitCode = 1;
-    return;
-  }
-
-  // ---- load + normalize + build in-memory entities (fully offline) ----
-  let raw: string;
-  try {
-    raw = stripBom(readFileSync(filePath, "utf8"));
-  } catch (err) {
-    console.error(
-      `FAILED: could not read file "${filePath}": ${err instanceof Error ? err.message : String(err)}`
-    );
-    process.exitCode = 1;
-    return;
-  }
-  if (!raw.trim()) {
-    console.error("FAILED: file is empty.");
-    process.exitCode = 1;
-    return;
-  }
-
-  const firstLine = raw.split(/\r\n|\r|\n/, 1)[0] ?? "";
-  const delimiter = detectDelimiter(firstLine, filePath);
-  const rows = parseDelimitedText(raw, delimiter);
-  if (rows.length === 0) {
-    console.error("FAILED: no rows could be parsed from this file.");
-    process.exitCode = 1;
-    return;
-  }
-
-  const headers = rows[0];
-  const dataRows = rows.slice(1);
-  const { mapping } = mapHeaders(headers);
-  const normalizedRows = normalizeBeckettRows(dataRows, mapping);
-  const entities = buildEntities(normalizedRows);
-
-  // ---- connect (SELECT-only) ----
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
-  });
-
+/**
+ * Compares in-memory catalog entities against the real database (SELECT-only)
+ * and returns a structured import plan. Does not print anything and does not
+ * write anything.
+ */
+export async function buildImportPlan(
+  entities: EntityCollections,
+  supabase: SupabaseClient
+): Promise<ImportPlan> {
   const { data: setsData, error: setsErr } = await supabase
     .from("sets")
     .select("id, name, manufacturer, brand, release_year, slug");
@@ -270,9 +241,7 @@ async function main() {
     dbTeams.filter((t) => t.leagues).map((t) => [`${slugify(t.leagues!.name)}|${slugify(t.name)}`, t])
   );
   const dbPlayerByKey = new Map(dbPlayers.map((p) => [slugify(p.full_name), p]));
-  const dbSetByKey = new Map(
-    dbSets.map((s) => [setKey(s.release_year, s.name), s])
-  );
+  const dbSetByKey = new Map(dbSets.map((s) => [setKey(s.release_year, s.name), s]));
   const dbCardByKey = new Map(
     dbCards
       .filter((c) => c.sets)
@@ -313,6 +282,7 @@ async function main() {
     card_players: emptyCounts(),
   };
   const creates: PlannedCreate[] = [];
+  const conflicts: PlannedConflict[] = [];
 
   for (const m of entities.manufacturers.values() as IterableIterator<Manufacturer>) {
     if (dbManufacturerNames.has(m.name)) counts.manufacturers.existing++;
@@ -382,8 +352,22 @@ async function main() {
     const brandConflict = !!dbRow.brand && !!brand && dbRow.brand !== brand;
     const manufacturerFillable = !dbRow.manufacturer && !!manufacturer;
     const brandFillable = !dbRow.brand && !!brand;
-    if (manufacturerConflict || brandConflict) counts.sets.conflict++;
-    else if (manufacturerFillable || brandFillable) counts.sets.update++;
+    if (manufacturerConflict || brandConflict) {
+      counts.sets.conflict++;
+      const reasons: string[] = [];
+      if (manufacturerConflict) {
+        reasons.push(`manufacturer mismatch (db: "${dbRow.manufacturer}", import: "${manufacturer}")`);
+      }
+      if (brandConflict) {
+        reasons.push(`brand mismatch (db: "${dbRow.brand}", import: "${brand}")`);
+      }
+      conflicts.push({
+        entityType: "set",
+        id: st.id,
+        summary: `${st.releaseYear} ${st.name}`,
+        reason: reasons.join("; "),
+      });
+    } else if (manufacturerFillable || brandFillable) counts.sets.update++;
     else counts.sets.existing++;
   }
 
@@ -418,8 +402,17 @@ async function main() {
     }
     const flagsConflict =
       dbRow.has_autograph !== vr.isAutograph || dbRow.has_memorabilia !== vr.isMemorabilia;
-    if (flagsConflict) counts.card_variants.conflict++;
-    else counts.card_variants.existing++;
+    if (flagsConflict) {
+      counts.card_variants.conflict++;
+      conflicts.push({
+        entityType: "card_variant",
+        id: vr.id,
+        summary: `${set?.name ?? "?"} #${card?.cardNumber ?? "?"} ${vr.parallelName ?? "base"}`,
+        reason:
+          `has_autograph/has_memorabilia mismatch (db: au=${dbRow.has_autograph} mem=${dbRow.has_memorabilia}, ` +
+          `import: au=${vr.isAutograph} mem=${vr.isMemorabilia})`,
+      });
+    } else counts.card_variants.existing++;
   }
 
   for (const cp of entities.cardPlayers.values() as IterableIterator<CardPlayer>) {
@@ -439,33 +432,87 @@ async function main() {
     }
   }
 
+  const totals = emptyCounts();
+  for (const [key] of ENTITY_SECTIONS) {
+    const c = counts[key];
+    totals.existing += c.existing;
+    totals.create += c.create;
+    totals.update += c.update;
+    totals.conflict += c.conflict;
+  }
+
+  return { counts, totals, creates, conflicts };
+}
+
+async function main() {
+  console.log("=== Catalog Dependency Resolver / Import Plan (read-only) ===\n");
+
+  const filePath = process.argv[2];
+  if (!filePath) {
+    console.error(
+      "Usage: node --env-file=.env.local --experimental-strip-types scripts/catalog-import/build-import-plan.ts <path-to-file.csv|.tsv|.txt|.xlsx>"
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (!SUPABASE_URL) {
+    console.error(
+      "FAILED: NEXT_PUBLIC_SUPABASE_URL is not set. Aborting -- no queries were run, nothing was read or changed."
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (!SERVICE_ROLE_KEY) {
+    console.error(
+      "FAILED: SUPABASE_SERVICE_ROLE_KEY is not set. This script reads the full catalog tables " +
+        "directly for comparison, which requires the service role key. Aborting -- no queries were " +
+        "run, nothing was read or changed."
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  // ---- load + normalize + build in-memory entities (fully offline) ----
+  let rows: string[][];
+  try {
+    rows = (await loadChecklistRows(filePath)).rows;
+  } catch (err) {
+    console.error(
+      `FAILED: could not read file "${filePath}": ${err instanceof Error ? err.message : String(err)}`
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (rows.length === 0) {
+    console.error("FAILED: no rows could be parsed from this file.");
+    process.exitCode = 1;
+    return;
+  }
+
+  const headers = rows[0];
+  const dataRows = rows.slice(1);
+  const { mapping } = mapHeaders(headers);
+  let normalizedRows = normalizeBeckettRows(dataRows, mapping);
+  if (isXlsxFile(filePath)) {
+    normalizedRows = applyXlsxDerivations(normalizedRows);
+  }
+  const entities = buildEntities(normalizedRows);
+
+  // ---- connect (SELECT-only) ----
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+
+  const plan = await buildImportPlan(entities, supabase);
+
   // ---- print report ----
 
   console.log("=========================");
   console.log("IMPORT PLAN");
   console.log("=========================\n");
 
-  const sections: Array<[string, string]> = [
-    ["manufacturers", "Manufacturers"],
-    ["brands", "Brands"],
-    ["sports", "Sports"],
-    ["leagues", "Leagues"],
-    ["teams", "Teams"],
-    ["players", "Players"],
-    ["sets", "Sets"],
-    ["cards", "Cards"],
-    ["card_variants", "Variants"],
-    ["card_players", "CardPlayers"],
-  ];
-
-  const totals = emptyCounts();
-  for (const [key, label] of sections) {
-    const c = counts[key];
-    totals.existing += c.existing;
-    totals.create += c.create;
-    totals.update += c.update;
-    totals.conflict += c.conflict;
-
+  for (const [key, label] of ENTITY_SECTIONS) {
+    const c = plan.counts[key];
     console.log(label);
     console.log(`Existing: ${c.existing}`);
     console.log(`Create: ${c.create}`);
@@ -475,16 +522,16 @@ async function main() {
   }
 
   console.log("Totals\n");
-  console.log(`Create: ${totals.create}`);
-  console.log(`Update: ${totals.update}`);
-  console.log(`Existing: ${totals.existing}`);
-  console.log(`Conflicts: ${totals.conflict}`);
+  console.log(`Create: ${plan.totals.create}`);
+  console.log(`Update: ${plan.totals.update}`);
+  console.log(`Existing: ${plan.totals.existing}`);
+  console.log(`Conflicts: ${plan.totals.conflict}`);
 
   console.log("\nFirst 10 planned creates:");
-  if (creates.length === 0) {
+  if (plan.creates.length === 0) {
     console.log("  (none)");
   } else {
-    creates.slice(0, 10).forEach((c, i) => {
+    plan.creates.slice(0, 10).forEach((c, i) => {
       console.log(`  [${i + 1}] ${c.entityType}: ${c.id} -- ${c.summary}`);
     });
   }
@@ -495,7 +542,9 @@ async function main() {
   );
 }
 
-main().catch((err) => {
-  console.error("FAILED:", err instanceof Error ? err.message : String(err));
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error("FAILED:", err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
+}

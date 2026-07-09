@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import ExcelJS from "exceljs";
 
 /**
  * Offline preview/normalization tool for Beckett.com / Google Sheets
- * checklist exports (CSV, or tab-separated text pasted/exported from
- * Sheets). Reads a file given on the command line, detects its delimiter
- * and headers, normalizes recognized column names into a fixed set of
- * internal fields, and prints an inspection report.
+ * checklist exports (CSV, tab-separated text pasted/exported from Sheets,
+ * or a real Beckett XLSX checklist export). Reads a file given on the
+ * command line, detects its format/delimiter and headers, normalizes
+ * recognized column names into a fixed set of internal fields, and prints
+ * an inspection report.
  *
  * Does NOT connect to Supabase, does NOT insert/update/delete/upsert
  * anything, and does not assume a final CSV format -- this is purely an
@@ -30,12 +32,20 @@ export type InternalField =
   | "is_autograph"
   | "is_memorabilia"
   | "print_run"
-  | "notes";
+  | "notes"
+  | "sport"
+  | "set_manufacturer"
+  | "set_brand"
+  | "position"
+  | "sequence";
 
 export const ALL_FIELDS: InternalField[] = [
   "card_number",
   "player_name",
   "team_name",
+  "sport",
+  "set_manufacturer",
+  "set_brand",
   "set_name",
   "release_year",
   "subset_or_insert",
@@ -44,6 +54,8 @@ export const ALL_FIELDS: InternalField[] = [
   "is_autograph",
   "is_memorabilia",
   "print_run",
+  "position",
+  "sequence",
   "notes",
 ];
 
@@ -60,13 +72,26 @@ const FIELD_ALIASES: Record<InternalField, string[]> = {
   team_name: ["team", "team name", "club"],
   set_name: ["set", "set name", "product", "product name"],
   release_year: ["year", "release year", "season", "yr"],
-  subset_or_insert: ["subset", "insert", "insert name", "subset/insert", "subset name", "series"],
+  // "card set" belongs here, not set_name: on Beckett's XLSX "Master
+  // Checklist" format, CARD SET names the subset/insert/parallel within a
+  // release (e.g. "Rated Rookies"), not the release itself -- the release
+  // (the real Set) is synthesized from YEAR+BRAND+PROGRAM+SPORT instead.
+  // See deriveReleaseSetName()/applyXlsxDerivations() below.
+  subset_or_insert: ["subset", "insert", "insert name", "subset/insert", "subset name", "series", "card set"],
   parallel_name: ["parallel", "parallel name", "variation", "color", "colour"],
   is_rookie: ["rc", "rookie", "is rookie", "rookie card"],
   is_autograph: ["au", "auto", "autograph", "is autograph", "signed"],
   is_memorabilia: ["mem", "relic", "memorabilia", "patch", "jersey", "swatch"],
   print_run: ["print run", "printrun", "serial", "serial number", "serial #", "qty", "quantity", "/"],
   notes: ["notes", "comments", "comment", "description", "note"],
+  // Beckett's real "Master Checklist" XLSX exports (see
+  // 2025-Select-Football-Checklist.xlsx) carry these five as distinct
+  // columns instead of folding them into set_name/notes.
+  sport: ["sport"],
+  set_manufacturer: ["brand"],
+  set_brand: ["program"],
+  position: ["position", "pos"],
+  sequence: ["sequence", "seq"],
 };
 
 /** Result of NormalizedBeckettRow. */
@@ -161,6 +186,92 @@ export function parseDelimitedText(text: string, delimiter: string): string[][] 
   return rows;
 }
 
+// Canonical sheet name used by Beckett's real "Master Checklist" XLSX
+// checklist exports (e.g. 2025-Select-Football-Checklist.xlsx).
+export const MASTER_CHECKLIST_SHEET_NAME = "Master Checklist";
+
+export function isXlsxFile(filePath: string): boolean {
+  return /\.xlsx$/i.test(filePath);
+}
+
+function cellToString(value: ExcelJS.CellValue): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "object") {
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((part) => part.text).join("");
+    }
+    if ("text" in value && typeof value.text === "string") return value.text;
+    if ("result" in value) return cellToString(value.result as ExcelJS.CellValue);
+    if ("hyperlink" in value && typeof value.text === "string") return value.text;
+    return String(value);
+  }
+  return String(value);
+}
+
+/**
+ * Reads a single named sheet from a real XLSX workbook into the same
+ * string[][] shape parseDelimitedText() produces (header row first, then
+ * data rows), so it can feed the same mapHeaders/normalizeBeckettRows
+ * pipeline as CSV/TSV input. Fully empty rows are skipped, matching
+ * parseDelimitedText()'s behavior.
+ */
+export async function parseXlsxSheet(filePath: string, sheetName: string): Promise<string[][]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+
+  const worksheet = workbook.getWorksheet(sheetName);
+  if (!worksheet) {
+    const available = workbook.worksheets.map((ws) => ws.name).join(", ") || "(no sheets found)";
+    throw new Error(`sheet "${sheetName}" was not found in this workbook. Available sheets: ${available}`);
+  }
+
+  const rows: string[][] = [];
+  const columnCount = worksheet.columnCount;
+
+  worksheet.eachRow({ includeEmpty: false }, (row) => {
+    const cells: string[] = [];
+    for (let col = 1; col <= columnCount; col++) {
+      cells.push(cellToString(row.getCell(col).value));
+    }
+    if (cells.some((v) => v.trim().length > 0)) {
+      rows.push(cells);
+    }
+  });
+
+  return rows;
+}
+
+export type LoadedChecklist = { rows: string[][]; formatDescription: string };
+
+/**
+ * Loads header+data rows from a checklist file regardless of source format
+ * -- CSV, TSV, pasted Sheets text, or a real Beckett XLSX export -- so
+ * every script that ingests a checklist can share this one format-decision
+ * point instead of re-implementing it. XLSX files are read from
+ * `sheetName` (defaulting to Beckett's canonical "Master Checklist");
+ * everything else is read as UTF-8 text and delimiter-detected as before.
+ */
+export async function loadChecklistRows(
+  filePath: string,
+  options?: { sheetName?: string }
+): Promise<LoadedChecklist> {
+  if (isXlsxFile(filePath)) {
+    const sheetName = options?.sheetName ?? MASTER_CHECKLIST_SHEET_NAME;
+    const rows = await parseXlsxSheet(filePath, sheetName);
+    return { rows, formatDescription: `XLSX (sheet "${sheetName}")` };
+  }
+
+  const raw = stripBom(readFileSync(filePath, "utf8"));
+  if (!raw.trim()) {
+    throw new Error("file is empty.");
+  }
+  const firstLine = raw.split(/\r\n|\r|\n/, 1)[0] ?? "";
+  const delimiter = detectDelimiter(firstLine, filePath);
+  const rows = parseDelimitedText(raw, delimiter);
+  return { rows, formatDescription: delimiter === "\t" ? "tab-delimited text" : "comma-delimited text" };
+}
+
 export function normalizeHeader(header: string): string {
   return header.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -239,6 +350,12 @@ export function normalizeBeckettRows(
  * values. Returns both a human-readable summary (matching the CLI's
  * existing printed text) and structured per-row warnings a future
  * Supabase-writing consumer could use to decide whether to skip a row.
+ *
+ * A field can end up populated even with no column mapping (e.g. set_name
+ * for XLSX input, synthesized by applyXlsxDerivations() from other
+ * columns) -- so "no column detected" is only reported when the field is
+ * *both* unmapped and actually empty on every row, not from the mapping
+ * absence alone.
  */
 export function validateNormalizedRows(
   rows: NormalizedBeckettRow[],
@@ -249,7 +366,9 @@ export function validateNormalizedRows(
   const summary: string[] = [];
 
   for (const field of IMPORTANT_FIELDS) {
-    if (mapping[field] === undefined) {
+    const missingCount = rows.filter((r) => !r[field]).length;
+
+    if (mapping[field] === undefined && missingCount === rows.length) {
       missingFieldMappings.push(field);
       summary.push(
         `WARNING: no column detected for required field "${field}" -- every row will be missing it.`
@@ -267,7 +386,6 @@ export function validateNormalizedRows(
       }
     });
 
-    const missingCount = rows.filter((r) => !r[field]).length;
     if (missingCount > 0) {
       summary.push(`WARNING: ${missingCount} row(s) have an empty "${field}" value.`);
     }
@@ -280,11 +398,81 @@ export function validateNormalizedRows(
   return { missingFieldMappings, rowWarnings, summary };
 }
 
-function main() {
+// CARD SET (now mapped to subset_or_insert) text-inference keywords,
+// matching the task's literal spec.
+const AUTOGRAPH_PATTERN = /autograph|signature/i;
+const MEMORABILIA_PATTERN = /memorabilia|material|patch|relic/i;
+const BASE_SET_PATTERN = /^\s*(base(\s*set)?)?\s*$/i;
+
+export type CardSetSignals = {
+  isAutograph: boolean;
+  isMemorabilia: boolean;
+};
+
+/**
+ * Derives autograph/memorabilia signals from a CARD SET/subset-style text
+ * value (e.g. "Rated Rookies", "Rookie Patch Autographs"). Meant for
+ * checklist formats (like Beckett's "Master Checklist" XLSX exports) where
+ * this text describes the subset/insert/parallel within a release, not the
+ * release's own product name.
+ */
+export function deriveCardSetSignals(cardSetText: string | null): CardSetSignals {
+  const text = (cardSetText ?? "").trim();
+  return {
+    isAutograph: AUTOGRAPH_PATTERN.test(text),
+    isMemorabilia: MEMORABILIA_PATTERN.test(text),
+  };
+}
+
+/**
+ * Synthesizes the real release-level Set name from YEAR + BRAND + PROGRAM +
+ * SPORT (e.g. "2025 Panini Select Football"), for checklist formats (like
+ * Beckett's XLSX "Master Checklist" exports) where no single column names
+ * the release itself -- CARD SET instead names the subset/insert within it
+ * (see subset_or_insert). Returns null if none of the four are present.
+ */
+export function deriveReleaseSetName(row: NormalizedBeckettRow): string | null {
+  const parts = [row.release_year, row.set_manufacturer, row.set_brand, row.sport].filter(
+    (v): v is string => !!v
+  );
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/**
+ * Additive-only XLSX enrichment:
+ *  - synthesizes set_name from the release-level columns when no explicit
+ *    set_name column was mapped (see deriveReleaseSetName)
+ *  - fills is_autograph/is_memorabilia from the subset_or_insert (CARD SET)
+ *    text when not already set from an explicit source column
+ *  - clears subset_or_insert to null when it's just a literal "Base"/"Base
+ *    Set" marker, since that doesn't describe a meaningful subset
+ * Never overrides a value a row already has from an explicit source
+ * column (e.g. Beckett's older CSV exports with their own RC/AU/MEM/Insert
+ * columns).
+ */
+export function applyXlsxDerivations(rows: NormalizedBeckettRow[]): NormalizedBeckettRow[] {
+  return rows.map((row) => {
+    const signals = deriveCardSetSignals(row.subset_or_insert);
+    const subsetOrInsert =
+      row.subset_or_insert && !BASE_SET_PATTERN.test(row.subset_or_insert.trim())
+        ? row.subset_or_insert
+        : null;
+    return {
+      ...row,
+      set_name: row.set_name || deriveReleaseSetName(row),
+      subset_or_insert: subsetOrInsert,
+      is_autograph: row.is_autograph === "true" || signals.isAutograph ? "true" : row.is_autograph,
+      is_memorabilia:
+        row.is_memorabilia === "true" || signals.isMemorabilia ? "true" : row.is_memorabilia,
+    };
+  });
+}
+
+async function main() {
   const filePath = process.argv[2];
   if (!filePath) {
     console.error(
-      "Usage: node --experimental-strip-types scripts/catalog-import/import-beckett-checklist.ts <path-to-file.csv|.tsv|.txt>"
+      "Usage: node --experimental-strip-types scripts/catalog-import/import-beckett-checklist.ts <path-to-file.csv|.tsv|.txt|.xlsx>"
     );
     process.exitCode = 1;
     return;
@@ -292,9 +480,11 @@ function main() {
 
   console.log("=== Beckett/Sheets Checklist Import Preview (offline, no database access) ===\n");
 
-  let raw: string;
+  let rows: string[][];
   try {
-    raw = stripBom(readFileSync(filePath, "utf8"));
+    const loaded = await loadChecklistRows(filePath);
+    rows = loaded.rows;
+    console.log(`Detected input format: ${loaded.formatDescription}`);
   } catch (err) {
     console.error(
       `FAILED: could not read file "${filePath}": ${err instanceof Error ? err.message : String(err)}`
@@ -303,17 +493,6 @@ function main() {
     return;
   }
 
-  if (!raw.trim()) {
-    console.error("FAILED: file is empty.");
-    process.exitCode = 1;
-    return;
-  }
-
-  const firstLine = raw.split(/\r\n|\r|\n/, 1)[0] ?? "";
-  const delimiter = detectDelimiter(firstLine, filePath);
-  console.log(`Detected delimiter: ${delimiter === "\t" ? "tab" : "comma"}`);
-
-  const rows = parseDelimitedText(raw, delimiter);
   if (rows.length === 0) {
     console.error("FAILED: no rows could be parsed from this file.");
     process.exitCode = 1;
@@ -340,7 +519,10 @@ function main() {
 
   console.log(`\nTotal data rows: ${dataRows.length}`);
 
-  const normalizedRows = normalizeBeckettRows(dataRows, mapping);
+  let normalizedRows = normalizeBeckettRows(dataRows, mapping);
+  if (isXlsxFile(filePath)) {
+    normalizedRows = applyXlsxDerivations(normalizedRows);
+  }
 
   console.log("\n--- First 10 normalized rows ---");
   normalizedRows.slice(0, 10).forEach((row, i) => {
@@ -363,5 +545,8 @@ function main() {
 // its exported functions, which would otherwise also trigger this CLI's
 // own argv parsing/console output as an unwanted side effect.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  main().catch((err) => {
+    console.error("FAILED:", err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
 }
