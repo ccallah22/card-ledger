@@ -2,10 +2,20 @@ import { supabase } from "@/lib/supabaseClient";
 import type { CardCondition, CardComp, CardStatus, GradingStatus, ImageType } from "@/lib/types";
 import { findOrCreateSet, getSet, type SetRow } from "@/lib/repositories/sets";
 import { findOrCreatePlayer, type PlayerRow } from "@/lib/repositories/players";
-import { findCardBySetAndNumber, createCard, getCard, type CardRow } from "@/lib/repositories/cards";
+import {
+  findCardBySetAndNumber,
+  createCard,
+  findOrCreateCardV2,
+  getCard,
+  type CardRow,
+} from "@/lib/repositories/cards";
 import { findOrCreateCardPlayer, listCardPlayers } from "@/lib/repositories/cardPlayers";
 import { findOrCreateParallelType, type ParallelTypeRow } from "@/lib/repositories/parallelTypes";
-import { findOrCreateCardVariant, type CardVariantRow } from "@/lib/repositories/cardVariants";
+import {
+  findOrCreateCardVariant,
+  findOrCreateCardVariantV2,
+  type CardVariantRow,
+} from "@/lib/repositories/cardVariants";
 import { findOrCreateGradingCompany, type GradingCompanyRow } from "@/lib/repositories/gradingCompanies";
 import { findOrCreateLocation, type LocationRow } from "@/lib/repositories/locations";
 import {
@@ -83,6 +93,12 @@ export type MyCardInput = {
   setName: string;
   cardNumber?: string;
   team?: string;
+
+  // Catalog v2 (optional, backward compatible -- see
+  // docs/database/catalog-v2-migration-plan.md). When omitted, catalog
+  // resolution uses the existing Catalog v1 flow unchanged.
+  checklistSectionId?: number;
+  swatchDescriptor?: string | null;
 
   location?: string;
 
@@ -329,11 +345,23 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput) {
     ? await findOrCreatePlayer({ full_name: trimmedPlayerName })
     : null;
 
-  const card = await resolveCardForPlayer(set.id, input.cardNumber ?? "", player?.id ?? null, {
-    title: input.insert ?? null,
-    rookie_card: input.isRookie ?? false,
-    is_insert: !!input.insert,
-  });
+  // Catalog v2: when a checklist section is given, resolve the card through
+  // the section-scoped identity instead of the v1 set-scoped
+  // resolveCardForPlayer path. Omitted (the case for every existing caller
+  // today) falls through to the exact existing Catalog v1 behavior.
+  const card = input.checklistSectionId
+    ? await findOrCreateCardV2({
+        checklistSectionId: input.checklistSectionId,
+        setId: set.id,
+        cardNumber: input.cardNumber ?? "",
+        title: input.insert ?? null,
+        isInsert: !!input.insert,
+      })
+    : await resolveCardForPlayer(set.id, input.cardNumber ?? "", player?.id ?? null, {
+        title: input.insert ?? null,
+        rookie_card: input.isRookie ?? false,
+        is_insert: !!input.insert,
+      });
 
   if (player) {
     await findOrCreateCardPlayer(card.id, player.id);
@@ -345,15 +373,28 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput) {
     parallelTypeId = parallelType.id;
   }
 
-  const variant = await findOrCreateCardVariant({
-    card_id: card.id,
-    parallel_type_id: parallelTypeId,
-    print_run: input.serialTotal ?? null,
-    name_override: input.variation ?? null,
-    serial_numbered: !!input.serialTotal,
-    has_autograph: input.isAutograph ?? false,
-    has_memorabilia: input.isPatch ?? false,
-  });
+  // Catalog v2: when a swatch descriptor is given, resolve the variant
+  // through the wider (card, parallel, print run, swatch descriptor)
+  // identity instead of the v1 (card, parallel, print run) lookup. Omitted
+  // falls through to the exact existing Catalog v1 behavior.
+  const variant = input.swatchDescriptor
+    ? await findOrCreateCardVariantV2({
+        cardId: card.id,
+        parallelTypeId,
+        printRun: input.serialTotal ?? null,
+        swatchDescriptor: input.swatchDescriptor,
+        isAutograph: input.isAutograph ?? false,
+        isMemorabilia: input.isPatch ?? false,
+      })
+    : await findOrCreateCardVariant({
+        card_id: card.id,
+        parallel_type_id: parallelTypeId,
+        print_run: input.serialTotal ?? null,
+        name_override: input.variation ?? null,
+        serial_numbered: !!input.serialTotal,
+        has_autograph: input.isAutograph ?? false,
+        has_memorabilia: input.isPatch ?? false,
+      });
 
   let locationId: number | null = null;
   if (input.location?.trim()) {
