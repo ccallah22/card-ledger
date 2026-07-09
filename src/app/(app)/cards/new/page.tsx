@@ -24,6 +24,7 @@ import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr } from "@/lib/ocr";
+import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -223,7 +224,7 @@ function NewCardPageInner() {
     Promise.all([runOcr(imageUrl), minDisplay])
       .then(([result]) => {
         if (!active) return;
-        if (result.rawText) setCatalogQuery(result.rawText);
+        if (result.rawText) setCatalogQuery(buildCatalogQuery(result));
       })
       .finally(() => {
         if (active) setOcrStatus("done");
