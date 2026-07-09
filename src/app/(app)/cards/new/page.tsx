@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
 import { type MyCardInput, createMyCard } from "@/lib/repositories/myCards";
+import { searchCatalog, type CardWithContext } from "@/lib/repositories/cards";
 import { listLocations } from "@/lib/repositories/locations";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { saveSharedImage } from "@/lib/db/sharedImages";
@@ -61,6 +62,56 @@ function NewCardPageInner() {
     setResults,
     selectSet,
   } = useSetLookup({ setYear, setSetName });
+
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [debouncedCatalogQuery, setDebouncedCatalogQuery] = useState("");
+  const [showCatalogResults, setShowCatalogResults] = useState(false);
+  const [catalogResults, setCatalogResults] = useState<CardWithContext[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCatalogQuery(catalogQuery), 150);
+    return () => clearTimeout(t);
+  }, [catalogQuery]);
+
+  useEffect(() => {
+    let active = true;
+    const trimmed = debouncedCatalogQuery.trim();
+
+    if (!trimmed) {
+      setCatalogResults([]);
+      setCatalogLoading(false);
+      return;
+    }
+
+    setCatalogLoading(true);
+    searchCatalog(trimmed)
+      .then((results) => {
+        if (active) setCatalogResults(results);
+      })
+      .catch(() => {
+        if (active) setCatalogResults([]);
+      })
+      .finally(() => {
+        if (active) setCatalogLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [debouncedCatalogQuery]);
+
+  function selectCatalogMatch(result: CardWithContext) {
+    setPlayerName(result.playerNames.join(" / "));
+    if (result.releaseYear != null) setYear(String(result.releaseYear));
+    if (result.setName) setSetName(result.setName);
+    setCardNumber(result.cardNumber);
+    setIsRookie(result.rookieCard);
+    setIsAutograph(result.isAutograph);
+    setIsPatch(result.isMemorabilia);
+    setCatalogQuery(`${result.cardNumber} ${result.playerNames.join(" / ")}`.trim());
+    setShowCatalogResults(false);
+  }
 
   // ✅ NEW
   const [location, setLocation] = useState("");
@@ -411,6 +462,65 @@ function NewCardPageInner() {
           <p className="mt-1 text-xs text-zinc-900">
             Pick a set to auto-fill <span className="font-medium">Year</span> and{" "}
             <span className="font-medium">Set</span>.
+          </p>
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-semibold text-zinc-900">Catalog match</label>
+          <div className="relative">
+            <input
+              value={catalogQuery}
+              onChange={(e) => {
+                setCatalogQuery(e.target.value);
+                setShowCatalogResults(true);
+              }}
+              onFocus={() => setShowCatalogResults(true)}
+              onBlur={() => {
+                window.setTimeout(() => setShowCatalogResults(false), 120);
+              }}
+              placeholder="Search player, set, year, card #..."
+              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+            />
+            {showCatalogResults && debouncedCatalogQuery.trim() ? (
+              <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                {catalogLoading ? (
+                  <div className="px-3 py-2 text-sm text-zinc-600">Searching…</div>
+                ) : catalogResults.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-zinc-600">No cards found.</div>
+                ) : (
+                  catalogResults.map((result) => (
+                    <button
+                      key={result.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectCatalogMatch(result);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                    >
+                      <div className="font-medium text-zinc-900">
+                        {result.playerNames.join(" / ") || result.title || `Card #${result.cardNumber}`}
+                      </div>
+                      <div className="text-xs text-zinc-900">
+                        {[
+                          result.releaseYear,
+                          result.setName,
+                          result.cardNumber ? `#${result.cardNumber}` : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-zinc-900">
+            Selecting a catalog card fills{" "}
+            <span className="font-medium">Player</span>, <span className="font-medium">Year</span>,{" "}
+            <span className="font-medium">Set</span>, <span className="font-medium">Card #</span>, and
+            the rookie/autograph/patch flags. You can still edit any field afterward.
           </p>
         </div>
 
