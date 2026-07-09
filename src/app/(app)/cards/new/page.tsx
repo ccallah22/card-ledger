@@ -26,6 +26,7 @@ import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr } from "@/lib/ocr";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
 import { rankCatalogMatches } from "@/lib/catalog/rankingEngine";
+import { shouldAutoSelect } from "@/lib/catalog/autoSelect";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -77,6 +78,13 @@ function NewCardPageInner() {
   const [showCatalogResults, setShowCatalogResults] = useState(false);
   const [catalogResults, setCatalogResults] = useState<CardWithContext[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  // Selecting a result (manually or via auto-select) rewrites catalogQuery
+  // to display what was picked, which would otherwise retrigger this same
+  // debounced search and unconditionally reopen a dropdown the user (or
+  // auto-select's own field-fill) just intentionally closed/left alone.
+  // Set right before that rewrite so the one resulting search cycle skips
+  // reopening the dropdown and re-running auto-select.
+  const suppressNextDropdownOpenRef = useRef(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedCatalogQuery(catalogQuery), 150);
@@ -86,6 +94,8 @@ function NewCardPageInner() {
   useEffect(() => {
     let active = true;
     const trimmed = debouncedCatalogQuery.trim();
+    const suppressOpen = suppressNextDropdownOpenRef.current;
+    suppressNextDropdownOpenRef.current = false;
 
     if (!trimmed) {
       setCatalogResults([]);
@@ -97,17 +107,29 @@ function NewCardPageInner() {
     searchCatalog(trimmed)
       .then((results) => {
         if (!active) return;
-        setCatalogResults(rankCatalogMatches(trimmed, results));
-        // Reveal the dropdown once a search actually completes, not just on
-        // manual focus/typing -- otherwise a programmatically-set query
-        // (e.g. from OCR) fetches/ranks results correctly but never shows
-        // them, since showCatalogResults would still be false.
-        setShowCatalogResults(true);
+        const ranked = rankCatalogMatches(trimmed, results);
+        setCatalogResults(ranked);
+        if (!suppressOpen) {
+          // Reveal the dropdown once a search actually completes, not just
+          // on manual focus/typing -- otherwise a programmatically-set
+          // query (e.g. from OCR) fetches/ranks results correctly but
+          // never shows them, since showCatalogResults would still be
+          // false.
+          setShowCatalogResults(true);
+          // Auto-fill only when the top match is unambiguous (unique exact
+          // card number plus a corroborating exact player/set match). This
+          // only fills fields -- it deliberately leaves catalogQuery and
+          // the dropdown untouched, so the user can still see and pick a
+          // different result if this guessed wrong.
+          if (shouldAutoSelect(trimmed, ranked)) {
+            fillFieldsFromCatalogMatch(ranked[0]);
+          }
+        }
       })
       .catch(() => {
         if (!active) return;
         setCatalogResults([]);
-        setShowCatalogResults(true);
+        if (!suppressOpen) setShowCatalogResults(true);
       })
       .finally(() => {
         if (active) setCatalogLoading(false);
@@ -118,7 +140,7 @@ function NewCardPageInner() {
     };
   }, [debouncedCatalogQuery]);
 
-  function selectCatalogMatch(result: CardWithContext) {
+  function fillFieldsFromCatalogMatch(result: CardWithContext) {
     setPlayerName(result.playerNames.join(" / "));
     if (result.releaseYear != null) setYear(String(result.releaseYear));
     if (result.setName) setSetName(result.setName);
@@ -126,6 +148,11 @@ function NewCardPageInner() {
     setIsRookie(result.rookieCard);
     setIsAutograph(result.isAutograph);
     setIsPatch(result.isMemorabilia);
+  }
+
+  function selectCatalogMatch(result: CardWithContext) {
+    fillFieldsFromCatalogMatch(result);
+    suppressNextDropdownOpenRef.current = true;
     setCatalogQuery(`${result.cardNumber} ${result.playerNames.join(" / ")}`.trim());
     setShowCatalogResults(false);
   }
