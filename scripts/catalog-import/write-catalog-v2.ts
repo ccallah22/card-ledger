@@ -24,39 +24,73 @@ import {
 } from "./build-catalog-entities.ts";
 
 /**
- * Catalog v2 database writer -- dry-run capable (Phase 3A). Takes the
- * in-memory entity collections build-catalog-entities.ts already produces
- * and shapes each entity into the insert payload its real table expects,
- * in dependency order, WITHOUT ever connecting to Supabase.
- *
- * Dry-run is the only mode this task implements. `--write` is scaffolded
- * but intentionally does nothing except report that write mode isn't
- * implemented yet -- no Supabase client is created, no row is ever
- * inserted, updated, deleted, or upserted by this file.
+ * Catalog v2 database writer -- dry-run capable (Phase 3A) with a real
+ * write mode (Phase 4). Takes the in-memory entity collections
+ * build-catalog-entities.ts already produces and either (dry-run, default)
+ * shapes each entity into the insert payload its real table expects
+ * without ever connecting to Supabase, or (--write) actually resolves and
+ * inserts each entity via the existing repository find-or-create
+ * functions.
  *
  * Reuses (does not duplicate):
  *   - parsing/normalization from import-beckett-checklist.ts
  *   - entity building (including the Set -> ChecklistSection -> Card ->
  *     Variant hierarchy and CARD SET decomposition) from
  *     build-catalog-entities.ts
+ *   - findOrCreateManufacturer/findOrCreateBrand/findOrCreateSet (sets.ts),
+ *     findOrCreateChecklistSection (checklistSections.ts),
+ *     findOrCreatePlayer (players.ts), findOrCreateCardV2 (cards.ts),
+ *     findOrCreateCardVariantV2 (cardVariants.ts), findOrCreateCardPlayer
+ *     (cardPlayers.ts), findOrCreateParallelType (parallelTypes.ts) -- see
+ *     runWrite() below.
  *
- * FK placeholders: every shaped insert payload below uses `*_ref` fields
- * (e.g. `sport_ref`, `set_ref`) holding the OTHER entity's *temporary*
- * string id (e.g. "sport:football"), not a real numeric database id --
- * real ids don't exist until that row is actually inserted. A future real
- * writer resolves each `*_ref` to the real id returned by the insert that
- * happened earlier in dependency order. Naming them `_ref` instead of the
- * real column name (e.g. `sport_id`) keeps this placeholder-vs-real
- * distinction visible at a glance.
+ * FK placeholders (dry-run only): every shaped insert payload in dry-run
+ * mode uses `*_ref` fields (e.g. `sport_ref`, `set_ref`) holding the OTHER
+ * entity's *temporary* string id (e.g. "sport:football"), not a real
+ * numeric database id -- real ids don't exist until that row is actually
+ * inserted. Write mode resolves each of these to the real id returned by
+ * the insert/find that happened earlier in dependency order (see the
+ * `*IdByTemp` maps in runWrite()).
  *
- * Manufacturers/Brands note: the current schema has no dedicated
- * `manufacturers`/`brands` tables -- `sets.manufacturer`/`sets.brand` are
- * still free-text columns (see docs/architecture/catalog-v2-erd.md open
- * questions). They're included here for completeness since the task
- * explicitly lists them in the dependency order, but a real writer may
- * need to fold them into the Set insert's text columns instead of
- * inserting them as their own rows, depending on how that open question is
- * resolved.
+ * Manufacturers/Brands: real `manufacturers`/`brands` tables now exist
+ * (see docs/database/manufacturer-brand-normalization-plan.md, applied as
+ * migration 202607090002) -- the note that used to appear here in dry-run
+ * output claiming no such table existed is now stale and has been
+ * corrected below; write mode inserts them as real rows via
+ * findOrCreateManufacturer/findOrCreateBrand like everything else.
+ *
+ * Sports/Leagues/Teams are NOT written by --write: sports.ts/leagues.ts/
+ * teams.ts currently only export list* functions, no find-or-create --
+ * adding one would mean modifying those repository files, which is out of
+ * scope for this task (scoped to write-catalog-v2.ts only). They're
+ * counted as "Skipped" in the write summary, not silently dropped. Nothing
+ * downstream actually depends on them existing first: Sets' sport_id/
+ * league_id are optional and unpopulated by this pipeline already, and
+ * Player has no team/league reference in the current entity model.
+ *
+ * IMPORTANT -- confirmed environment limitation, not a bug in this file's
+ * logic: every src/lib/repositories/*.ts file is imported elsewhere in the
+ * app using the "@/lib/..." tsconfig path alias, which Next.js's bundler
+ * understands but Node's native module resolver (used by
+ * `node --experimental-strip-types`, how every script in this directory
+ * runs) does not. Verified directly: `import("@/lib/repositories/sets")`
+ * fails with ERR_MODULE_NOT_FOUND under plain Node, even via a relative
+ * path to the file, because the file itself transitively imports more
+ * "@/lib/..." paths. `npx tsc --noEmit` reports no error for these imports
+ * because TypeScript resolves "@/" via tsconfig.json's `paths` mapping at
+ * the type-check level -- that mapping has no effect on actual module
+ * resolution outside a bundler. Fixing this needs either a Node loader /
+ * tsconfig-paths registration, or converting the repository layer to
+ * relative imports -- both are changes outside this file, so neither is
+ * attempted here (per this task's explicit instruction not to invent
+ * infrastructure the repository architecture doesn't already support).
+ * Repository imports are therefore *dynamic* (`await import(...)`), scoped
+ * inside the write path only: a *static* top-level import of any
+ * "@/lib/..." path would crash this entire module before any code (dry-run
+ * included) runs at all, since ES module imports resolve eagerly. `--write`
+ * catches this specific failure and reports it clearly instead of crashing
+ * uninformatively; dry-run mode never touches these imports and is
+ * completely unaffected either way.
  */
 
 export const DEPENDENCY_ORDER = [
@@ -254,6 +288,308 @@ export function buildCatalogV2Plan(entities: EntityCollections): CatalogV2Plan {
   return { sections, parallelTypes };
 }
 
+export type WriteCounts = { created: number; existing: number; skipped: number; errors: number };
+
+function emptyWriteCounts(): WriteCounts {
+  return { created: 0, existing: 0, skipped: 0, errors: 0 };
+}
+
+export type WriteSummary = Record<(typeof DEPENDENCY_ORDER)[number], WriteCounts>;
+
+function emptyWriteSummary(): WriteSummary {
+  const summary = {} as WriteSummary;
+  for (const label of DEPENDENCY_ORDER) summary[label] = emptyWriteCounts();
+  return summary;
+}
+
+// A repository find-or-create call returns the same row shape whether it
+// found an existing row or inserted a new one -- there's no "created"
+// flag to reuse (adding one would mean modifying repository files, out of
+// scope here). Every entity type except card_players has a standalone
+// `find*` function already exported alongside its `findOrCreate*`, so for
+// those we call the find function ourselves first and classify created-
+// vs-existing from whether it returned null -- exact, no ambiguity.
+//
+// card_players is the one exception: cardPlayers.ts only exports
+// findOrCreateCardPlayer, with no standalone find. For that type only, we
+// fall back to a created_at-timestamp heuristic (a row created at/after
+// this run's start, within a clock-skew tolerance, is assumed new).
+// CONFIRMED LIMITATION (caught by this task's own idempotency test, not
+// theoretical): re-running shortly after a previous run -- well within
+// realistic re-run timing, e.g. retrying right after a partial failure --
+// can misclassify a genuinely pre-existing card_players row as newly
+// created, because its created_at timestamp still falls inside the
+// tolerance window of the new run's start time. This affects only the
+// *reported* created/existing count for card_players; it does NOT create
+// a duplicate row (findOrCreateCardPlayer's own find-then-insert logic is
+// unaffected and still correctly idempotent) -- it's a reporting-accuracy
+// limitation, not a data-correctness one. Fixing it properly needs a
+// standalone findCardPlayer export, which would mean modifying
+// cardPlayers.ts -- out of scope for this task.
+const CLOCK_SKEW_TOLERANCE_MS = 5000;
+
+function recordHeuristicOutcome(
+  counts: WriteCounts,
+  row: { created_at: string },
+  runStartedAt: Date
+): void {
+  const isNew = new Date(row.created_at).getTime() >= runStartedAt.getTime() - CLOCK_SKEW_TOLERANCE_MS;
+  if (isNew) counts.created++;
+  else counts.existing++;
+}
+
+/**
+ * Dynamically imports the repository functions this writer reuses. See the
+ * file header comment for why this is a dynamic import scoped to the write
+ * path, not a static top-level one, and why it's expected to fail under
+ * plain Node in this environment.
+ */
+async function loadWriteRepositories() {
+  const [sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes] =
+    await Promise.all([
+      import("@/lib/repositories/sets"),
+      import("@/lib/repositories/checklistSections"),
+      import("@/lib/repositories/players"),
+      import("@/lib/repositories/cards"),
+      import("@/lib/repositories/cardVariants"),
+      import("@/lib/repositories/cardPlayers"),
+      import("@/lib/repositories/parallelTypes"),
+    ]);
+  return { sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes };
+}
+
+type WriteRepositories = Awaited<ReturnType<typeof loadWriteRepositories>>;
+
+/**
+ * Writes every entity to Supabase via the existing repository
+ * find-or-create functions, in dependency order. Every call is
+ * find-or-create, so re-running against the same input is idempotent by
+ * construction -- see the transaction note below for what that does and
+ * doesn't guarantee.
+ *
+ * No database transaction wraps this, and none is invented here. The
+ * repository layer (sets.ts, cards.ts, cardVariants.ts, etc.) is built
+ * entirely on the Supabase JS client's PostgREST interface
+ * (`supabase.from(table).insert()/.select()`), where every call is its own
+ * independent, auto-committing HTTP request -- there is no shared
+ * transaction context anywhere in this codebase, and PostgREST exposes no
+ * BEGIN/COMMIT primitive for a client to opt into. Real multi-statement
+ * transactionality would require either a Postgres RPC function wrapping
+ * this whole sequence in one stored procedure (called via
+ * `supabase.rpc(...)`), or a direct low-level Postgres connection
+ * bypassing PostgREST entirely -- both are new infrastructure, not
+ * something to invent inside this task. This function stops at that
+ * repository boundary instead: idempotency comes from find-or-create
+ * semantics (safe to re-run), not from rollback-on-failure. If a write
+ * fails partway through, rows already written by earlier steps are NOT
+ * rolled back -- each entity's outcome is caught and counted individually
+ * so one bad row doesn't abort the rest of the run.
+ */
+export async function runWrite(
+  entities: EntityCollections,
+  parallelTypesLocal: Map<string, ParallelTypeEntity>,
+  repos: WriteRepositories
+): Promise<WriteSummary> {
+  const summary = emptyWriteSummary();
+
+  // Sports/Leagues/Teams: no find-or-create repository function exists yet
+  // -- see the file header comment. Skipped and counted, not silently
+  // dropped.
+  summary.sports.skipped = entities.sports.size;
+  summary.leagues.skipped = entities.leagues.size;
+  summary.teams.skipped = entities.teams.size;
+
+  const manufacturerIdByTemp = new Map<string, number>();
+  for (const [tempId, m] of entities.manufacturers) {
+    try {
+      const existing = await repos.sets.findManufacturerBySlug(slugify(m.name));
+      const row = existing ?? (await repos.sets.findOrCreateManufacturer({ name: m.name }));
+      manufacturerIdByTemp.set(tempId, row.id);
+      if (existing) summary.manufacturers.existing++;
+      else summary.manufacturers.created++;
+    } catch {
+      summary.manufacturers.errors++;
+    }
+  }
+
+  const brandIdByTemp = new Map<string, number>();
+  for (const [tempId, b] of entities.brands) {
+    const manufacturerId = manufacturerIdByTemp.get(b.manufacturerId);
+    if (manufacturerId === undefined) {
+      summary.brands.skipped++;
+      continue;
+    }
+    try {
+      const existing = await repos.sets.findBrandBySlug(manufacturerId, slugify(b.name));
+      const row =
+        existing ?? (await repos.sets.findOrCreateBrand({ manufacturer_id: manufacturerId, name: b.name }));
+      brandIdByTemp.set(tempId, row.id);
+      if (existing) summary.brands.existing++;
+      else summary.brands.created++;
+    } catch {
+      summary.brands.errors++;
+    }
+  }
+
+  const setIdByTemp = new Map<string, number>();
+  for (const [tempId, s] of entities.sets) {
+    const manufacturer = entities.manufacturers.get(s.manufacturerId)?.name ?? null;
+    const brand = entities.brands.get(s.brandId)?.name ?? null;
+    const releaseYear = Number.parseInt(s.releaseYear, 10);
+    // Matches sets.ts's own createSet()/findOrCreateSet() slug formula
+    // exactly, so this pre-check finds the same row findOrCreateSet would.
+    const slug = slugify(`${s.name}-${s.releaseYear}`);
+    try {
+      const existing = await repos.sets.findSetBySlug(slug);
+      const row =
+        existing ??
+        (await repos.sets.findOrCreateSet({
+          name: s.name,
+          manufacturer,
+          brand,
+          release_year: Number.isFinite(releaseYear) ? releaseYear : null,
+        }));
+      setIdByTemp.set(tempId, row.id);
+      if (existing) summary.sets.existing++;
+      else summary.sets.created++;
+    } catch {
+      summary.sets.errors++;
+    }
+  }
+
+  const sectionIdByTemp = new Map<string, number>();
+  for (const [tempId, section] of entities.checklistSections) {
+    const setId = setIdByTemp.get(section.setId);
+    if (setId === undefined) {
+      summary.checklist_sections.skipped++;
+      continue;
+    }
+    try {
+      const existing = await repos.checklistSections.findChecklistSectionBySlug(
+        setId,
+        slugify(section.name)
+      );
+      const row =
+        existing ??
+        (await repos.checklistSections.findOrCreateChecklistSection({
+          set_id: setId,
+          name: section.name,
+          section_category: deriveSectionCategory(section),
+        }));
+      sectionIdByTemp.set(tempId, row.id);
+      if (existing) summary.checklist_sections.existing++;
+      else summary.checklist_sections.created++;
+    } catch {
+      summary.checklist_sections.errors++;
+    }
+  }
+
+  const playerIdByTemp = new Map<string, number>();
+  for (const [tempId, p] of entities.players) {
+    try {
+      // The entity builder doesn't resolve a league for players, matching
+      // findOrCreatePlayer's own `input.league_id ?? null` fallback.
+      const existing = await repos.players.findPlayerBySlug(slugify(p.name), null);
+      const row = existing ?? (await repos.players.findOrCreatePlayer({ full_name: p.name }));
+      playerIdByTemp.set(tempId, row.id);
+      if (existing) summary.players.existing++;
+      else summary.players.created++;
+    } catch {
+      summary.players.errors++;
+    }
+  }
+
+  const cardIdByTemp = new Map<string, number>();
+  for (const [tempId, c] of entities.cards) {
+    const setId = setIdByTemp.get(c.setId);
+    const sectionId = sectionIdByTemp.get(c.checklistSectionId);
+    if (setId === undefined || sectionId === undefined) {
+      summary.cards.skipped++;
+      continue;
+    }
+    try {
+      const existing = await repos.cards.findCardBySectionAndNumber(sectionId, c.cardNumber);
+      const row =
+        existing ??
+        (await repos.cards.findOrCreateCardV2({
+          checklistSectionId: sectionId,
+          setId,
+          cardNumber: c.cardNumber,
+        }));
+      cardIdByTemp.set(tempId, row.id);
+      if (existing) summary.cards.existing++;
+      else summary.cards.created++;
+    } catch {
+      summary.cards.errors++;
+    }
+  }
+
+  const parallelTypeIdByTemp = new Map<string, number>();
+  for (const [tempId, pt] of parallelTypesLocal) {
+    try {
+      const existing = await repos.parallelTypes.findParallelTypeByName(pt.name);
+      const row = existing ?? (await repos.parallelTypes.findOrCreateParallelType(pt.name));
+      parallelTypeIdByTemp.set(tempId, row.id);
+      if (existing) summary.parallel_types.existing++;
+      else summary.parallel_types.created++;
+    } catch {
+      summary.parallel_types.errors++;
+    }
+  }
+
+  for (const v of entities.cardVariants.values()) {
+    const cardId = cardIdByTemp.get(v.cardId);
+    if (cardId === undefined) {
+      summary.card_variants.skipped++;
+      continue;
+    }
+    const parallelTypeId = v.parallelName
+      ? (parallelTypeIdByTemp.get(`parallel_type:${slugify(v.parallelName)}`) ?? null)
+      : null;
+    const printRun = v.printRun ? Number.parseInt(v.printRun, 10) : null;
+    const variantInput = {
+      cardId,
+      parallelTypeId,
+      printRun: printRun !== null && Number.isFinite(printRun) ? printRun : null,
+      swatchDescriptor: v.trailingModifier,
+      isAutograph: v.isAutograph,
+      isMemorabilia: v.isMemorabilia,
+    };
+    try {
+      const existing = await repos.cardVariants.findCardVariantV2(variantInput);
+      if (existing) {
+        summary.card_variants.existing++;
+      } else {
+        await repos.cardVariants.findOrCreateCardVariantV2(variantInput);
+        summary.card_variants.created++;
+      }
+    } catch {
+      summary.card_variants.errors++;
+    }
+  }
+
+  // card_players has no standalone find export -- see the comment above
+  // recordHeuristicOutcome() for why this one type uses the timestamp
+  // heuristic instead of a find-first check.
+  const cardPlayersRunStartedAt = new Date();
+  for (const cp of entities.cardPlayers.values()) {
+    const cardId = cardIdByTemp.get(cp.cardId);
+    const playerId = playerIdByTemp.get(cp.playerId);
+    if (cardId === undefined || playerId === undefined) {
+      summary.card_players.skipped++;
+      continue;
+    }
+    try {
+      const row = await repos.cardPlayers.findOrCreateCardPlayer(cardId, playerId);
+      recordHeuristicOutcome(summary.card_players, row, cardPlayersRunStartedAt);
+    } catch {
+      summary.card_players.errors++;
+    }
+  }
+
+  return summary;
+}
+
 function parseArgs(argv: string[]): { filePath: string | undefined; write: boolean } {
   const write = argv.includes("--write");
   const filePath = argv.find((a) => !a.startsWith("--"));
@@ -274,8 +610,76 @@ async function main() {
   }
 
   if (write) {
-    console.log("--write flag detected.");
-    console.log("Write mode not implemented yet.");
+    console.log("Mode: WRITE (--write supplied). This will insert rows into Supabase.\n");
+
+    let repos: WriteRepositories;
+    try {
+      repos = await loadWriteRepositories();
+    } catch (err) {
+      console.error(
+        "FAILED: could not load repository modules for write mode.\n\n" +
+          'This is a known environment limitation, not a bug in this script\'s logic: ' +
+          'every src/lib/repositories/*.ts file is imported elsewhere in the app using ' +
+          'the "@/lib/..." tsconfig path alias, which Next.js\'s bundler understands ' +
+          "but Node's native module resolver (used by `node --experimental-strip-types`) " +
+          'does not. `npx tsc --noEmit` reports no error for these imports because ' +
+          'TypeScript resolves "@/" via tsconfig.json\'s `paths` mapping at the ' +
+          "type-check level -- but that mapping has no effect on actual module " +
+          "resolution outside a bundler. Fixing this needs either a Node loader / " +
+          "tsconfig-paths registration, or converting the repository layer to relative " +
+          "imports -- both are changes outside this file, so neither is attempted here.\n\n" +
+          `Underlying error: ${err instanceof Error ? err.message : String(err)}`
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    let writeRows: string[][];
+    try {
+      writeRows = (await loadChecklistRows(filePath)).rows;
+    } catch (err) {
+      console.error(
+        `FAILED: could not read file "${filePath}": ${err instanceof Error ? err.message : String(err)}`
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (writeRows.length === 0) {
+      console.error("FAILED: no rows could be parsed from this file.");
+      process.exitCode = 1;
+      return;
+    }
+
+    const writeHeaders = writeRows[0];
+    const writeDataRows = writeRows.slice(1);
+    const { mapping: writeMapping } = mapHeaders(writeHeaders);
+    let writeNormalizedRows = normalizeBeckettRows(writeDataRows, writeMapping);
+    if (isXlsxFile(filePath)) {
+      writeNormalizedRows = applyXlsxDerivations(writeNormalizedRows);
+    }
+
+    const writeEntities = buildEntities(writeNormalizedRows);
+    const writeParallelTypes = deriveParallelTypes(writeEntities);
+
+    console.log("Dependency order:");
+    DEPENDENCY_ORDER.forEach((label, i) => console.log(`  ${i + 1}. ${label}`));
+    console.log(
+      "\nSports/Leagues/Teams are skipped (no find-or-create repository function exists " +
+        "yet -- see this file's header comment)."
+    );
+
+    const summary = await runWrite(writeEntities, writeParallelTypes, repos);
+
+    console.log("\n=== Write Summary ===");
+    for (const label of DEPENDENCY_ORDER) {
+      const c = summary[label];
+      console.log(`\n${label}`);
+      console.log(`  Created: ${c.created}`);
+      console.log(`  Existing: ${c.existing}`);
+      console.log(`  Skipped: ${c.skipped}`);
+      console.log(`  Errors: ${c.errors}`);
+    }
+    console.log("\nWrite complete.");
     return;
   }
 
@@ -318,10 +722,10 @@ async function main() {
   }
 
   console.log(
-    "\nNote: manufacturers/brands have no dedicated table in the current schema " +
-      "(see docs/architecture/catalog-v2-erd.md open questions) -- shown below for " +
-      "completeness; a real writer may need to fold them into sets.manufacturer/" +
-      "sets.brand instead of inserting them as their own rows."
+    "\nNote: manufacturers/brands now have real tables (see " +
+      "docs/database/manufacturer-brand-normalization-plan.md) -- shown below as their " +
+      "own planned inserts; sets.manufacturer/sets.brand text columns are still " +
+      "populated too, for compatibility."
   );
 
   for (const section of sections) {
