@@ -22,6 +22,7 @@ import {
   getCardMediaImageUrl,
 } from "@/lib/db/cardMediaStorage";
 import { runOcr, type CardOcrResult } from "@/lib/ocr";
+import { mergeCardOcrResults } from "@/lib/ocr/merge";
 
 // Vision Engine V2, Phase 6A: defensive shape check before trusting a
 // loaded card_media.ocr_output value as a real CardOcrResult -- it was
@@ -176,6 +177,15 @@ export default function EditCardPage({
   );
   const [backOcrError, setBackOcrError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Vision Engine V2, Phase 6B: pure, in-memory reconciliation of the two
+  // independent side results, kept available for future use -- not
+  // persisted (front/back card_media.ocr_output are untouched) and not
+  // yet surfaced in this page's UI.
+  const mergedOcr = useMemo(
+    () => mergeCardOcrResults(frontOcrResult, backOcrResult),
+    [frontOcrResult, backOcrResult],
+  );
 
   useEffect(() => {
     let active = true;
@@ -844,6 +854,15 @@ export default function EditCardPage({
             </div>
           </div>
         </div>
+
+        {mergedOcr.frontAvailable || mergedOcr.backAvailable ? (
+          <div className="sm:col-span-2 text-xs text-zinc-500">
+            Combined OCR ready
+            {mergedOcr.conflictCount > 0
+              ? ` • ${mergedOcr.conflictCount} field conflict${mergedOcr.conflictCount === 1 ? "" : "s"}`
+              : ""}
+          </div>
+        ) : null}
 
         <div className="sm:col-span-2 flex justify-end gap-2">
           <Link href={`/cards/${String(id)}`} className="btn-secondary">

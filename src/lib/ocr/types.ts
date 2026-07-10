@@ -24,11 +24,11 @@ export interface OcrEngine {
 export type OcrImageSide = "front" | "back";
 
 // Which side (or combination) a given extracted field's value actually came
-// from. Not yet consumed by anything in this phase -- catalog matching,
-// confidence aggregation, and merging front/back results are explicitly
-// out of scope here. Included now so a later merge phase has a stable type
-// to attach provenance to each field without another type-layer change.
-export type CardOcrFieldSource = "front" | "back" | "combined" | "unknown";
+// from. Vision Engine V2, Phase 6B (src/lib/ocr/merge.ts) is the merge
+// phase this was scaffolded for -- re-exported there as OcrFieldSource.
+// "both" (not "combined") means front and back agreed after normalization,
+// not that their text was concatenated.
+export type CardOcrFieldSource = "front" | "back" | "both" | "unknown";
 
 // Every field is optional/nullable: a given side only ever asks the model
 // about the fields relevant to that side (see the front/back prompts in

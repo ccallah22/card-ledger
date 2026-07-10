@@ -36,6 +36,7 @@ import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr, toLegacyOcrResult, type CardOcrResult } from "@/lib/ocr";
+import { mergeCardOcrResults } from "@/lib/ocr/merge";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
 import { rankCatalogMatches } from "@/lib/catalog/rankingEngine";
 import { shouldAutoSelect } from "@/lib/catalog/autoSelect";
@@ -423,6 +424,16 @@ function NewCardPageInner() {
       active = false;
     };
   }, [backImage.imageUrl]);
+
+  // Vision Engine V2, Phase 6B: pure, in-memory reconciliation of the two
+  // independent side results -- never persisted (front/back card_media.
+  // ocr_output are untouched), and not yet wired into catalog matching.
+  // Catalog autofill below still uses the front-only OCR result directly
+  // via toLegacyOcrResult, unchanged from before this task.
+  const mergedOcr = useMemo(
+    () => mergeCardOcrResults(frontOcrResult, backOcrResult),
+    [frontOcrResult, backOcrResult],
+  );
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -1382,6 +1393,15 @@ function NewCardPageInner() {
                 <div className="mt-1 text-xs text-red-600">{backOcrError}</div>
               ) : null}
             </div>
+          </div>
+        ) : null}
+
+        {!isWishlistCard && (mergedOcr.frontAvailable || mergedOcr.backAvailable) ? (
+          <div className="sm:col-span-2 text-xs text-zinc-500">
+            Combined OCR ready
+            {mergedOcr.conflictCount > 0
+              ? ` • ${mergedOcr.conflictCount} field conflict${mergedOcr.conflictCount === 1 ? "" : "s"}`
+              : ""}
           </div>
         ) : null}
 
