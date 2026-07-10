@@ -338,6 +338,49 @@ function recordHeuristicOutcome(
   else counts.existing++;
 }
 
+// Strictly one-at-a-time processing was confirmed too slow for real use:
+// against the actual 2025 Select Football file, ~500 cards and ~570
+// card_variants completed in ~10 minutes of real production runtime before
+// this was added, projecting 8+ hours for card_variants alone (27,870 of
+// them). Bounded concurrency processes several entities at once instead of
+// waiting for each round trip serially, without firing thousands of
+// simultaneous requests at Supabase's connection pooler at once.
+const WRITE_CONCURRENCY = 15;
+
+/**
+ * Runs `fn` over `items` with at most `concurrency` in flight at once. Each
+ * worker claims the next index synchronously between awaits -- safe under
+ * JS's single-threaded event loop, since no two workers can ever claim the
+ * same index -- so every item is processed exactly once regardless of
+ * concurrency.
+ */
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex++];
+      await fn(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+}
+
+/** Prints roughly 20 progress lines across `total` items, plus the final one. */
+function makeProgressLogger(label: string, total: number): () => void {
+  let completed = 0;
+  const step = Math.max(1, Math.round(total / 20));
+  return () => {
+    completed++;
+    if (completed % step === 0 || completed === total) {
+      console.log(`  ${label}: ${completed}/${total}`);
+    }
+  };
+}
+
 /**
  * Dynamically imports the repository functions this writer reuses. See the
  * file header comment for why this is a dynamic import scoped to the write
@@ -385,12 +428,28 @@ type WriteRepositories = Awaited<ReturnType<typeof loadWriteRepositories>>;
  * rolled back -- each entity's outcome is caught and counted individually
  * so one bad row doesn't abort the rest of the run.
  */
+// Caps how many error messages get printed per entity type, so a systemic
+// failure affecting thousands of rows doesn't flood the console -- the
+// first few are almost always enough to diagnose the actual cause, and the
+// per-type Errors count in the summary already reflects the true total.
+const MAX_LOGGED_ERRORS_PER_TYPE = 5;
+const loggedErrorCounts = new Map<string, number>();
+
+function logEntityError(label: string, err: unknown): void {
+  const alreadyLogged = loggedErrorCounts.get(label) ?? 0;
+  if (alreadyLogged >= MAX_LOGGED_ERRORS_PER_TYPE) return;
+  loggedErrorCounts.set(label, alreadyLogged + 1);
+  const message = err instanceof Error ? err.message : JSON.stringify(err);
+  console.error(`  [${label} error] ${message}`);
+}
+
 export async function runWrite(
   entities: EntityCollections,
   parallelTypesLocal: Map<string, ParallelTypeEntity>,
   repos: WriteRepositories
 ): Promise<WriteSummary> {
   const summary = emptyWriteSummary();
+  loggedErrorCounts.clear();
 
   // Sports/Leagues/Teams: no find-or-create repository function exists yet
   // -- see the file header comment. Skipped and counted, not silently
@@ -399,6 +458,7 @@ export async function runWrite(
   summary.leagues.skipped = entities.leagues.size;
   summary.teams.skipped = entities.teams.size;
 
+  console.log(`\nWriting manufacturers (${entities.manufacturers.size})...`);
   const manufacturerIdByTemp = new Map<string, number>();
   for (const [tempId, m] of entities.manufacturers) {
     try {
@@ -407,11 +467,13 @@ export async function runWrite(
       manufacturerIdByTemp.set(tempId, row.id);
       if (existing) summary.manufacturers.existing++;
       else summary.manufacturers.created++;
-    } catch {
+    } catch (err) {
+      logEntityError("manufacturers", err);
       summary.manufacturers.errors++;
     }
   }
 
+  console.log(`\nWriting brands (${entities.brands.size})...`);
   const brandIdByTemp = new Map<string, number>();
   for (const [tempId, b] of entities.brands) {
     const manufacturerId = manufacturerIdByTemp.get(b.manufacturerId);
@@ -426,11 +488,13 @@ export async function runWrite(
       brandIdByTemp.set(tempId, row.id);
       if (existing) summary.brands.existing++;
       else summary.brands.created++;
-    } catch {
+    } catch (err) {
+      logEntityError("brands", err);
       summary.brands.errors++;
     }
   }
 
+  console.log(`\nWriting sets (${entities.sets.size})...`);
   const setIdByTemp = new Map<string, number>();
   for (const [tempId, s] of entities.sets) {
     const manufacturer = entities.manufacturers.get(s.manufacturerId)?.name ?? null;
@@ -452,11 +516,13 @@ export async function runWrite(
       setIdByTemp.set(tempId, row.id);
       if (existing) summary.sets.existing++;
       else summary.sets.created++;
-    } catch {
+    } catch (err) {
+      logEntityError("sets", err);
       summary.sets.errors++;
     }
   }
 
+  console.log(`\nWriting checklist_sections (${entities.checklistSections.size})...`);
   const sectionIdByTemp = new Map<string, number>();
   for (const [tempId, section] of entities.checklistSections) {
     const setId = setIdByTemp.get(section.setId);
@@ -479,51 +545,77 @@ export async function runWrite(
       sectionIdByTemp.set(tempId, row.id);
       if (existing) summary.checklist_sections.existing++;
       else summary.checklist_sections.created++;
-    } catch {
+    } catch (err) {
+      logEntityError("checklist_sections", err);
       summary.checklist_sections.errors++;
     }
   }
 
+  console.log(`\nWriting players (${entities.players.size})...`);
   const playerIdByTemp = new Map<string, number>();
-  for (const [tempId, p] of entities.players) {
-    try {
-      // The entity builder doesn't resolve a league for players, matching
-      // findOrCreatePlayer's own `input.league_id ?? null` fallback.
-      const existing = await repos.players.findPlayerBySlug(slugify(p.name), null);
-      const row = existing ?? (await repos.players.findOrCreatePlayer({ full_name: p.name }));
-      playerIdByTemp.set(tempId, row.id);
-      if (existing) summary.players.existing++;
-      else summary.players.created++;
-    } catch {
-      summary.players.errors++;
-    }
+  {
+    const logProgress = makeProgressLogger("players", entities.players.size);
+    await runWithConcurrency(
+      [...entities.players],
+      WRITE_CONCURRENCY,
+      async ([tempId, p]) => {
+        try {
+          // The entity builder doesn't resolve a league for players,
+          // matching findOrCreatePlayer's own `input.league_id ?? null`
+          // fallback.
+          const existing = await repos.players.findPlayerBySlug(slugify(p.name), null);
+          const row = existing ?? (await repos.players.findOrCreatePlayer({ full_name: p.name }));
+          playerIdByTemp.set(tempId, row.id);
+          if (existing) summary.players.existing++;
+          else summary.players.created++;
+        } catch (err) {
+          logEntityError("players", err);
+          summary.players.errors++;
+        } finally {
+          logProgress();
+        }
+      }
+    );
   }
 
+  console.log(`\nWriting cards (${entities.cards.size})...`);
   const cardIdByTemp = new Map<string, number>();
-  for (const [tempId, c] of entities.cards) {
-    const setId = setIdByTemp.get(c.setId);
-    const sectionId = sectionIdByTemp.get(c.checklistSectionId);
-    if (setId === undefined || sectionId === undefined) {
-      summary.cards.skipped++;
-      continue;
-    }
-    try {
-      const existing = await repos.cards.findCardBySectionAndNumber(sectionId, c.cardNumber);
-      const row =
-        existing ??
-        (await repos.cards.findOrCreateCardV2({
-          checklistSectionId: sectionId,
-          setId,
-          cardNumber: c.cardNumber,
-        }));
-      cardIdByTemp.set(tempId, row.id);
-      if (existing) summary.cards.existing++;
-      else summary.cards.created++;
-    } catch {
-      summary.cards.errors++;
-    }
+  {
+    const logProgress = makeProgressLogger("cards", entities.cards.size);
+    await runWithConcurrency(
+      [...entities.cards],
+      WRITE_CONCURRENCY,
+      async ([tempId, c]) => {
+        const setId = setIdByTemp.get(c.setId);
+        const sectionId = sectionIdByTemp.get(c.checklistSectionId);
+        if (setId === undefined || sectionId === undefined) {
+          summary.cards.skipped++;
+          logProgress();
+          return;
+        }
+        try {
+          const existing = await repos.cards.findCardBySectionAndNumber(sectionId, c.cardNumber);
+          const row =
+            existing ??
+            (await repos.cards.findOrCreateCardV2({
+              checklistSectionId: sectionId,
+              setId,
+              cardNumber: c.cardNumber,
+            }));
+          cardIdByTemp.set(tempId, row.id);
+          if (existing) summary.cards.existing++;
+          else summary.cards.created++;
+        } catch (err) {
+          logEntityError("cards", err);
+          summary.cards.errors++;
+        } finally {
+          logProgress();
+        }
+      }
+    );
   }
 
+  console.log(`\nWriting parallel_types (${parallelTypesLocal.size})...`);
   const parallelTypeIdByTemp = new Map<string, number>();
   for (const [tempId, pt] of parallelTypesLocal) {
     try {
@@ -532,59 +624,84 @@ export async function runWrite(
       parallelTypeIdByTemp.set(tempId, row.id);
       if (existing) summary.parallel_types.existing++;
       else summary.parallel_types.created++;
-    } catch {
+    } catch (err) {
+      logEntityError("parallel_types", err);
       summary.parallel_types.errors++;
     }
   }
 
-  for (const v of entities.cardVariants.values()) {
-    const cardId = cardIdByTemp.get(v.cardId);
-    if (cardId === undefined) {
-      summary.card_variants.skipped++;
-      continue;
-    }
-    const parallelTypeId = v.parallelName
-      ? (parallelTypeIdByTemp.get(`parallel_type:${slugify(v.parallelName)}`) ?? null)
-      : null;
-    const printRun = v.printRun ? Number.parseInt(v.printRun, 10) : null;
-    const variantInput = {
-      cardId,
-      parallelTypeId,
-      printRun: printRun !== null && Number.isFinite(printRun) ? printRun : null,
-      swatchDescriptor: v.trailingModifier,
-      isAutograph: v.isAutograph,
-      isMemorabilia: v.isMemorabilia,
-    };
-    try {
-      const existing = await repos.cardVariants.findCardVariantV2(variantInput);
-      if (existing) {
-        summary.card_variants.existing++;
-      } else {
-        await repos.cardVariants.findOrCreateCardVariantV2(variantInput);
-        summary.card_variants.created++;
+  console.log(`\nWriting card_variants (${entities.cardVariants.size})...`);
+  {
+    const logProgress = makeProgressLogger("card_variants", entities.cardVariants.size);
+    await runWithConcurrency(
+      [...entities.cardVariants.values()],
+      WRITE_CONCURRENCY,
+      async (v) => {
+        const cardId = cardIdByTemp.get(v.cardId);
+        if (cardId === undefined) {
+          summary.card_variants.skipped++;
+          logProgress();
+          return;
+        }
+        const parallelTypeId = v.parallelName
+          ? (parallelTypeIdByTemp.get(`parallel_type:${slugify(v.parallelName)}`) ?? null)
+          : null;
+        const printRun = v.printRun ? Number.parseInt(v.printRun, 10) : null;
+        const variantInput = {
+          cardId,
+          parallelTypeId,
+          printRun: printRun !== null && Number.isFinite(printRun) ? printRun : null,
+          swatchDescriptor: v.trailingModifier,
+          isAutograph: v.isAutograph,
+          isMemorabilia: v.isMemorabilia,
+        };
+        try {
+          const existing = await repos.cardVariants.findCardVariantV2(variantInput);
+          if (existing) {
+            summary.card_variants.existing++;
+          } else {
+            await repos.cardVariants.findOrCreateCardVariantV2(variantInput);
+            summary.card_variants.created++;
+          }
+        } catch (err) {
+          logEntityError("card_variants", err);
+          summary.card_variants.errors++;
+        } finally {
+          logProgress();
+        }
       }
-    } catch {
-      summary.card_variants.errors++;
-    }
+    );
   }
 
   // card_players has no standalone find export -- see the comment above
   // recordHeuristicOutcome() for why this one type uses the timestamp
   // heuristic instead of a find-first check.
-  const cardPlayersRunStartedAt = new Date();
-  for (const cp of entities.cardPlayers.values()) {
-    const cardId = cardIdByTemp.get(cp.cardId);
-    const playerId = playerIdByTemp.get(cp.playerId);
-    if (cardId === undefined || playerId === undefined) {
-      summary.card_players.skipped++;
-      continue;
-    }
-    try {
-      const row = await repos.cardPlayers.findOrCreateCardPlayer(cardId, playerId);
-      recordHeuristicOutcome(summary.card_players, row, cardPlayersRunStartedAt);
-    } catch {
-      summary.card_players.errors++;
-    }
+  console.log(`\nWriting card_players (${entities.cardPlayers.size})...`);
+  {
+    const logProgress = makeProgressLogger("card_players", entities.cardPlayers.size);
+    const cardPlayersRunStartedAt = new Date();
+    await runWithConcurrency(
+      [...entities.cardPlayers.values()],
+      WRITE_CONCURRENCY,
+      async (cp) => {
+        const cardId = cardIdByTemp.get(cp.cardId);
+        const playerId = playerIdByTemp.get(cp.playerId);
+        if (cardId === undefined || playerId === undefined) {
+          summary.card_players.skipped++;
+          logProgress();
+          return;
+        }
+        try {
+          const row = await repos.cardPlayers.findOrCreateCardPlayer(cardId, playerId);
+          recordHeuristicOutcome(summary.card_players, row, cardPlayersRunStartedAt);
+        } catch (err) {
+          logEntityError("card_players", err);
+          summary.card_players.errors++;
+        } finally {
+          logProgress();
+        }
+      }
+    );
   }
 
   return summary;
