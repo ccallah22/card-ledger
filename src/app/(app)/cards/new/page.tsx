@@ -12,6 +12,8 @@ import { listLocations } from "@/lib/repositories/locations";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { saveSharedImage } from "@/lib/db/sharedImages";
 import { saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
+import { upsertCardMediaBySide } from "@/lib/repositories/cardMedia";
+import { uploadCardMediaImage } from "@/lib/db/cardMediaStorage";
 import type { ChecklistEntry } from "@/lib/db/checklists.client";
 import {
   applySectionAutoFill,
@@ -248,6 +250,24 @@ function NewCardPageInner() {
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // Vision Engine V2, Phase 5B correction: once createMyCard() succeeds for
+  // this form submission, its id is retained here so a later retry (after a
+  // media-sync failure) never creates a second card row. The four "pending"
+  // flags track exactly which post-creation work this submission still
+  // owes -- each is set once, at creation time, to whatever actually needs
+  // doing, and only ever cleared by that specific piece of work succeeding
+  // (or turning out to be moot, e.g. the image was removed before a
+  // retry). A retry re-reads these instead of recomputing "what's needed"
+  // from scratch, so a side that already succeeded is never re-uploaded
+  // just because the opposite side failed. All five reset to their initial
+  // values only once a full cycle succeeds and the form is actually reset
+  // (see onSaveAndAddAnother) -- never on a mere retry.
+  const [createdCardId, setCreatedCardId] = useState<string | null>(null);
+  const [legacyFrontPending, setLegacyFrontPending] = useState(false);
+  const [frontMediaPending, setFrontMediaPending] = useState(false);
+  const [backMediaPending, setBackMediaPending] = useState(false);
+  const [sharedImagePending, setSharedImagePending] = useState(false);
+
   // Vision Engine V2, Phase 4: two independent image slots. Only the front
   // slot feeds save/OCR/shared-image behavior (unchanged from before this
   // task) -- the back slot is UI-only client state for now, not persisted
@@ -339,6 +359,13 @@ function NewCardPageInner() {
     backImage.setCardPhotoConfirm(false);
   }, [isWishlistCard]);
 
+  // Vision Engine V2, Phase 5B correction: true once a card has been
+  // created for this submission but some media work is still pending from
+  // a prior failed attempt -- used purely to relabel the save buttons so a
+  // retry doesn't read as "create another card."
+  const hasPendingMediaRetry =
+    !!createdCardId && (legacyFrontPending || frontMediaPending || backMediaPending);
+
   // Save eligibility remains gated on the FRONT slot only -- the back slot
   // is not required and does not block saving in this phase.
   const canSave = useMemo(() => {
@@ -418,19 +445,137 @@ function NewCardPageInner() {
     return card;
   }
 
-  async function onSave() {
-    const input = buildCard();
-    if (!input) return;
-    setIsSaving(true);
-    try {
-      const profileId = await requireProfileId();
+  // Vision Engine V2, Phase 5B correction: creates the card exactly once
+  // per form submission, then runs every post-creation step (legacy front
+  // save, private front/back media upload+persist, front-only shared-image
+  // upload) gated by its own "pending" flag. On the very first call for a
+  // submission (createdCardId is still null), every flag is initialized
+  // from what's actually present; createMyCard() only ever runs in that
+  // branch. On a retry (createdCardId already set), createMyCard() is never
+  // called again -- only whatever is still marked pending from the
+  // previous attempt is retried, so a side that already succeeded is never
+  // re-uploaded just because the opposite side (or the legacy save) failed.
+  // Returns the card id and whether every pending step succeeded; the card
+  // row itself is never rolled back or discarded on a media failure.
+  async function runSaveCycle(): Promise<{ cardId: string; succeeded: boolean } | null> {
+    let cardId = createdCardId;
+    let profileId: string;
+    let needsLegacyFront: boolean;
+    let needsFrontMedia: boolean;
+    let needsBackMedia: boolean;
+    let needsSharedImage: boolean;
+
+    if (!cardId) {
+      const input = buildCard();
+      if (!input) return null;
+      profileId = await requireProfileId();
       const card = await createMyCard(profileId, input);
-      // Only the front slot is persisted -- the back slot is UI-only client
-      // state in this phase and is never saved.
-      if (!isWishlistCard && frontImage.imageUrl) {
-        saveImageForCard(String(card.id), frontImage.imageUrl);
-        await saveThumbnailForCard(String(card.id), frontImage.imageUrl);
+      cardId = card.id;
+      setCreatedCardId(cardId);
+
+      needsLegacyFront = !isWishlistCard && !!frontImage.imageUrl;
+      needsFrontMedia = !isWishlistCard && !!frontImage.imageUrl;
+      needsBackMedia = !isWishlistCard && !!backImage.imageUrl;
+      needsSharedImage = true;
+
+      setLegacyFrontPending(needsLegacyFront);
+      setFrontMediaPending(needsFrontMedia);
+      setBackMediaPending(needsBackMedia);
+      setSharedImagePending(needsSharedImage);
+    } else {
+      profileId = await requireProfileId();
+      needsLegacyFront = legacyFrontPending;
+      needsFrontMedia = frontMediaPending;
+      needsBackMedia = backMediaPending;
+      needsSharedImage = sharedImagePending;
+    }
+
+    let anyFailed = false;
+
+    // Legacy localStorage save -- tracked independently of private media,
+    // per side, so a legacy failure never blocks (or is masked by) the
+    // private front/back media outcome below.
+    if (needsLegacyFront) {
+      if (frontImage.imageUrl) {
+        try {
+          saveImageForCard(String(cardId), frontImage.imageUrl);
+          await saveThumbnailForCard(String(cardId), frontImage.imageUrl);
+          setLegacyFrontPending(false);
+        } catch {
+          anyFailed = true;
+        }
+      } else {
+        // Removed before a retry -- nothing left to save.
+        setLegacyFrontPending(false);
       }
+    }
+
+    if (needsFrontMedia) {
+      if (frontImage.imageUrl) {
+        try {
+          const { path } = await uploadCardMediaImage({
+            profileId,
+            userCardId: cardId,
+            side: "front",
+            dataUrl: frontImage.imageUrl,
+          });
+          await upsertCardMediaBySide({
+            userCardId: cardId,
+            side: "front",
+            isSlabbed: frontImage.imageIsSlabbed,
+            originalPath: null,
+            processedPath: path,
+            processingStatus: "cropped",
+          });
+          setFrontMediaPending(false);
+          frontImage.setImageError("");
+        } catch {
+          anyFailed = true;
+          frontImage.setImageError(
+            "Card saved, but the front image could not be stored. Press Save again to retry.",
+          );
+        }
+      } else {
+        setFrontMediaPending(false);
+      }
+    }
+
+    if (needsBackMedia) {
+      if (backImage.imageUrl) {
+        try {
+          const { path } = await uploadCardMediaImage({
+            profileId,
+            userCardId: cardId,
+            side: "back",
+            dataUrl: backImage.imageUrl,
+          });
+          await upsertCardMediaBySide({
+            userCardId: cardId,
+            side: "back",
+            isSlabbed: backImage.imageIsSlabbed,
+            originalPath: null,
+            processedPath: path,
+            processingStatus: "cropped",
+          });
+          setBackMediaPending(false);
+          backImage.setImageError("");
+        } catch {
+          anyFailed = true;
+          backImage.setImageError(
+            "Card saved, but the back image could not be stored. Press Save again to retry.",
+          );
+        }
+      } else {
+        setBackMediaPending(false);
+      }
+    }
+
+    // Front-only community/shared-image upload -- independent of the
+    // private-media retry mechanism above, so a front/back media failure
+    // never causes this to run again once it's already been attempted once
+    // for this submission.
+    if (needsSharedImage) {
+      setSharedImagePending(false);
       if (
         !isWishlistCard &&
         frontImage.imageShare &&
@@ -452,46 +597,39 @@ function NewCardPageInner() {
           frontImage.setImageError("Shared image already exists for this card.");
         }
       }
-      router.push("/cards");
+    }
+
+    return { cardId, succeeded: !anyFailed };
+  }
+
+  async function onSave() {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const result = await runSaveCycle();
+      // Only navigate away once everything pending has synced cleanly --
+      // otherwise the user would never see the error set above (this page
+      // unmounts on navigation). The card itself is already saved either
+      // way, and its id is retained so pressing Save again retries only
+      // the pending work instead of creating a second card.
+      if (result?.succeeded) {
+        router.push("/cards");
+      }
     } finally {
       setIsSaving(false);
     }
   }
 
   async function onSaveAndAddAnother() {
-    const input = buildCard();
-    if (!input) return;
+    if (isSaving) return;
     setIsSaving(true);
     try {
-      const profileId = await requireProfileId();
-      const card = await createMyCard(profileId, input);
-      // Only the front slot is persisted -- the back slot is UI-only client
-      // state in this phase and is never saved.
-      if (!isWishlistCard && frontImage.imageUrl) {
-        saveImageForCard(String(card.id), frontImage.imageUrl);
-        await saveThumbnailForCard(String(card.id), frontImage.imageUrl);
-      }
-
-      if (
-        !isWishlistCard &&
-        frontImage.imageShare &&
-        frontImage.imageOwnerConfirm &&
-        frontImage.imageUrl &&
-        fingerprint &&
-        frontImage.imageUrl.trim().length > 0
-      ) {
-        const res = await saveSharedImage({
-          fingerprint,
-          dataUrl: frontImage.imageUrl,
-          isFront: frontImage.imageIsFront,
-          isSlabbed: frontImage.imageIsSlabbed,
-          createdAt: new Date().toISOString(),
-        });
-        if (res.status === "error") {
-          frontImage.setImageError(`Shared image upload failed: ${res.message}`);
-        } else if (res.status === "exists") {
-          frontImage.setImageError("Shared image already exists for this card.");
-        }
+      const result = await runSaveCycle();
+      if (!result?.succeeded) {
+        // Stay on the page so the user can see the media-sync error above
+        // instead of the reset block below immediately clearing it, and so
+        // the retained card id lets a retry avoid creating a second card.
+        return;
       }
 
       // reset form (keep your existing reset block EXACTLY as-is, now
@@ -537,6 +675,15 @@ function NewCardPageInner() {
       setChecklistQuery("");
       setChecklistSection("ALL");
       setShowChecklistResults(true);
+
+      // Vision Engine V2, Phase 5B correction: clear creation/retry state
+      // only now that every pending step has actually succeeded and the
+      // form has been reset -- the next Save starts a genuinely new card.
+      setCreatedCardId(null);
+      setLegacyFrontPending(false);
+      setFrontMediaPending(false);
+      setBackMediaPending(false);
+      setSharedImagePending(false);
     } finally {
       setIsSaving(false);
     }
@@ -1131,14 +1278,26 @@ function NewCardPageInner() {
             disabled={!canSave || isSaving}
             className="btn-secondary"
           >
-            {isSaving ? "Saving…" : isWishlist ? "Add + Another" : "Save + Add Another"}
+            {isSaving
+              ? "Saving…"
+              : hasPendingMediaRetry
+              ? "Retry Image Save"
+              : isWishlist
+              ? "Add + Another"
+              : "Save + Add Another"}
           </button>
           <button
             onClick={onSave}
             disabled={!canSave || isSaving}
             className="btn-primary"
           >
-            {isSaving ? "Saving…" : isWishlist ? "Add to Wishlist" : "Save Card"}
+            {isSaving
+              ? "Saving…"
+              : hasPendingMediaRetry
+              ? "Retry Image Save"
+              : isWishlist
+              ? "Add to Wishlist"
+              : "Save Card"}
           </button>
         </div>
       </div>

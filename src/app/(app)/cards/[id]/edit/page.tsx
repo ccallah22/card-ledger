@@ -9,6 +9,16 @@ import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageForCard, removeImageForCard, saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
 import { IMAGE_RULES, processImageFile } from "@/lib/image";
 import { formatCurrency } from "@/lib/format";
+import {
+  getCardMediaBySide,
+  upsertCardMediaBySide,
+  deleteCardMediaBySide,
+} from "@/lib/repositories/cardMedia";
+import {
+  uploadCardMediaImage,
+  removeCardMediaImage,
+  getCardMediaImageUrl,
+} from "@/lib/db/cardMediaStorage";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -76,6 +86,25 @@ export default function EditCardPage({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState("");
   const [imageRemoved, setImageRemoved] = useState(false);
+  // Vision Engine V2, Phase 5B: imageUrl may now be a *signed display URL*
+  // resolved from card_media (see the load effect), not just a local data
+  // URL -- imageReplaced distinguishes "the user picked a genuinely new
+  // file this session" from "this is just the loaded/displayed value,
+  // unchanged," so save logic never re-uploads an unchanged signed URL or
+  // writes one into legacy localStorage. frontMediaPath is the actual
+  // stored card_media object path (independent of whatever could or
+  // couldn't be resolved to a signed URL for display), so save/remove
+  // logic always knows whether a card_media row already exists.
+  const [imageReplaced, setImageReplaced] = useState(false);
+  const [frontMediaPath, setFrontMediaPath] = useState<string | null>(null);
+  // Back image is card_media-only -- there is no legacy column/localStorage
+  // equivalent for it, so it has no "removed vs. never had one" ambiguity
+  // the way the front slot does.
+  const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
+  const [backImageError, setBackImageError] = useState("");
+  const [backImageRemoved, setBackImageRemoved] = useState(false);
+  const [backImageReplaced, setBackImageReplaced] = useState(false);
+  const [backMediaPath, setBackMediaPath] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -121,8 +150,49 @@ export default function EditCardPage({
       setIsPatch(!!found.isPatch);
 
       setNotes(found.notes ?? "");
-      setImageUrl(loadImageForCard(String(found.id)) ?? null);
+
+      // Vision Engine V2, Phase 5B: prefer card_media -- resolved through a
+      // temporary signed Storage URL, since the bucket is private -- when
+      // present, falling back to the legacy localStorage image for cards
+      // saved before this migration existed, or if the stored object path
+      // can't be resolved to a usable URL right now. The back slot has no
+      // legacy fallback -- it's simply absent for any card that predates
+      // card_media, or if its resolution fails.
+      let frontMedia: Awaited<ReturnType<typeof getCardMediaBySide>> = null;
+      let backMedia: Awaited<ReturnType<typeof getCardMediaBySide>> = null;
+      try {
+        [frontMedia, backMedia] = await Promise.all([
+          getCardMediaBySide(found.id, "front"),
+          getCardMediaBySide(found.id, "back"),
+        ]);
+      } catch {
+        // If card_media is unreachable, fall through to the legacy-only
+        // load below exactly as this page behaved before this task.
+      }
+      if (!active) return;
+
+      const frontStoredPath = frontMedia?.processedPath ?? frontMedia?.originalPath ?? null;
+      const backStoredPath = backMedia?.processedPath ?? backMedia?.originalPath ?? null;
+
+      const frontSignedUrl = frontStoredPath ? await getCardMediaImageUrl(frontStoredPath) : null;
+      if (!active) return;
+      const backSignedUrl = backStoredPath ? await getCardMediaImageUrl(backStoredPath) : null;
+      if (!active) return;
+
+      // The stored path (not the signed display URL) is what save/remove
+      // logic keys off of, kept separate so "couldn't render a preview
+      // right now" is never confused with "there is no stored media for
+      // this side."
+      setFrontMediaPath(frontStoredPath);
+      setBackMediaPath(backStoredPath);
+
+      setImageUrl(frontSignedUrl ?? loadImageForCard(String(found.id)) ?? null);
       setImageRemoved(false);
+      setImageReplaced(false);
+
+      setBackImageUrl(backSignedUrl);
+      setBackImageRemoved(false);
+      setBackImageReplaced(false);
 
       setLoading(false);
     })();
@@ -196,11 +266,95 @@ export default function EditCardPage({
 
       const profileId = await requireProfileId();
       await updateMyCard(profileId, original.id, patch);
-      if (!imageRemoved && imageUrl) {
+      // Vision Engine V2, Phase 5B: only write to legacy localStorage when
+      // the user picked a genuinely new local file this session
+      // (imageReplaced) -- imageUrl may now be a *signed display URL*
+      // resolved from an existing card_media row (see the load effect), and
+      // writing that into legacy storage would corrupt it with a URL that
+      // expires in an hour.
+      if (imageReplaced && imageUrl) {
         saveImageForCard(String(original.id), imageUrl);
         await saveThumbnailForCard(String(original.id), imageUrl);
       }
-      router.push(`/cards/${original.id}`);
+
+      // Upload/persist or remove each side's private Storage object +
+      // card_media row independently. imageReplaced/backImageReplaced (not
+      // just imageUrl/backImageUrl being truthy) gate whether anything is
+      // touched at all, so an unchanged image is never re-uploaded and
+      // Storage is never overwritten unnecessarily. Removal preserves the
+      // stored path (frontMediaPath/backMediaPath, captured at load time)
+      // before touching anything, deletes the Storage object first, and
+      // only deletes the card_media row once that succeeds (or the object
+      // was already absent) -- so metadata never falsely claims media is
+      // gone while an object might still exist, and an orphaned object is
+      // never mistaken for a successful removal. Front and back run in
+      // separate try/catches so one side's failure is distinguishable from
+      // the other's and neither is silently swallowed -- both are surfaced
+      // via the page's existing error-display state, and the card itself
+      // (already saved above) is never discarded because of a media
+      // failure.
+      let frontMediaError: string | null = null;
+      let backMediaError: string | null = null;
+
+      try {
+        if (imageRemoved) {
+          if (frontMediaPath) {
+            await removeCardMediaImage({ profileId, userCardId: original.id, side: "front" });
+            await deleteCardMediaBySide(original.id, "front");
+          }
+        } else if (imageReplaced && imageUrl) {
+          const { path } = await uploadCardMediaImage({
+            profileId,
+            userCardId: original.id,
+            side: "front",
+            dataUrl: imageUrl,
+          });
+          await upsertCardMediaBySide({
+            userCardId: original.id,
+            side: "front",
+            originalPath: null,
+            processedPath: path,
+            processingStatus: "cropped",
+          });
+        }
+      } catch {
+        frontMediaError = "Card saved, but the front image could not be synchronized.";
+      }
+
+      try {
+        if (backImageRemoved) {
+          if (backMediaPath) {
+            await removeCardMediaImage({ profileId, userCardId: original.id, side: "back" });
+            await deleteCardMediaBySide(original.id, "back");
+          }
+        } else if (backImageReplaced && backImageUrl) {
+          const { path } = await uploadCardMediaImage({
+            profileId,
+            userCardId: original.id,
+            side: "back",
+            dataUrl: backImageUrl,
+          });
+          await upsertCardMediaBySide({
+            userCardId: original.id,
+            side: "back",
+            originalPath: null,
+            processedPath: path,
+            processingStatus: "cropped",
+          });
+        }
+      } catch {
+        backMediaError = "Card saved, but the back image could not be synchronized.";
+      }
+
+      setImageError(frontMediaError ?? "");
+      setBackImageError(backMediaError ?? "");
+
+      // Only navigate away when private media synced cleanly -- otherwise
+      // the user would never see the error set above (this page unmounts
+      // on navigation). The card itself is already saved either way.
+      if (!frontMediaError && !backMediaError) {
+        router.push(`/cards/${original.id}`);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -348,7 +502,7 @@ export default function EditCardPage({
           <div className="grid gap-3 sm:grid-cols-[200px_1fr] items-start">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                Current image
+                Front image
               </div>
               <div className="mt-2 h-44 w-full rounded-md border bg-white flex items-center justify-center overflow-hidden">
                 {imageUrl ? (
@@ -373,6 +527,7 @@ export default function EditCardPage({
                       const { dataUrl } = await processImageFile(file);
                       setImageUrl(dataUrl);
                       setImageRemoved(false);
+                      setImageReplaced(true);
                     } catch (err) {
                       setImageError((err as Error).message || "Image failed validation.");
                     }
@@ -386,6 +541,7 @@ export default function EditCardPage({
                   onClick={() => {
                     setImageUrl(null);
                     setImageRemoved(true);
+                    setImageReplaced(false);
                   }}
                   className="btn-secondary text-xs"
                 >
@@ -393,6 +549,68 @@ export default function EditCardPage({
                 </button>
               ) : null}
               {imageError ? <div className="text-xs text-red-600">{imageError}</div> : null}
+              <div className="text-[11px] text-zinc-500">
+                Allowed: JPG/PNG/WebP/HEIC • Max {Math.round(IMAGE_RULES.maxBytes / 1024 / 1024)}MB
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Vision Engine V2, Phase 5: independent back-image slot. Mirrors
+            the front section above exactly (same simple upload, no crop
+            step -- consistent with how this page has always handled
+            images), persisted separately into card_media only. */}
+        <div className="sm:col-span-2 rounded-lg border bg-zinc-50/60 p-3">
+          <div className="grid gap-3 sm:grid-cols-[200px_1fr] items-start">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                Back image
+              </div>
+              <div className="mt-2 h-44 w-full rounded-md border bg-white flex items-center justify-center overflow-hidden">
+                {backImageUrl ? (
+                  <img src={backImageUrl} alt="Card back" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="text-xs text-zinc-400">No image</div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50 cursor-pointer">
+                <input
+                  type="file"
+                  accept={IMAGE_RULES.allowedTypes.join(",")}
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setBackImageError("");
+                    try {
+                      const { dataUrl } = await processImageFile(file);
+                      setBackImageUrl(dataUrl);
+                      setBackImageRemoved(false);
+                      setBackImageReplaced(true);
+                    } catch (err) {
+                      setBackImageError((err as Error).message || "Image failed validation.");
+                    }
+                  }}
+                />
+                Change back image
+              </label>
+              {backImageUrl ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBackImageUrl(null);
+                    setBackImageRemoved(true);
+                    setBackImageReplaced(false);
+                  }}
+                  className="btn-secondary text-xs"
+                >
+                  Remove back image
+                </button>
+              ) : null}
+              {backImageError ? <div className="text-xs text-red-600">{backImageError}</div> : null}
               <div className="text-[11px] text-zinc-500">
                 Allowed: JPG/PNG/WebP/HEIC • Max {Math.round(IMAGE_RULES.maxBytes / 1024 / 1024)}MB
               </div>
