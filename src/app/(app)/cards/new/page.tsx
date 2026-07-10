@@ -12,7 +12,12 @@ import { listLocations } from "@/lib/repositories/locations";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { saveSharedImage } from "@/lib/db/sharedImages";
 import { saveImageForCard, saveThumbnailForCard } from "@/lib/imageStore";
-import { upsertCardMediaBySide } from "@/lib/repositories/cardMedia";
+import {
+  upsertCardMediaBySide,
+  getCardMediaBySide,
+  updateCardMedia,
+  type JsonValue,
+} from "@/lib/repositories/cardMedia";
 import { uploadCardMediaImage } from "@/lib/db/cardMediaStorage";
 import type { ChecklistEntry } from "@/lib/db/checklists.client";
 import {
@@ -30,7 +35,7 @@ import { useCardImageSlot } from "@/hooks/cards/useCardImageSlot";
 import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
-import { runOcr } from "@/lib/ocr";
+import { runOcr, toLegacyOcrResult, type CardOcrResult } from "@/lib/ocr";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
 import { rankCatalogMatches } from "@/lib/catalog/rankingEngine";
 import { shouldAutoSelect } from "@/lib/catalog/autoSelect";
@@ -39,6 +44,25 @@ async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
   if (!profile) throw new Error("Not logged in");
   return profile.id;
+}
+
+// Vision Engine V2, Phase 6A correction: minimal, side-specific OCR status
+// text -- never exposes raw model JSON/extracted fields, just a concise
+// state. "done" always means a genuinely successful, completed OCR
+// attempt -- it may have found no text (a valid, neutral outcome), which
+// is distinct from "failed" (the request/response itself was invalid).
+function ocrStatusLabel(
+  side: "front" | "back",
+  status: "idle" | "running" | "done" | "failed",
+  result: CardOcrResult | null,
+): string {
+  const label = side === "front" ? "Front" : "Back";
+  if (status === "running") return `Reading ${side}…`;
+  if (status === "failed") return `${label} OCR failed`;
+  if (status === "done") {
+    return result?.rawText ? `${label} text detected` : "No readable text detected";
+  }
+  return "";
 }
 
 function NewCardPageInner() {
@@ -267,6 +291,16 @@ function NewCardPageInner() {
   const [frontMediaPending, setFrontMediaPending] = useState(false);
   const [backMediaPending, setBackMediaPending] = useState(false);
   const [sharedImagePending, setSharedImagePending] = useState(false);
+  // Vision Engine V2, Phase 6A: OCR persistence tracked the same way as
+  // media -- independently per side, never blocking or masking the other
+  // side. Unlike the media flags, an OCR failure never sets anyFailed in
+  // runSaveCycle (OCR is best-effort; the card and its images are already
+  // safely saved regardless), so it never blocks navigation/reset -- it's
+  // simply left pending for a later opportunistic retry within the same
+  // still-mounted session (e.g. a subsequent Save click after a media
+  // failure), same as before this phase, when OCR never retried at all.
+  const [frontOcrPending, setFrontOcrPending] = useState(false);
+  const [backOcrPending, setBackOcrPending] = useState(false);
 
   // Vision Engine V2, Phase 4: two independent image slots. Only the front
   // slot feeds save/OCR/shared-image behavior (unchanged from before this
@@ -280,45 +314,115 @@ function NewCardPageInner() {
     scanInputRef.current?.click();
   }
 
-  // OCR: runs once per confirmed crop of the FRONT slot only (unchanged from
-  // before this task -- the back slot never triggers OCR). confirmCrop()
+  // Vision Engine V2, Phase 6A: OCR runs independently per side, each once
+  // per confirmed crop of that side's slot -- back now triggers its own OCR
+  // too (front previously was the only side wired in). confirmCrop()
   // doesn't return the freshly-cropped imageUrl (and useCardImageSlot isn't
   // modified to add that), so a pending-flag + effect on imageUrl is used
   // instead of reading imageUrl right after awaiting confirmCrop(), which
-  // would still see the stale pre-crop value from this closure.
-  const [ocrStatus, setOcrStatus] = useState<"idle" | "running" | "done">("idle");
-  const pendingOcrRef = useRef(false);
+  // would still see the stale pre-crop value from this closure. Each
+  // effect also clears that side's cached OCR result the moment imageUrl
+  // becomes null (removed) or right before a replacement crop is confirmed,
+  // so replacing/removing one side never affects the other's OCR state.
+  // Vision Engine V2, Phase 6A correction: "done" means a genuinely
+  // completed OCR attempt (which may have found no text -- still a
+  // success); "failed" means the request/response itself was invalid.
+  // These are never conflated -- see runOcr's contract in src/lib/ocr.
+  const [frontOcrStatus, setFrontOcrStatus] = useState<"idle" | "running" | "done" | "failed">(
+    "idle",
+  );
+  const [frontOcrResult, setFrontOcrResult] = useState<CardOcrResult | null>(null);
+  const [frontOcrError, setFrontOcrError] = useState("");
+  const pendingFrontOcrRef = useRef(false);
+
+  const [backOcrStatus, setBackOcrStatus] = useState<"idle" | "running" | "done" | "failed">(
+    "idle",
+  );
+  const [backOcrResult, setBackOcrResult] = useState<CardOcrResult | null>(null);
+  const [backOcrError, setBackOcrError] = useState("");
+  const pendingBackOcrRef = useRef(false);
 
   async function handleConfirmFrontCrop() {
-    pendingOcrRef.current = true;
+    pendingFrontOcrRef.current = true;
+    setFrontOcrResult(null);
     await frontImage.confirmCrop();
   }
 
+  async function handleConfirmBackCrop() {
+    pendingBackOcrRef.current = true;
+    setBackOcrResult(null);
+    await backImage.confirmCrop();
+  }
+
   useEffect(() => {
-    if (!pendingOcrRef.current) return;
-    pendingOcrRef.current = false;
-    if (!frontImage.imageUrl) return;
+    if (!frontImage.imageUrl) {
+      setFrontOcrResult(null);
+      setFrontOcrStatus("idle");
+      setFrontOcrError("");
+      return;
+    }
+    if (!pendingFrontOcrRef.current) return;
+    pendingFrontOcrRef.current = false;
 
     let active = true;
-    setOcrStatus("running");
-    // The stub engine resolves instantly (no real recognition work yet), so a
-    // small minimum display time keeps "Reading card…" from flashing for an
-    // imperceptible instant. A real engine's own latency will make this
-    // unnecessary, but it's harmless to keep.
-    const minDisplay = new Promise((resolve) => setTimeout(resolve, 400));
-    Promise.all([runOcr(frontImage.imageUrl), minDisplay])
-      .then(([result]) => {
+    setFrontOcrStatus("running");
+
+    (async () => {
+      // A small minimum display time keeps "Reading front…" from flashing
+      // for an imperceptible instant when the API responds very quickly.
+      const minDisplay = new Promise((resolve) => setTimeout(resolve, 400));
+      try {
+        const [result] = await Promise.all([runOcr(frontImage.imageUrl!, "front"), minDisplay]);
         if (!active) return;
-        if (result.rawText) setCatalogQuery(buildCatalogQuery(result));
-      })
-      .finally(() => {
-        if (active) setOcrStatus("done");
-      });
+        setFrontOcrResult(result);
+        setFrontOcrStatus("done");
+        // Back OCR never feeds catalog matching in this phase -- only front
+        // does, unchanged from before this task. A successful-but-empty
+        // result simply produces no useful query, which is fine.
+        if (result.rawText) setCatalogQuery(buildCatalogQuery(toLegacyOcrResult(result)));
+      } catch {
+        if (!active) return;
+        setFrontOcrResult(null);
+        setFrontOcrStatus("failed");
+      }
+    })();
 
     return () => {
       active = false;
     };
   }, [frontImage.imageUrl]);
+
+  useEffect(() => {
+    if (!backImage.imageUrl) {
+      setBackOcrResult(null);
+      setBackOcrStatus("idle");
+      setBackOcrError("");
+      return;
+    }
+    if (!pendingBackOcrRef.current) return;
+    pendingBackOcrRef.current = false;
+
+    let active = true;
+    setBackOcrStatus("running");
+
+    (async () => {
+      const minDisplay = new Promise((resolve) => setTimeout(resolve, 400));
+      try {
+        const [result] = await Promise.all([runOcr(backImage.imageUrl!, "back"), minDisplay]);
+        if (!active) return;
+        setBackOcrResult(result);
+        setBackOcrStatus("done");
+      } catch {
+        if (!active) return;
+        setBackOcrResult(null);
+        setBackOcrStatus("failed");
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [backImage.imageUrl]);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -359,12 +463,19 @@ function NewCardPageInner() {
     backImage.setCardPhotoConfirm(false);
   }, [isWishlistCard]);
 
-  // Vision Engine V2, Phase 5B correction: true once a card has been
-  // created for this submission but some media work is still pending from
-  // a prior failed attempt -- used purely to relabel the save buttons so a
-  // retry doesn't read as "create another card."
-  const hasPendingMediaRetry =
-    !!createdCardId && (legacyFrontPending || frontMediaPending || backMediaPending);
+  // Vision Engine V2, Phase 6A correction: true once a card has been
+  // created for this submission but some media or OCR work is still
+  // pending from a prior failed attempt -- used purely to relabel the save
+  // buttons so a retry doesn't read as "create another card." OCR pending
+  // now counts here too, since an actual OCR failure blocks
+  // navigation/reset the same way a media failure does.
+  const hasPendingRetry =
+    !!createdCardId &&
+    (legacyFrontPending ||
+      frontMediaPending ||
+      backMediaPending ||
+      frontOcrPending ||
+      backOcrPending);
 
   // Save eligibility remains gated on the FRONT slot only -- the back slot
   // is not required and does not block saving in this phase.
@@ -464,6 +575,8 @@ function NewCardPageInner() {
     let needsFrontMedia: boolean;
     let needsBackMedia: boolean;
     let needsSharedImage: boolean;
+    let needsFrontOcr: boolean;
+    let needsBackOcr: boolean;
 
     if (!cardId) {
       const input = buildCard();
@@ -477,17 +590,23 @@ function NewCardPageInner() {
       needsFrontMedia = !isWishlistCard && !!frontImage.imageUrl;
       needsBackMedia = !isWishlistCard && !!backImage.imageUrl;
       needsSharedImage = true;
+      needsFrontOcr = !isWishlistCard && !!frontImage.imageUrl;
+      needsBackOcr = !isWishlistCard && !!backImage.imageUrl;
 
       setLegacyFrontPending(needsLegacyFront);
       setFrontMediaPending(needsFrontMedia);
       setBackMediaPending(needsBackMedia);
       setSharedImagePending(needsSharedImage);
+      setFrontOcrPending(needsFrontOcr);
+      setBackOcrPending(needsBackOcr);
     } else {
       profileId = await requireProfileId();
       needsLegacyFront = legacyFrontPending;
       needsFrontMedia = frontMediaPending;
       needsBackMedia = backMediaPending;
       needsSharedImage = sharedImagePending;
+      needsFrontOcr = frontOcrPending;
+      needsBackOcr = backOcrPending;
     }
 
     let anyFailed = false;
@@ -510,6 +629,13 @@ function NewCardPageInner() {
       }
     }
 
+    // frontMediaRow/backMediaRow are populated either by a fresh
+    // upload+upsert this cycle, or (below) by fetching the row that a
+    // *previous* cycle already created -- so OCR persistence can find its
+    // target row without ever re-uploading a side that already succeeded.
+    let frontMediaRow: Awaited<ReturnType<typeof upsertCardMediaBySide>> | null = null;
+    let backMediaRow: Awaited<ReturnType<typeof upsertCardMediaBySide>> | null = null;
+
     if (needsFrontMedia) {
       if (frontImage.imageUrl) {
         try {
@@ -519,7 +645,7 @@ function NewCardPageInner() {
             side: "front",
             dataUrl: frontImage.imageUrl,
           });
-          await upsertCardMediaBySide({
+          frontMediaRow = await upsertCardMediaBySide({
             userCardId: cardId,
             side: "front",
             isSlabbed: frontImage.imageIsSlabbed,
@@ -537,6 +663,45 @@ function NewCardPageInner() {
         }
       } else {
         setFrontMediaPending(false);
+        setFrontOcrPending(false);
+      }
+    }
+
+    // OCR persistence for the front side -- independent of whether media
+    // needed (re-)uploading this cycle. If front media already succeeded on
+    // a previous attempt, frontMediaRow is fetched here instead of re-
+    // uploaded. A cached CardOcrResult from the crop-time effect is reused
+    // as-is (whether or not it found text -- both are valid completed
+    // results); otherwise OCR is (re-)run right here, giving a prior OCR
+    // failure a genuine second chance on retry. A genuine failure (runOcr
+    // throws, or the update itself fails) DOES set anyFailed now -- per the
+    // corrected contract, an OCR failure blocks navigation/reset the same
+    // way a media failure does, so the user can retry it, and leaves the
+    // row at "cropped" (the OCR-persist call is simply never made).
+    if (needsFrontOcr && frontImage.imageUrl) {
+      try {
+        if (!frontMediaRow) {
+          frontMediaRow = await getCardMediaBySide(cardId, "front");
+        }
+        if (frontMediaRow) {
+          let result = frontOcrResult;
+          if (!result) {
+            result = await runOcr(frontImage.imageUrl, "front");
+            setFrontOcrResult(result);
+          }
+          await updateCardMedia(frontMediaRow.id, {
+            ocrOutput: result as unknown as JsonValue,
+            processingStatus: "ocr_complete",
+          });
+          setFrontOcrPending(false);
+          setFrontOcrError("");
+        }
+      } catch {
+        anyFailed = true;
+        setFrontOcrStatus("failed");
+        setFrontOcrError(
+          "Card saved, but front text recognition failed. Press Save again to retry.",
+        );
       }
     }
 
@@ -549,7 +714,7 @@ function NewCardPageInner() {
             side: "back",
             dataUrl: backImage.imageUrl,
           });
-          await upsertCardMediaBySide({
+          backMediaRow = await upsertCardMediaBySide({
             userCardId: cardId,
             side: "back",
             isSlabbed: backImage.imageIsSlabbed,
@@ -567,6 +732,36 @@ function NewCardPageInner() {
         }
       } else {
         setBackMediaPending(false);
+        setBackOcrPending(false);
+      }
+    }
+
+    // OCR persistence for the back side -- mirrors the front block above
+    // exactly, independently.
+    if (needsBackOcr && backImage.imageUrl) {
+      try {
+        if (!backMediaRow) {
+          backMediaRow = await getCardMediaBySide(cardId, "back");
+        }
+        if (backMediaRow) {
+          let result = backOcrResult;
+          if (!result) {
+            result = await runOcr(backImage.imageUrl, "back");
+            setBackOcrResult(result);
+          }
+          await updateCardMedia(backMediaRow.id, {
+            ocrOutput: result as unknown as JsonValue,
+            processingStatus: "ocr_complete",
+          });
+          setBackOcrPending(false);
+          setBackOcrError("");
+        }
+      } catch {
+        anyFailed = true;
+        setBackOcrStatus("failed");
+        setBackOcrError(
+          "Card saved, but back text recognition failed. Press Save again to retry.",
+        );
       }
     }
 
@@ -684,6 +879,19 @@ function NewCardPageInner() {
       setFrontMediaPending(false);
       setBackMediaPending(false);
       setSharedImagePending(false);
+      // Vision Engine V2, Phase 6A correction: OCR pending flags and cached
+      // results reset the same way. By the time this block runs, `result`
+      // was already fully successful (including OCR -- see runSaveCycle),
+      // so these are already false/null/"idle"; reset here anyway for the
+      // next card, consistent with the other pending flags above.
+      setFrontOcrPending(false);
+      setFrontOcrResult(null);
+      setFrontOcrStatus("idle");
+      setFrontOcrError("");
+      setBackOcrPending(false);
+      setBackOcrResult(null);
+      setBackOcrStatus("idle");
+      setBackOcrError("");
     } finally {
       setIsSaving(false);
     }
@@ -792,7 +1000,7 @@ function NewCardPageInner() {
 
         <div className="sm:col-span-2">
           <label className="block text-xs font-semibold text-zinc-900">Catalog match</label>
-          {ocrStatus === "running" ? (
+          {frontOcrStatus === "running" ? (
             <div className="mt-1 text-xs text-zinc-500">Reading card…</div>
           ) : null}
           <div className="relative">
@@ -1108,54 +1316,72 @@ function NewCardPageInner() {
 
         {!isWishlistCard ? (
           <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
-            <CardImageUploader
-              label="Front Image"
-              imageUrl={frontImage.imageUrl}
-              setImageUrl={frontImage.setImageUrl}
-              imageType={frontImage.imageType}
-              setImageType={frontImage.setImageType}
-              setImageIsFront={frontImage.setImageIsFront}
-              setImageIsSlabbed={frontImage.setImageIsSlabbed}
-              cardPhotoConfirm={frontImage.cardPhotoConfirm}
-              setCardPhotoConfirm={frontImage.setCardPhotoConfirm}
-              imageOwnerConfirm={frontImage.imageOwnerConfirm}
-              setImageOwnerConfirm={frontImage.setImageOwnerConfirm}
-              imageShare={frontImage.imageShare}
-              setImageShare={frontImage.setImageShare}
-              imageError={frontImage.imageError}
-              imageCheckStatus={frontImage.imageCheckStatus}
-              sharedImage={sharedImage}
-              reportInfo={reportInfo}
-              fingerprint={fingerprint}
-              onFileSelected={frontImage.handleImageFile}
-            />
+            <div>
+              <CardImageUploader
+                label="Front Image"
+                imageUrl={frontImage.imageUrl}
+                setImageUrl={frontImage.setImageUrl}
+                imageType={frontImage.imageType}
+                setImageType={frontImage.setImageType}
+                setImageIsFront={frontImage.setImageIsFront}
+                setImageIsSlabbed={frontImage.setImageIsSlabbed}
+                cardPhotoConfirm={frontImage.cardPhotoConfirm}
+                setCardPhotoConfirm={frontImage.setCardPhotoConfirm}
+                imageOwnerConfirm={frontImage.imageOwnerConfirm}
+                setImageOwnerConfirm={frontImage.setImageOwnerConfirm}
+                imageShare={frontImage.imageShare}
+                setImageShare={frontImage.setImageShare}
+                imageError={frontImage.imageError}
+                imageCheckStatus={frontImage.imageCheckStatus}
+                sharedImage={sharedImage}
+                reportInfo={reportInfo}
+                fingerprint={fingerprint}
+                onFileSelected={frontImage.handleImageFile}
+              />
+              {ocrStatusLabel("front", frontOcrStatus, frontOcrResult) ? (
+                <div className="mt-1 text-xs text-zinc-500">
+                  {ocrStatusLabel("front", frontOcrStatus, frontOcrResult)}
+                </div>
+              ) : null}
+              {frontOcrError ? (
+                <div className="mt-1 text-xs text-red-600">{frontOcrError}</div>
+              ) : null}
+            </div>
 
-            {/* Back Image: independent slot, client state only -- not saved
-                anywhere yet (see onSave/onSaveAndAddAnother above). No
-                community-image lookup exists for a back photo yet, since
-                the shared-image feature is keyed by a single card-identity
-                fingerprint today. */}
-            <CardImageUploader
-              label="Back Image"
-              imageUrl={backImage.imageUrl}
-              setImageUrl={backImage.setImageUrl}
-              imageType={backImage.imageType}
-              setImageType={backImage.setImageType}
-              setImageIsFront={backImage.setImageIsFront}
-              setImageIsSlabbed={backImage.setImageIsSlabbed}
-              cardPhotoConfirm={backImage.cardPhotoConfirm}
-              setCardPhotoConfirm={backImage.setCardPhotoConfirm}
-              imageOwnerConfirm={backImage.imageOwnerConfirm}
-              setImageOwnerConfirm={backImage.setImageOwnerConfirm}
-              imageShare={backImage.imageShare}
-              setImageShare={backImage.setImageShare}
-              imageError={backImage.imageError}
-              imageCheckStatus={backImage.imageCheckStatus}
-              sharedImage={null}
-              reportInfo={null}
-              fingerprint=""
-              onFileSelected={backImage.handleImageFile}
-            />
+            {/* Back Image: independent slot. No community-image lookup
+                exists for a back photo yet, since the shared-image feature
+                is keyed by a single card-identity fingerprint today. */}
+            <div>
+              <CardImageUploader
+                label="Back Image"
+                imageUrl={backImage.imageUrl}
+                setImageUrl={backImage.setImageUrl}
+                imageType={backImage.imageType}
+                setImageType={backImage.setImageType}
+                setImageIsFront={backImage.setImageIsFront}
+                setImageIsSlabbed={backImage.setImageIsSlabbed}
+                cardPhotoConfirm={backImage.cardPhotoConfirm}
+                setCardPhotoConfirm={backImage.setCardPhotoConfirm}
+                imageOwnerConfirm={backImage.imageOwnerConfirm}
+                setImageOwnerConfirm={backImage.setImageOwnerConfirm}
+                imageShare={backImage.imageShare}
+                setImageShare={backImage.setImageShare}
+                imageError={backImage.imageError}
+                imageCheckStatus={backImage.imageCheckStatus}
+                sharedImage={null}
+                reportInfo={null}
+                fingerprint=""
+                onFileSelected={backImage.handleImageFile}
+              />
+              {ocrStatusLabel("back", backOcrStatus, backOcrResult) ? (
+                <div className="mt-1 text-xs text-zinc-500">
+                  {ocrStatusLabel("back", backOcrStatus, backOcrResult)}
+                </div>
+              ) : null}
+              {backOcrError ? (
+                <div className="mt-1 text-xs text-red-600">{backOcrError}</div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
@@ -1280,8 +1506,8 @@ function NewCardPageInner() {
           >
             {isSaving
               ? "Saving…"
-              : hasPendingMediaRetry
-              ? "Retry Image Save"
+              : hasPendingRetry
+              ? "Retry Processing"
               : isWishlist
               ? "Add + Another"
               : "Save + Add Another"}
@@ -1293,8 +1519,8 @@ function NewCardPageInner() {
           >
             {isSaving
               ? "Saving…"
-              : hasPendingMediaRetry
-              ? "Retry Image Save"
+              : hasPendingRetry
+              ? "Retry Processing"
               : isWishlist
               ? "Add to Wishlist"
               : "Save Card"}
@@ -1347,7 +1573,7 @@ function NewCardPageInner() {
         cropRotationBase={backImage.cropRotationBase}
         cropRotationFine={backImage.cropRotationFine}
         applyCropRotation={backImage.applyCropRotation}
-        confirmCrop={backImage.confirmCrop}
+        confirmCrop={handleConfirmBackCrop}
         cropBoxWidth={backImage.cropBoxWidth}
         cropBoxHeight={backImage.cropBoxHeight}
         cropZoomMin={backImage.cropZoomMin}

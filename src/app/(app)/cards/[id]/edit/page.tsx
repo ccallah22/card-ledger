@@ -12,13 +12,51 @@ import { formatCurrency } from "@/lib/format";
 import {
   getCardMediaBySide,
   upsertCardMediaBySide,
+  updateCardMedia,
   deleteCardMediaBySide,
+  type JsonValue,
 } from "@/lib/repositories/cardMedia";
 import {
   uploadCardMediaImage,
   removeCardMediaImage,
   getCardMediaImageUrl,
 } from "@/lib/db/cardMediaStorage";
+import { runOcr, type CardOcrResult } from "@/lib/ocr";
+
+// Vision Engine V2, Phase 6A: defensive shape check before trusting a
+// loaded card_media.ocr_output value as a real CardOcrResult -- it was
+// written by this app's own OCR persistence step, but re-validating avoids
+// blindly trusting arbitrary stored JSON (e.g. from a future schema change).
+function isCardOcrResult(value: unknown, side: "front" | "back"): value is CardOcrResult {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.side === side &&
+    typeof v.rawText === "string" &&
+    Array.isArray(v.lines) &&
+    typeof v.extracted === "object" &&
+    v.extracted !== null
+  );
+}
+
+// Vision Engine V2, Phase 6A correction: minimal, side-specific OCR status
+// text -- never exposes raw model JSON/extracted fields. "done" always
+// means a genuinely successful, completed OCR attempt -- it may have
+// found no text (a valid, neutral outcome), which is distinct from
+// "failed" (the request/response itself was invalid).
+function ocrStatusLabel(
+  side: "front" | "back",
+  status: "idle" | "running" | "done" | "failed",
+  result: CardOcrResult | null,
+): string {
+  const label = side === "front" ? "Front" : "Back";
+  if (status === "running") return `Reading ${side}…`;
+  if (status === "failed") return `${label} OCR failed`;
+  if (status === "done") {
+    return result?.rawText ? `${label} text detected` : "No readable text detected";
+  }
+  return "";
+}
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -103,8 +141,40 @@ export default function EditCardPage({
   const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
   const [backImageError, setBackImageError] = useState("");
   const [backImageRemoved, setBackImageRemoved] = useState(false);
-  const [backImageReplaced, setBackImageReplaced] = useState(false);
   const [backMediaPath, setBackMediaPath] = useState<string | null>(null);
+  // Vision Engine V2, Phase 6A final correction: media synchronization and
+  // OCR synchronization are tracked as independent pending flags per side,
+  // so a replaced image's media upload/upsert is never repeated merely
+  // because that side's OCR failed on a later retry. frontMediaRowId/
+  // backMediaRowId retain the card_media row id (from a load, or from a
+  // successful upload this session) so the OCR step always has a row to
+  // attach its result to without needing to re-fetch it every retry.
+  const [frontMediaPending, setFrontMediaPending] = useState(false);
+  const [frontOcrPending, setFrontOcrPending] = useState(false);
+  const [frontMediaRowId, setFrontMediaRowId] = useState<number | null>(null);
+  const [backMediaPending, setBackMediaPending] = useState(false);
+  const [backOcrPending, setBackOcrPending] = useState(false);
+  const [backMediaRowId, setBackMediaRowId] = useState<number | null>(null);
+  // Cached per-side OCR result. Populated from the loaded
+  // card_media.ocr_output on load (preserved untouched for an unchanged
+  // image, since an unchanged side never touches card_media on save at all
+  // -- see onSave), or cleared and re-run when that side's image is
+  // replaced. No automatic/background OCR ever runs against a legacy image
+  // that has no card_media row, or against an unchanged image.
+  const [frontOcrResult, setFrontOcrResult] = useState<CardOcrResult | null>(null);
+  // "done" means a genuinely completed OCR attempt (which may have found no
+  // text -- still a success); "failed" means the request/response itself
+  // was invalid. A genuine failure blocks navigation (see onSave) so the
+  // user can retry without re-uploading the image.
+  const [frontOcrStatus, setFrontOcrStatus] = useState<"idle" | "running" | "done" | "failed">(
+    "idle",
+  );
+  const [frontOcrError, setFrontOcrError] = useState("");
+  const [backOcrResult, setBackOcrResult] = useState<CardOcrResult | null>(null);
+  const [backOcrStatus, setBackOcrStatus] = useState<"idle" | "running" | "done" | "failed">(
+    "idle",
+  );
+  const [backOcrError, setBackOcrError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -186,13 +256,43 @@ export default function EditCardPage({
       setFrontMediaPath(frontStoredPath);
       setBackMediaPath(backStoredPath);
 
+      // Vision Engine V2, Phase 6A final correction: retain each side's
+      // existing card_media row id (if any) so a later OCR-only retry can
+      // update it directly without re-uploading or re-fetching it. Nothing
+      // is pending on load -- pending only becomes true once the user
+      // actively replaces that side's image.
+      setFrontMediaRowId(frontMedia?.id ?? null);
+      setFrontMediaPending(false);
+      setFrontOcrPending(false);
+      setBackMediaRowId(backMedia?.id ?? null);
+      setBackMediaPending(false);
+      setBackOcrPending(false);
+
       setImageUrl(frontSignedUrl ?? loadImageForCard(String(found.id)) ?? null);
       setImageRemoved(false);
       setImageReplaced(false);
 
       setBackImageUrl(backSignedUrl);
       setBackImageRemoved(false);
-      setBackImageReplaced(false);
+
+      // Load each side's existing OCR result as-is, with no automatic OCR
+      // run for a legacy card that has no card_media row (frontMedia/
+      // backMedia null) -- OCR only ever runs in response to the user
+      // actively replacing that side's image (see onSave).
+      setFrontOcrResult(
+        isCardOcrResult(frontMedia?.ocrOutput, "front")
+          ? (frontMedia!.ocrOutput as unknown as CardOcrResult)
+          : null,
+      );
+      setFrontOcrStatus("idle");
+      setFrontOcrError("");
+      setBackOcrResult(
+        isCardOcrResult(backMedia?.ocrOutput, "back")
+          ? (backMedia!.ocrOutput as unknown as CardOcrResult)
+          : null,
+      );
+      setBackOcrStatus("idle");
+      setBackOcrError("");
 
       setLoading(false);
     })();
@@ -277,82 +377,165 @@ export default function EditCardPage({
         await saveThumbnailForCard(String(original.id), imageUrl);
       }
 
-      // Upload/persist or remove each side's private Storage object +
-      // card_media row independently. imageReplaced/backImageReplaced (not
-      // just imageUrl/backImageUrl being truthy) gate whether anything is
-      // touched at all, so an unchanged image is never re-uploaded and
-      // Storage is never overwritten unnecessarily. Removal preserves the
-      // stored path (frontMediaPath/backMediaPath, captured at load time)
-      // before touching anything, deletes the Storage object first, and
-      // only deletes the card_media row once that succeeds (or the object
-      // was already absent) -- so metadata never falsely claims media is
-      // gone while an object might still exist, and an orphaned object is
-      // never mistaken for a successful removal. Front and back run in
-      // separate try/catches so one side's failure is distinguishable from
-      // the other's and neither is silently swallowed -- both are surfaced
-      // via the page's existing error-display state, and the card itself
-      // (already saved above) is never discarded because of a media
+      // Vision Engine V2, Phase 6A final correction: media synchronization
+      // and OCR synchronization are tracked and retried independently per
+      // side via frontMediaPending/frontOcrPending (and their back
+      // equivalents), so a side whose media already succeeded is never
+      // re-uploaded merely because that side's OCR failed on a later
+      // retry -- the OCR step only ever reads/updates the retained
+      // frontMediaRowId/backMediaRowId row. Removal preserves the stored
+      // path (frontMediaPath/backMediaPath, captured at load time) before
+      // touching anything, deletes the Storage object first, and only
+      // deletes the card_media row once that succeeds (or the object was
+      // already absent) -- so metadata never falsely claims media is gone
+      // while an object might still exist, and an orphaned object is never
+      // mistaken for a successful removal. Front and back run in separate
+      // try/catches so one side's failure is distinguishable from the
+      // other's and neither is silently swallowed -- both are surfaced via
+      // the page's existing error-display state, and the card itself
+      // (already saved above) is never discarded because of a media or OCR
       // failure.
       let frontMediaError: string | null = null;
       let backMediaError: string | null = null;
+      let frontOcrFailed: string | null = null;
+      let backOcrFailed: string | null = null;
 
-      try {
-        if (imageRemoved) {
-          if (frontMediaPath) {
+      // ---- Front ----
+      let frontRowId = frontMediaRowId;
+
+      if (imageRemoved) {
+        if (frontMediaPath) {
+          try {
             await removeCardMediaImage({ profileId, userCardId: original.id, side: "front" });
             await deleteCardMediaBySide(original.id, "front");
+          } catch {
+            frontMediaError = "Card saved, but the front image could not be synchronized.";
           }
-        } else if (imageReplaced && imageUrl) {
-          const { path } = await uploadCardMediaImage({
-            profileId,
-            userCardId: original.id,
-            side: "front",
-            dataUrl: imageUrl,
-          });
-          await upsertCardMediaBySide({
-            userCardId: original.id,
-            side: "front",
-            originalPath: null,
-            processedPath: path,
-            processingStatus: "cropped",
-          });
         }
-      } catch {
-        frontMediaError = "Card saved, but the front image could not be synchronized.";
+      } else {
+        if (frontMediaPending && imageUrl) {
+          try {
+            const { path } = await uploadCardMediaImage({
+              profileId,
+              userCardId: original.id,
+              side: "front",
+              dataUrl: imageUrl,
+            });
+            const media = await upsertCardMediaBySide({
+              userCardId: original.id,
+              side: "front",
+              originalPath: null,
+              processedPath: path,
+              processingStatus: "cropped",
+            });
+            frontRowId = media.id;
+            setFrontMediaRowId(frontRowId);
+            setFrontMediaPending(false);
+          } catch {
+            frontMediaError = "Card saved, but the front image could not be synchronized.";
+          }
+        }
+
+        // OCR only runs once media has a row to attach to -- either from
+        // this same attempt (frontRowId just set above) or from an earlier
+        // successful attempt (frontMediaPending already false, frontRowId
+        // retained from state). If media itself just failed above,
+        // frontMediaError is set and this is skipped entirely, so OCR is
+        // never persisted without a genuine media row backing it.
+        if (!frontMediaError && frontOcrPending && imageUrl && frontRowId) {
+          try {
+            let result = frontOcrResult;
+            if (!result) {
+              setFrontOcrStatus("running");
+              result = await runOcr(imageUrl, "front");
+              setFrontOcrResult(result);
+            }
+            await updateCardMedia(frontRowId, {
+              ocrOutput: result as unknown as JsonValue,
+              processingStatus: "ocr_complete",
+            });
+            setFrontOcrPending(false);
+            setFrontOcrStatus("done");
+            setFrontOcrError("");
+          } catch {
+            frontOcrFailed =
+              "Card saved, but front text recognition failed. Press Save again to retry.";
+            setFrontOcrStatus("failed");
+          }
+        }
       }
 
-      try {
-        if (backImageRemoved) {
-          if (backMediaPath) {
+      // ---- Back ---- (mirrors front, independently)
+      let backRowId = backMediaRowId;
+
+      if (backImageRemoved) {
+        if (backMediaPath) {
+          try {
             await removeCardMediaImage({ profileId, userCardId: original.id, side: "back" });
             await deleteCardMediaBySide(original.id, "back");
+          } catch {
+            backMediaError = "Card saved, but the back image could not be synchronized.";
           }
-        } else if (backImageReplaced && backImageUrl) {
-          const { path } = await uploadCardMediaImage({
-            profileId,
-            userCardId: original.id,
-            side: "back",
-            dataUrl: backImageUrl,
-          });
-          await upsertCardMediaBySide({
-            userCardId: original.id,
-            side: "back",
-            originalPath: null,
-            processedPath: path,
-            processingStatus: "cropped",
-          });
         }
-      } catch {
-        backMediaError = "Card saved, but the back image could not be synchronized.";
+      } else {
+        if (backMediaPending && backImageUrl) {
+          try {
+            const { path } = await uploadCardMediaImage({
+              profileId,
+              userCardId: original.id,
+              side: "back",
+              dataUrl: backImageUrl,
+            });
+            const media = await upsertCardMediaBySide({
+              userCardId: original.id,
+              side: "back",
+              originalPath: null,
+              processedPath: path,
+              processingStatus: "cropped",
+            });
+            backRowId = media.id;
+            setBackMediaRowId(backRowId);
+            setBackMediaPending(false);
+          } catch {
+            backMediaError = "Card saved, but the back image could not be synchronized.";
+          }
+        }
+
+        if (!backMediaError && backOcrPending && backImageUrl && backRowId) {
+          try {
+            let result = backOcrResult;
+            if (!result) {
+              setBackOcrStatus("running");
+              result = await runOcr(backImageUrl, "back");
+              setBackOcrResult(result);
+            }
+            await updateCardMedia(backRowId, {
+              ocrOutput: result as unknown as JsonValue,
+              processingStatus: "ocr_complete",
+            });
+            setBackOcrPending(false);
+            setBackOcrStatus("done");
+            setBackOcrError("");
+          } catch {
+            backOcrFailed =
+              "Card saved, but back text recognition failed. Press Save again to retry.";
+            setBackOcrStatus("failed");
+          }
+        }
       }
 
       setImageError(frontMediaError ?? "");
       setBackImageError(backMediaError ?? "");
+      setFrontOcrError(frontOcrFailed ?? "");
+      setBackOcrError(backOcrFailed ?? "");
 
-      // Only navigate away when private media synced cleanly -- otherwise
-      // the user would never see the error set above (this page unmounts
-      // on navigation). The card itself is already saved either way.
-      if (!frontMediaError && !backMediaError) {
+      // Only navigate away once front AND back media AND OCR have all
+      // either succeeded or had nothing to do -- otherwise the user would
+      // never see the error set above (this page unmounts on navigation).
+      // The card itself is already saved either way, and the retained row
+      // ids/pending flags mean a retry never repeats already-successful
+      // work.
+      if (!frontMediaError && !backMediaError && !frontOcrFailed && !backOcrFailed) {
         router.push(`/cards/${original.id}`);
       }
     } finally {
@@ -528,6 +711,17 @@ export default function EditCardPage({
                       setImageUrl(dataUrl);
                       setImageRemoved(false);
                       setImageReplaced(true);
+                      // Vision Engine V2, Phase 6A final correction:
+                      // replacing marks both media and OCR pending for this
+                      // side and clears its previous OCR result/error --
+                      // the actual upload and OCR run happen in onSave, so
+                      // media is never re-uploaded on a later OCR-only
+                      // retry. Independent of back.
+                      setFrontMediaPending(true);
+                      setFrontOcrPending(true);
+                      setFrontOcrResult(null);
+                      setFrontOcrError("");
+                      setFrontOcrStatus("idle");
                     } catch (err) {
                       setImageError((err as Error).message || "Image failed validation.");
                     }
@@ -542,6 +736,12 @@ export default function EditCardPage({
                     setImageUrl(null);
                     setImageRemoved(true);
                     setImageReplaced(false);
+                    setFrontMediaPending(false);
+                    setFrontOcrPending(false);
+                    setFrontMediaRowId(null);
+                    setFrontOcrResult(null);
+                    setFrontOcrStatus("idle");
+                    setFrontOcrError("");
                   }}
                   className="btn-secondary text-xs"
                 >
@@ -549,6 +749,12 @@ export default function EditCardPage({
                 </button>
               ) : null}
               {imageError ? <div className="text-xs text-red-600">{imageError}</div> : null}
+              {frontOcrError ? <div className="text-xs text-red-600">{frontOcrError}</div> : null}
+              {ocrStatusLabel("front", frontOcrStatus, frontOcrResult) ? (
+                <div className="text-[11px] text-zinc-500">
+                  {ocrStatusLabel("front", frontOcrStatus, frontOcrResult)}
+                </div>
+              ) : null}
               <div className="text-[11px] text-zinc-500">
                 Allowed: JPG/PNG/WebP/HEIC • Max {Math.round(IMAGE_RULES.maxBytes / 1024 / 1024)}MB
               </div>
@@ -589,7 +795,17 @@ export default function EditCardPage({
                       const { dataUrl } = await processImageFile(file);
                       setBackImageUrl(dataUrl);
                       setBackImageRemoved(false);
-                      setBackImageReplaced(true);
+                      // Vision Engine V2, Phase 6A final correction:
+                      // replacing marks both media and OCR pending for this
+                      // side and clears its previous OCR result/error --
+                      // the actual upload and OCR run happen in onSave, so
+                      // media is never re-uploaded on a later OCR-only
+                      // retry. Independent of front.
+                      setBackMediaPending(true);
+                      setBackOcrPending(true);
+                      setBackOcrResult(null);
+                      setBackOcrError("");
+                      setBackOcrStatus("idle");
                     } catch (err) {
                       setBackImageError((err as Error).message || "Image failed validation.");
                     }
@@ -603,7 +819,12 @@ export default function EditCardPage({
                   onClick={() => {
                     setBackImageUrl(null);
                     setBackImageRemoved(true);
-                    setBackImageReplaced(false);
+                    setBackMediaPending(false);
+                    setBackOcrPending(false);
+                    setBackMediaRowId(null);
+                    setBackOcrResult(null);
+                    setBackOcrStatus("idle");
+                    setBackOcrError("");
                   }}
                   className="btn-secondary text-xs"
                 >
@@ -611,6 +832,12 @@ export default function EditCardPage({
                 </button>
               ) : null}
               {backImageError ? <div className="text-xs text-red-600">{backImageError}</div> : null}
+              {backOcrError ? <div className="text-xs text-red-600">{backOcrError}</div> : null}
+              {ocrStatusLabel("back", backOcrStatus, backOcrResult) ? (
+                <div className="text-[11px] text-zinc-500">
+                  {ocrStatusLabel("back", backOcrStatus, backOcrResult)}
+                </div>
+              ) : null}
               <div className="text-[11px] text-zinc-500">
                 Allowed: JPG/PNG/WebP/HEIC • Max {Math.round(IMAGE_RULES.maxBytes / 1024 / 1024)}MB
               </div>
