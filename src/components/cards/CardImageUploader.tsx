@@ -4,6 +4,7 @@ import { IMAGE_RULES } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 
 export type CardImageUploaderProps = {
+  label?: string;
   imageUrl: string | null;
   setImageUrl: (v: string | null) => void;
   imageType: "front" | "back" | "slab_front" | "slab_back";
@@ -31,6 +32,7 @@ export type CardImageUploaderProps = {
 };
 
 export function CardImageUploader({
+  label,
   imageUrl,
   setImageUrl,
   imageType,
@@ -52,7 +54,7 @@ export function CardImageUploader({
 }: CardImageUploaderProps) {
   return (
     <div className="sm:col-span-2">
-      <div className="text-sm font-medium text-zinc-900">Card image</div>
+      <div className="text-sm font-medium text-zinc-900">{label ?? "Card image"}</div>
       <div className="mt-2 grid gap-3 sm:grid-cols-[140px_1fr]">
         <div className="relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden">
           {(() => {

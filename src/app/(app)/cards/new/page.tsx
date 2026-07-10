@@ -24,7 +24,7 @@ import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
 import { useChecklistSectionLookup } from "@/hooks/cards/useChecklistSectionLookup";
 import { useCatalogCardLookup } from "@/hooks/cards/useCatalogCardLookup";
 import { useCatalogVariantLookup } from "@/hooks/cards/useCatalogVariantLookup";
-import { useCardImage } from "@/hooks/cards/useCardImage";
+import { useCardImageSlot } from "@/hooks/cards/useCardImageSlot";
 import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
@@ -248,71 +248,36 @@ function NewCardPageInner() {
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const {
-    imageUrl,
-    setImageUrl,
-    imageIsFront,
-    setImageIsFront,
-    imageIsSlabbed,
-    setImageIsSlabbed,
-    imageShare,
-    setImageShare,
-    imageOwnerConfirm,
-    setImageOwnerConfirm,
-    imageType,
-    setImageType,
-    imageError,
-    setImageError,
-    imageCheckStatus,
-    setImageCheckStatus,
-    cardPhotoConfirm,
-    setCardPhotoConfirm,
-    cropData,
-    setCropData,
-    setCropSource,
-    showCrop,
-    setShowCrop,
-    cropZoom,
-    setCropZoom,
-    cropRotationBase,
-    cropRotationFine,
-    cropOffset,
-    setCropOffset,
-    cropDragRef,
-    cropBoxWidth,
-    cropBoxHeight,
-    cropZoomMin,
-    cropZoomMax,
-    cropRotationFineMin,
-    cropRotationFineMax,
-    clampCropOffset,
-    applyCropRotation,
-    confirmCrop,
-    handleImageFile,
-  } = useCardImage();
+  // Vision Engine V2, Phase 4: two independent image slots. Only the front
+  // slot feeds save/OCR/shared-image behavior (unchanged from before this
+  // task) -- the back slot is UI-only client state for now, not persisted
+  // anywhere yet.
+  const frontImage = useCardImageSlot("front");
+  const backImage = useCardImageSlot("back");
 
   function handleScanCard() {
     setEntryMode("form");
     scanInputRef.current?.click();
   }
 
-  // OCR: runs once per confirmed crop. confirmCrop() doesn't return the
-  // freshly-cropped imageUrl (and useCardImage isn't modified to add that),
-  // so a pending-flag + effect on imageUrl is used instead of reading
-  // imageUrl right after awaiting confirmCrop(), which would still see the
-  // stale pre-crop value from this closure.
+  // OCR: runs once per confirmed crop of the FRONT slot only (unchanged from
+  // before this task -- the back slot never triggers OCR). confirmCrop()
+  // doesn't return the freshly-cropped imageUrl (and useCardImageSlot isn't
+  // modified to add that), so a pending-flag + effect on imageUrl is used
+  // instead of reading imageUrl right after awaiting confirmCrop(), which
+  // would still see the stale pre-crop value from this closure.
   const [ocrStatus, setOcrStatus] = useState<"idle" | "running" | "done">("idle");
   const pendingOcrRef = useRef(false);
 
-  async function handleConfirmCrop() {
+  async function handleConfirmFrontCrop() {
     pendingOcrRef.current = true;
-    await confirmCrop();
+    await frontImage.confirmCrop();
   }
 
   useEffect(() => {
     if (!pendingOcrRef.current) return;
     pendingOcrRef.current = false;
-    if (!imageUrl) return;
+    if (!frontImage.imageUrl) return;
 
     let active = true;
     setOcrStatus("running");
@@ -321,7 +286,7 @@ function NewCardPageInner() {
     // imperceptible instant. A real engine's own latency will make this
     // unnecessary, but it's harmless to keep.
     const minDisplay = new Promise((resolve) => setTimeout(resolve, 400));
-    Promise.all([runOcr(imageUrl), minDisplay])
+    Promise.all([runOcr(frontImage.imageUrl), minDisplay])
       .then(([result]) => {
         if (!active) return;
         if (result.rawText) setCatalogQuery(buildCatalogQuery(result));
@@ -333,7 +298,7 @@ function NewCardPageInner() {
     return () => {
       active = false;
     };
-  }, [imageUrl]);
+  }, [frontImage.imageUrl]);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -364,18 +329,31 @@ function NewCardPageInner() {
     setLocation("");
     setPurchasePrice("");
     setPurchaseDate("");
-    setImageUrl(null);
-    setImageOwnerConfirm(false);
-    setImageShare(false);
-    setCardPhotoConfirm(false);
+    frontImage.setImageUrl(null);
+    frontImage.setImageOwnerConfirm(false);
+    frontImage.setImageShare(false);
+    frontImage.setCardPhotoConfirm(false);
+    backImage.setImageUrl(null);
+    backImage.setImageOwnerConfirm(false);
+    backImage.setImageShare(false);
+    backImage.setCardPhotoConfirm(false);
   }, [isWishlistCard]);
 
+  // Save eligibility remains gated on the FRONT slot only -- the back slot
+  // is not required and does not block saving in this phase.
   const canSave = useMemo(() => {
     const baseOk = Boolean(playerName.trim() && year.trim() && setName.trim());
-    if (!imageUrl) return baseOk;
-    if (imageCheckStatus === "checking") return false;
-    return baseOk && cardPhotoConfirm;
-  }, [playerName, year, setName, imageUrl, cardPhotoConfirm, imageCheckStatus]);
+    if (!frontImage.imageUrl) return baseOk;
+    if (frontImage.imageCheckStatus === "checking") return false;
+    return baseOk && frontImage.cardPhotoConfirm;
+  }, [
+    playerName,
+    year,
+    setName,
+    frontImage.imageUrl,
+    frontImage.cardPhotoConfirm,
+    frontImage.imageCheckStatus,
+  ]);
 
   const {
     checklistQuery,
@@ -433,8 +411,8 @@ function NewCardPageInner() {
 
       notes: notes.trim() || undefined,
 
-      imageShared: isWishlistCard ? undefined : imageShare || undefined,
-      imageType: isWishlistCard ? undefined : imageType,
+      imageShared: isWishlistCard ? undefined : frontImage.imageShare || undefined,
+      imageType: isWishlistCard ? undefined : frontImage.imageType,
     };
 
     return card;
@@ -447,29 +425,31 @@ function NewCardPageInner() {
     try {
       const profileId = await requireProfileId();
       const card = await createMyCard(profileId, input);
-      if (!isWishlistCard && imageUrl) {
-        saveImageForCard(String(card.id), imageUrl);
-        await saveThumbnailForCard(String(card.id), imageUrl);
+      // Only the front slot is persisted -- the back slot is UI-only client
+      // state in this phase and is never saved.
+      if (!isWishlistCard && frontImage.imageUrl) {
+        saveImageForCard(String(card.id), frontImage.imageUrl);
+        await saveThumbnailForCard(String(card.id), frontImage.imageUrl);
       }
       if (
         !isWishlistCard &&
-        imageShare &&
-        imageOwnerConfirm &&
-        imageUrl &&
+        frontImage.imageShare &&
+        frontImage.imageOwnerConfirm &&
+        frontImage.imageUrl &&
         fingerprint &&
-        imageUrl.trim().length > 0
+        frontImage.imageUrl.trim().length > 0
       ) {
         const res = await saveSharedImage({
           fingerprint,
-          dataUrl: imageUrl,
-          isFront: imageIsFront,
-          isSlabbed: imageIsSlabbed,
+          dataUrl: frontImage.imageUrl,
+          isFront: frontImage.imageIsFront,
+          isSlabbed: frontImage.imageIsSlabbed,
           createdAt: new Date().toISOString(),
         });
         if (res.status === "error") {
-          setImageError(`Shared image upload failed: ${res.message}`);
+          frontImage.setImageError(`Shared image upload failed: ${res.message}`);
         } else if (res.status === "exists") {
-          setImageError("Shared image already exists for this card.");
+          frontImage.setImageError("Shared image already exists for this card.");
         }
       }
       router.push("/cards");
@@ -485,34 +465,37 @@ function NewCardPageInner() {
     try {
       const profileId = await requireProfileId();
       const card = await createMyCard(profileId, input);
-      if (!isWishlistCard && imageUrl) {
-        saveImageForCard(String(card.id), imageUrl);
-        await saveThumbnailForCard(String(card.id), imageUrl);
+      // Only the front slot is persisted -- the back slot is UI-only client
+      // state in this phase and is never saved.
+      if (!isWishlistCard && frontImage.imageUrl) {
+        saveImageForCard(String(card.id), frontImage.imageUrl);
+        await saveThumbnailForCard(String(card.id), frontImage.imageUrl);
       }
 
       if (
         !isWishlistCard &&
-        imageShare &&
-        imageOwnerConfirm &&
-        imageUrl &&
+        frontImage.imageShare &&
+        frontImage.imageOwnerConfirm &&
+        frontImage.imageUrl &&
         fingerprint &&
-        imageUrl.trim().length > 0
+        frontImage.imageUrl.trim().length > 0
       ) {
         const res = await saveSharedImage({
           fingerprint,
-          dataUrl: imageUrl,
-          isFront: imageIsFront,
-          isSlabbed: imageIsSlabbed,
+          dataUrl: frontImage.imageUrl,
+          isFront: frontImage.imageIsFront,
+          isSlabbed: frontImage.imageIsSlabbed,
           createdAt: new Date().toISOString(),
         });
         if (res.status === "error") {
-          setImageError(`Shared image upload failed: ${res.message}`);
+          frontImage.setImageError(`Shared image upload failed: ${res.message}`);
         } else if (res.status === "exists") {
-          setImageError("Shared image already exists for this card.");
+          frontImage.setImageError("Shared image already exists for this card.");
         }
       }
 
-      // reset form (keep your existing reset block EXACTLY as-is)
+      // reset form (keep your existing reset block EXACTLY as-is, now
+      // applied symmetrically to both independent image slots)
       setPlayerName("");
       setCardNumber("");
       setTeam("");
@@ -533,15 +516,24 @@ function NewCardPageInner() {
       setIsAutograph(false);
       setIsPatch(false);
       setNotes("");
-      setImageUrl(null);
-      setImageIsFront(true);
-      setImageIsSlabbed(false);
-      setImageShare(false);
-      setImageOwnerConfirm(false);
-      setImageType("front");
-      setImageError("");
-      setImageCheckStatus("idle");
-      setCardPhotoConfirm(false);
+      frontImage.setImageUrl(null);
+      frontImage.setImageIsFront(true);
+      frontImage.setImageIsSlabbed(false);
+      frontImage.setImageShare(false);
+      frontImage.setImageOwnerConfirm(false);
+      frontImage.setImageType("front");
+      frontImage.setImageError("");
+      frontImage.setImageCheckStatus("idle");
+      frontImage.setCardPhotoConfirm(false);
+      backImage.setImageUrl(null);
+      backImage.setImageIsFront(true);
+      backImage.setImageIsSlabbed(false);
+      backImage.setImageShare(false);
+      backImage.setImageOwnerConfirm(false);
+      backImage.setImageType("front");
+      backImage.setImageError("");
+      backImage.setImageCheckStatus("idle");
+      backImage.setCardPhotoConfirm(false);
       setChecklistQuery("");
       setChecklistSection("ALL");
       setShowChecklistResults(true);
@@ -578,7 +570,7 @@ function NewCardPageInner() {
         capture="environment"
         className="hidden"
         onChange={(e) => {
-          handleImageFile(e.target.files?.[0] ?? null);
+          frontImage.handleImageFile(e.target.files?.[0] ?? null);
           e.target.value = "";
         }}
       />
@@ -968,26 +960,56 @@ function NewCardPageInner() {
         ) : null}
 
         {!isWishlistCard ? (
-          <CardImageUploader
-            imageUrl={imageUrl}
-            setImageUrl={setImageUrl}
-            imageType={imageType}
-            setImageType={setImageType}
-            setImageIsFront={setImageIsFront}
-            setImageIsSlabbed={setImageIsSlabbed}
-            cardPhotoConfirm={cardPhotoConfirm}
-            setCardPhotoConfirm={setCardPhotoConfirm}
-            imageOwnerConfirm={imageOwnerConfirm}
-            setImageOwnerConfirm={setImageOwnerConfirm}
-            imageShare={imageShare}
-            setImageShare={setImageShare}
-            imageError={imageError}
-            imageCheckStatus={imageCheckStatus}
-            sharedImage={sharedImage}
-            reportInfo={reportInfo}
-            fingerprint={fingerprint}
-            onFileSelected={handleImageFile}
-          />
+          <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
+            <CardImageUploader
+              label="Front Image"
+              imageUrl={frontImage.imageUrl}
+              setImageUrl={frontImage.setImageUrl}
+              imageType={frontImage.imageType}
+              setImageType={frontImage.setImageType}
+              setImageIsFront={frontImage.setImageIsFront}
+              setImageIsSlabbed={frontImage.setImageIsSlabbed}
+              cardPhotoConfirm={frontImage.cardPhotoConfirm}
+              setCardPhotoConfirm={frontImage.setCardPhotoConfirm}
+              imageOwnerConfirm={frontImage.imageOwnerConfirm}
+              setImageOwnerConfirm={frontImage.setImageOwnerConfirm}
+              imageShare={frontImage.imageShare}
+              setImageShare={frontImage.setImageShare}
+              imageError={frontImage.imageError}
+              imageCheckStatus={frontImage.imageCheckStatus}
+              sharedImage={sharedImage}
+              reportInfo={reportInfo}
+              fingerprint={fingerprint}
+              onFileSelected={frontImage.handleImageFile}
+            />
+
+            {/* Back Image: independent slot, client state only -- not saved
+                anywhere yet (see onSave/onSaveAndAddAnother above). No
+                community-image lookup exists for a back photo yet, since
+                the shared-image feature is keyed by a single card-identity
+                fingerprint today. */}
+            <CardImageUploader
+              label="Back Image"
+              imageUrl={backImage.imageUrl}
+              setImageUrl={backImage.setImageUrl}
+              imageType={backImage.imageType}
+              setImageType={backImage.setImageType}
+              setImageIsFront={backImage.setImageIsFront}
+              setImageIsSlabbed={backImage.setImageIsSlabbed}
+              cardPhotoConfirm={backImage.cardPhotoConfirm}
+              setCardPhotoConfirm={backImage.setCardPhotoConfirm}
+              imageOwnerConfirm={backImage.imageOwnerConfirm}
+              setImageOwnerConfirm={backImage.setImageOwnerConfirm}
+              imageShare={backImage.imageShare}
+              setImageShare={backImage.setImageShare}
+              imageError={backImage.imageError}
+              imageCheckStatus={backImage.imageCheckStatus}
+              sharedImage={null}
+              reportInfo={null}
+              fingerprint=""
+              onFileSelected={backImage.handleImageFile}
+            />
+          </div>
         ) : null}
 
         <Field label="Player" value={playerName} onChange={setPlayerName} placeholder="Baker Mayfield" />
@@ -1122,29 +1144,57 @@ function NewCardPageInner() {
       </div>
 
       <CardImageCropModal
-        show={showCrop}
-        cropData={cropData}
-        setCropData={setCropData}
-        setCropSource={setCropSource}
-        setShowCrop={setShowCrop}
-        setImageCheckStatus={setImageCheckStatus}
-        setImageError={setImageError}
-        cropOffset={cropOffset}
-        setCropOffset={setCropOffset}
-        cropDragRef={cropDragRef}
-        clampCropOffset={clampCropOffset}
-        cropZoom={cropZoom}
-        setCropZoom={setCropZoom}
-        cropRotationBase={cropRotationBase}
-        cropRotationFine={cropRotationFine}
-        applyCropRotation={applyCropRotation}
-        confirmCrop={handleConfirmCrop}
-        cropBoxWidth={cropBoxWidth}
-        cropBoxHeight={cropBoxHeight}
-        cropZoomMin={cropZoomMin}
-        cropZoomMax={cropZoomMax}
-        cropRotationFineMin={cropRotationFineMin}
-        cropRotationFineMax={cropRotationFineMax}
+        show={frontImage.showCrop}
+        cropData={frontImage.cropData}
+        setCropData={frontImage.setCropData}
+        setCropSource={frontImage.setCropSource}
+        setShowCrop={frontImage.setShowCrop}
+        setImageCheckStatus={frontImage.setImageCheckStatus}
+        setImageError={frontImage.setImageError}
+        cropOffset={frontImage.cropOffset}
+        setCropOffset={frontImage.setCropOffset}
+        cropDragRef={frontImage.cropDragRef}
+        clampCropOffset={frontImage.clampCropOffset}
+        cropZoom={frontImage.cropZoom}
+        setCropZoom={frontImage.setCropZoom}
+        cropRotationBase={frontImage.cropRotationBase}
+        cropRotationFine={frontImage.cropRotationFine}
+        applyCropRotation={frontImage.applyCropRotation}
+        confirmCrop={handleConfirmFrontCrop}
+        cropBoxWidth={frontImage.cropBoxWidth}
+        cropBoxHeight={frontImage.cropBoxHeight}
+        cropZoomMin={frontImage.cropZoomMin}
+        cropZoomMax={frontImage.cropZoomMax}
+        cropRotationFineMin={frontImage.cropRotationFineMin}
+        cropRotationFineMax={frontImage.cropRotationFineMax}
+      />
+
+      {/* Independent crop flow for the back slot -- its crop state never
+          affects the front slot's modal above, and vice versa. */}
+      <CardImageCropModal
+        show={backImage.showCrop}
+        cropData={backImage.cropData}
+        setCropData={backImage.setCropData}
+        setCropSource={backImage.setCropSource}
+        setShowCrop={backImage.setShowCrop}
+        setImageCheckStatus={backImage.setImageCheckStatus}
+        setImageError={backImage.setImageError}
+        cropOffset={backImage.cropOffset}
+        setCropOffset={backImage.setCropOffset}
+        cropDragRef={backImage.cropDragRef}
+        clampCropOffset={backImage.clampCropOffset}
+        cropZoom={backImage.cropZoom}
+        setCropZoom={backImage.setCropZoom}
+        cropRotationBase={backImage.cropRotationBase}
+        cropRotationFine={backImage.cropRotationFine}
+        applyCropRotation={backImage.applyCropRotation}
+        confirmCrop={backImage.confirmCrop}
+        cropBoxWidth={backImage.cropBoxWidth}
+        cropBoxHeight={backImage.cropBoxHeight}
+        cropZoomMin={backImage.cropZoomMin}
+        cropZoomMax={backImage.cropZoomMax}
+        cropRotationFineMin={backImage.cropRotationFineMin}
+        cropRotationFineMax={backImage.cropRotationFineMax}
       />
     </div>
   );
