@@ -23,6 +23,7 @@ import { useSetLookup, formatSetLabel } from "@/hooks/cards/useSetLookup";
 import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
 import { useChecklistSectionLookup } from "@/hooks/cards/useChecklistSectionLookup";
 import { useCatalogCardLookup } from "@/hooks/cards/useCatalogCardLookup";
+import { useCatalogVariantLookup } from "@/hooks/cards/useCatalogVariantLookup";
 import { useCardImage } from "@/hooks/cards/useCardImage";
 import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
@@ -125,6 +126,16 @@ function NewCardPageInner() {
     setSelectedCard,
   } = useCatalogCardLookup(selectedSection?.id ?? null);
   const [showCatalogCardResults, setShowCatalogCardResults] = useState(false);
+
+  const {
+    variants: catalogVariantOptions,
+    loading: catalogVariantsLoading,
+    query: catalogVariantQuery,
+    setQuery: setCatalogVariantQuery,
+    selectedVariant,
+    setSelectedVariant,
+  } = useCatalogVariantLookup(selectedCard?.id ?? null);
+  const [showCatalogVariantResults, setShowCatalogVariantResults] = useState(false);
 
   const [catalogQuery, setCatalogQuery] = useState("");
   const [debouncedCatalogQuery, setDebouncedCatalogQuery] = useState("");
@@ -880,6 +891,78 @@ function NewCardPageInner() {
             </div>
             <p className="mt-1 text-xs text-zinc-900">
               Catalog v2 preview: picking a card doesn&apos;t change what gets saved yet.
+            </p>
+          </div>
+        ) : null}
+
+        {selectedCard ? (
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-zinc-900">
+              Parallel / Variant (optional)
+            </label>
+            {catalogVariantsLoading ? (
+              <div className="mt-1 text-xs text-zinc-500">Loading variants…</div>
+            ) : null}
+            <div className="relative">
+              <input
+                value={catalogVariantQuery}
+                onChange={(e) => {
+                  setCatalogVariantQuery(e.target.value);
+                  setShowCatalogVariantResults(true);
+                }}
+                onFocus={() => setShowCatalogVariantResults(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setShowCatalogVariantResults(false), 120);
+                }}
+                placeholder="Search parallel, print run, or descriptor..."
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+              />
+              {showCatalogVariantResults && catalogVariantOptions.length ? (
+                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                  {catalogVariantOptions.map((v) => {
+                    const label = [
+                      v.parallelName ?? "Base",
+                      v.printRun ? `/${v.printRun}` : "",
+                      v.swatchDescriptor ?? "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ");
+                    const flags = [v.hasAutograph ? "AU" : "", v.hasMemorabilia ? "MEM" : ""]
+                      .filter(Boolean)
+                      .join(" • ");
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSelectedVariant(v);
+                          setCatalogVariantQuery(label);
+                          setShowCatalogVariantResults(false);
+                          // Fills the existing Parallel field and
+                          // autograph/memorabilia checkboxes -- these
+                          // already flow into buildCard()/save exactly as
+                          // when filled by catalog match or checklist
+                          // selection, so no save-logic change is needed.
+                          setParallel(v.parallelName ?? "");
+                          setIsAutograph(v.hasAutograph);
+                          setIsPatch(v.hasMemorabilia);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                      >
+                        <div className="font-medium text-zinc-900">{label}</div>
+                        {flags ? <div className="text-xs text-zinc-900">{flags}</div> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-zinc-900">
+              Selecting a variant fills <span className="font-medium">Parallel</span> and the{" "}
+              <span className="font-medium">Autograph</span>/
+              <span className="font-medium">Patch/Relic</span> checkboxes. You can still edit them
+              afterward.
             </p>
           </div>
         ) : null}

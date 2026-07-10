@@ -185,3 +185,43 @@ export async function findOrCreateCardVariantV2(
 
   return data as CardVariantRow;
 }
+
+// Display-ready variant shape for the Add Card page's variant picker:
+// parallel_type_id resolved to its real name (parallel_type_id alone isn't
+// useful in a picker UI), alongside the fields that distinguish otherwise
+// identical-looking variants (print run, swatch descriptor, flags).
+export type CardVariantSummary = {
+  id: number;
+  parallelName: string | null;
+  printRun: number | null;
+  swatchDescriptor: string | null;
+  hasAutograph: boolean;
+  hasMemorabilia: boolean;
+};
+
+type CardVariantSummaryRow = {
+  id: number;
+  print_run: number | null;
+  swatch_descriptor: string | null;
+  has_autograph: boolean;
+  has_memorabilia: boolean;
+  parallel_types: { name: string } | null;
+};
+
+export async function listCardVariantsForCard(cardId: number): Promise<CardVariantSummary[]> {
+  const { data, error } = await supabase
+    .from("card_variants")
+    .select("id, print_run, swatch_descriptor, has_autograph, has_memorabilia, parallel_types(name)")
+    .eq("card_id", cardId);
+
+  if (error) throw error;
+
+  return ((data ?? []) as unknown as CardVariantSummaryRow[]).map((row) => ({
+    id: row.id,
+    parallelName: row.parallel_types?.name ?? null,
+    printRun: row.print_run,
+    swatchDescriptor: row.swatch_descriptor,
+    hasAutograph: row.has_autograph,
+    hasMemorabilia: row.has_memorabilia,
+  }));
+}
