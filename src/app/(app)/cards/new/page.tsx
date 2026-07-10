@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
 import { type MyCardInput, createMyCard } from "@/lib/repositories/myCards";
 import { searchCatalog, type CardWithContext } from "@/lib/repositories/cards";
+import { findSetBySlug } from "@/lib/repositories/sets";
+import { slugify } from "@/lib/slug";
 import { listLocations } from "@/lib/repositories/locations";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { saveSharedImage } from "@/lib/db/sharedImages";
@@ -19,6 +21,7 @@ import {
 import { Field, Select, Check } from "@/components/forms/FormControls";
 import { useSetLookup } from "@/hooks/cards/useSetLookup";
 import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
+import { useChecklistSectionLookup } from "@/hooks/cards/useChecklistSectionLookup";
 import { useCardImage } from "@/hooks/cards/useCardImage";
 import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
@@ -72,6 +75,45 @@ function NewCardPageInner() {
     setResults,
     selectSet,
   } = useSetLookup({ setYear, setSetName });
+
+  // Catalog v2 section lookup foundation: resolves the real catalog set id
+  // from year+setName (whichever path filled them -- useSetLookup's
+  // selectSet or the catalog-match auto-fill both converge on these same
+  // two fields), then loads that set's checklist sections. Selecting a
+  // section only updates local state for now -- it is not wired into
+  // buildCard()/createMyCard yet.
+  const [selectedSetId, setSelectedSetId] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const trimmedYear = year.trim();
+    const trimmedSetName = setName.trim();
+
+    if (!trimmedYear || !trimmedSetName) {
+      setSelectedSetId(null);
+      return;
+    }
+
+    const slug = slugify(`${trimmedSetName}-${trimmedYear}`);
+    findSetBySlug(slug)
+      .then((set) => {
+        if (active) setSelectedSetId(set?.id ?? null);
+      })
+      .catch(() => {
+        if (active) setSelectedSetId(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [year, setName]);
+
+  const {
+    sections: checklistSectionOptions,
+    loading: checklistSectionsLoading,
+    selectedSection,
+    setSelectedSection,
+  } = useChecklistSectionLookup(selectedSetId);
 
   const [catalogQuery, setCatalogQuery] = useState("");
   const [debouncedCatalogQuery, setDebouncedCatalogQuery] = useState("");
@@ -748,6 +790,32 @@ function NewCardPageInner() {
         ) : setName.trim() && year.trim() ? (
           <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
             Checklist is only available after selecting a set with a checklist.
+          </div>
+        ) : null}
+
+        {checklistSectionsLoading ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            Loading sections…
+          </div>
+        ) : checklistSectionOptions.length > 0 ? (
+          <div className="sm:col-span-2">
+            <Select
+              label="Section (optional)"
+              value={selectedSection ? String(selectedSection.id) : ""}
+              onChange={(v) => {
+                const section = checklistSectionOptions.find((s) => String(s.id) === v) ?? null;
+                setSelectedSection(section);
+              }}
+              options={[
+                ["", "None"],
+                ...checklistSectionOptions.map(
+                  (s) => [String(s.id), s.name] as [string, string]
+                ),
+              ]}
+            />
+            <p className="mt-1 text-xs text-zinc-900">
+              Catalog v2 preview: picking a section doesn&apos;t change what gets saved yet.
+            </p>
           </div>
         ) : null}
 
