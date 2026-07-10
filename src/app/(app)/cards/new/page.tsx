@@ -19,7 +19,7 @@ import {
   toNum,
 } from "@/lib/checklists/autofill";
 import { Field, Select, Check } from "@/components/forms/FormControls";
-import { useSetLookup } from "@/hooks/cards/useSetLookup";
+import { useSetLookup, formatSetLabel } from "@/hooks/cards/useSetLookup";
 import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
 import { useChecklistSectionLookup } from "@/hooks/cards/useChecklistSectionLookup";
 import { useCardImage } from "@/hooks/cards/useCardImage";
@@ -382,6 +382,11 @@ function NewCardPageInner() {
       cardNumber: cardNumber.trim() || undefined,
       team: team.trim() || undefined,
 
+      // Catalog v2: only set when a section has been picked (see
+      // useChecklistSectionLookup) -- undefined here means
+      // resolveCatalogIds() falls through to the exact existing V1 flow.
+      checklistSectionId: selectedSection?.id,
+
       location: isWishlistCard ? undefined : location.trim() || undefined,
 
       gradingStatus,
@@ -606,7 +611,7 @@ function NewCardPageInner() {
                     className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
                   >
                     <div className="font-medium text-zinc-900">
-                      {s.year} {s.name}
+                      {formatSetLabel(s)}
                     </div>
                     <div className="text-xs text-zinc-900">
                       {[s.brand, s.sport, s.checklistKey ? "Checklist" : ""]

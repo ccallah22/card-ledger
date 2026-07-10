@@ -10,6 +10,20 @@ export type SetSuggestion = {
 };
 
 /**
+ * Formats a set suggestion's display label without duplicating the year.
+ * Catalog v2 set names are synthesized as "<year> <manufacturer> <brand>
+ * <sport>" (e.g. "2025 Panini Select Football"), so they already include
+ * the year -- prepending it again (as older, plain-name sets like "Panini
+ * Prizm" need) produced "2025 2025 Panini Select Football".
+ */
+export function formatSetLabel(s: Pick<SetSuggestion, "year" | "name">): string {
+  const year = s.year.trim();
+  const name = s.name.trim();
+  if (!year || name.startsWith(year)) return name;
+  return `${year} ${name}`;
+}
+
+/**
  * Set search/suggestion state for the card creation form: debounced
  * searchSets(query) lookup, scored/sorted suggestions, and the fill
  * behavior when a suggestion is selected (fills year/setName, updates the
@@ -93,7 +107,7 @@ export function useSetLookup({
   function selectSet(s: SetSuggestion) {
     setYear(s.year);
     setSetName(s.name);
-    setSetQuery(`${s.year} ${s.name}`);
+    setSetQuery(formatSetLabel(s));
     setShowSetResults(false);
   }
 
