@@ -22,6 +22,7 @@ import { Field, Select, Check } from "@/components/forms/FormControls";
 import { useSetLookup, formatSetLabel } from "@/hooks/cards/useSetLookup";
 import { useChecklistLookup } from "@/hooks/cards/useChecklistLookup";
 import { useChecklistSectionLookup } from "@/hooks/cards/useChecklistSectionLookup";
+import { useCatalogCardLookup } from "@/hooks/cards/useCatalogCardLookup";
 import { useCardImage } from "@/hooks/cards/useCardImage";
 import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
@@ -114,6 +115,16 @@ function NewCardPageInner() {
     selectedSection,
     setSelectedSection,
   } = useChecklistSectionLookup(selectedSetId);
+
+  const {
+    cards: catalogCardOptions,
+    loading: catalogCardsLoading,
+    query: catalogCardQuery,
+    setQuery: setCatalogCardQuery,
+    selectedCard,
+    setSelectedCard,
+  } = useCatalogCardLookup(selectedSection?.id ?? null);
+  const [showCatalogCardResults, setShowCatalogCardResults] = useState(false);
 
   const [catalogQuery, setCatalogQuery] = useState("");
   const [debouncedCatalogQuery, setDebouncedCatalogQuery] = useState("");
@@ -820,6 +831,55 @@ function NewCardPageInner() {
             />
             <p className="mt-1 text-xs text-zinc-900">
               Catalog v2 preview: picking a section doesn&apos;t change what gets saved yet.
+            </p>
+          </div>
+        ) : null}
+
+        {selectedSection ? (
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-zinc-900">Card (optional)</label>
+            {catalogCardsLoading ? (
+              <div className="mt-1 text-xs text-zinc-500">Loading cards…</div>
+            ) : null}
+            <div className="relative">
+              <input
+                value={catalogCardQuery}
+                onChange={(e) => {
+                  setCatalogCardQuery(e.target.value);
+                  setShowCatalogCardResults(true);
+                }}
+                onFocus={() => setShowCatalogCardResults(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setShowCatalogCardResults(false), 120);
+                }}
+                placeholder="Search card number or title..."
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+              />
+              {showCatalogCardResults && catalogCardOptions.length ? (
+                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                  {catalogCardOptions.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSelectedCard(c);
+                        setCatalogCardQuery(`#${c.card_number}${c.title ? ` - ${c.title}` : ""}`);
+                        setShowCatalogCardResults(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                    >
+                      <div className="font-medium text-zinc-900">
+                        #{c.card_number}
+                        {c.title ? ` - ${c.title}` : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-zinc-900">
+              Catalog v2 preview: picking a card doesn&apos;t change what gets saved yet.
             </p>
           </div>
         ) : null}

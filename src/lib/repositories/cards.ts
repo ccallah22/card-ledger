@@ -403,3 +403,35 @@ export async function findOrCreateCardV2(input: CreateCardV2Input): Promise<Card
 
   return data as CardRow;
 }
+
+export type CardSummary = { id: number; card_number: string; title: string | null };
+
+// card_number is text (not guaranteed purely numeric -- some checklists use
+// values like "RC-5"), so "ordered numerically where possible" is done
+// client-side after fetching rather than via a plain PostgREST .order(),
+// which would sort it lexicographically (e.g. "10" before "2").
+function compareCardNumbers(a: string, b: string): number {
+  const numA = Number(a);
+  const numB = Number(b);
+  const aIsNum = a.trim() !== "" && Number.isFinite(numA);
+  const bIsNum = b.trim() !== "" && Number.isFinite(numB);
+  if (aIsNum && bIsNum) return numA - numB;
+  if (aIsNum) return -1;
+  if (bIsNum) return 1;
+  return a.localeCompare(b);
+}
+
+export async function listCardsForChecklistSection(
+  checklistSectionId: number,
+): Promise<CardSummary[]> {
+  const { data, error } = await supabase
+    .from("cards")
+    .select("id, card_number, title")
+    .eq("checklist_section_id", checklistSectionId);
+
+  if (error) throw error;
+
+  return ((data ?? []) as CardSummary[]).sort((a, b) =>
+    compareCardNumbers(a.card_number, b.card_number),
+  );
+}
