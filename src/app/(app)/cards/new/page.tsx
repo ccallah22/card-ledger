@@ -38,6 +38,8 @@ import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr, toLegacyOcrResult, type CardOcrResult } from "@/lib/ocr";
 import { mergeCardOcrResults, type MergedCardOcrResult } from "@/lib/ocr/merge";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
+import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
+import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
 import {
   assessCandidateConfidence,
   getTopConfidenceAssessment,
@@ -656,6 +658,75 @@ function NewCardPageInner() {
     setCandidateAutoSelected(false);
     setSelectedCandidate(null);
   }
+
+  // Vision Engine V2, Phase 8A: variant-aware candidate search. Read-only,
+  // additive on top of the existing card-candidate pipeline above -- never
+  // reorders card candidates, never selects a variant, never writes a
+  // variant ID into any save/persistence path. Variants are only ever
+  // fetched for ONE card at a time (the selected candidate, or the top
+  // candidate when nothing is selected), never for every pooled search
+  // candidate.
+  const activeCandidateForVariants = selectedCandidate ?? candidateResults[0] ?? null;
+
+  const [variantResults, setVariantResults] = useState<VariantCandidate[]>([]);
+  const [variantsLoading, setVariantsLoading] = useState(false);
+  const [variantsError, setVariantsError] = useState(false);
+
+  // Small in-memory, page-level cache of the RAW (unranked) variant list
+  // per card ID -- a card's own catalog variants don't change while this
+  // page is open, so once fetched for a given cardId there's no need to
+  // re-query just because mergedOcr changed (ranking against the latest
+  // OCR evidence is a cheap, pure, synchronous recompute via
+  // rankCardVariants, done on every effect run regardless of cache hits).
+  // A failed fetch is evicted from the cache so a later retry is possible.
+  const variantFetchCacheRef = useRef<Map<number, Promise<CardVariantSummary[]>>>(new Map());
+
+  function fetchVariantsForCardCached(cardId: number): Promise<CardVariantSummary[]> {
+    const cache = variantFetchCacheRef.current;
+    const existing = cache.get(cardId);
+    if (existing) return existing;
+    const promise = listCardVariantsForCard(cardId);
+    cache.set(cardId, promise);
+    promise.catch(() => cache.delete(cardId));
+    return promise;
+  }
+
+  const activeVariantCardId = activeCandidateForVariants?.cardId ?? null;
+
+  useEffect(() => {
+    let active = true;
+
+    if (activeVariantCardId === null) {
+      setVariantResults([]);
+      setVariantsError(false);
+      setVariantsLoading(false);
+      return;
+    }
+
+    // Clear immediately, before the fetch resolves, so switching candidates
+    // never briefly shows the PREVIOUS candidate's variants while the new
+    // request is in flight.
+    setVariantResults([]);
+    setVariantsError(false);
+    setVariantsLoading(true);
+
+    fetchVariantsForCardCached(activeVariantCardId)
+      .then((variants) => {
+        if (!active) return;
+        setVariantResults(rankCardVariants(variants, mergedOcr));
+        setVariantsLoading(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setVariantResults([]);
+        setVariantsError(true);
+        setVariantsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeVariantCardId, mergedOcr]);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -1719,6 +1790,48 @@ function NewCardPageInner() {
                 </button>
               )}
             </div>
+          </div>
+        ) : null}
+
+        {/* Vision Engine V2, Phase 8A: read-only "Possible Variants" for
+            the selected candidate (or the top candidate when nothing is
+            selected). Never selects a variant, never writes a variant ID
+            into save state, and never changes the manual card-candidate
+            selection above. */}
+        {!isWishlistCard && activeCandidateForVariants ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
+            <div className="font-semibold text-zinc-900">Possible Variants</div>
+            {variantsLoading ? (
+              <div className="mt-1 text-zinc-500">Loading variants…</div>
+            ) : variantsError ? (
+              <div className="mt-1 text-red-600">Couldn&apos;t load variants for this card.</div>
+            ) : variantResults.length === 0 ? (
+              <div className="mt-1 text-zinc-500">No catalog variants found for this card.</div>
+            ) : (
+              <ul className="mt-1 space-y-2">
+                {variantResults.slice(0, 5).map((variant) => (
+                  <li key={variant.variantId} className="border-t border-zinc-200 pt-2 first:border-t-0 first:pt-0">
+                    <div className="font-medium text-zinc-800">
+                      {variant.parallelName ?? "Base (no parallel)"}
+                      {variant.printRun ? ` • /${variant.printRun}` : ""}
+                    </div>
+                    <div className="text-zinc-500">
+                      {[
+                        variant.hasAutograph ? "Autograph" : null,
+                        variant.hasMemorabilia ? "Memorabilia" : null,
+                        variant.swatchDescriptor,
+                      ]
+                        .filter(Boolean)
+                        .join(" • ") || "No additional attributes"}
+                    </div>
+                    <div className="text-zinc-500">Match score: {variant.rankingScore.toFixed(0)}</div>
+                    {variant.reasons.length > 0 ? (
+                      <div className="text-zinc-500">{variant.reasons.slice(0, 2).join(" / ")}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         ) : null}
 
