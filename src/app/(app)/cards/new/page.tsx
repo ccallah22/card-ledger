@@ -36,9 +36,13 @@ import { useSharedImageLookup } from "@/hooks/cards/useSharedImageLookup";
 import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr, toLegacyOcrResult, type CardOcrResult } from "@/lib/ocr";
-import { mergeCardOcrResults } from "@/lib/ocr/merge";
+import { mergeCardOcrResults, type MergedCardOcrResult } from "@/lib/ocr/merge";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
-import { assessCandidateConfidence, getTopConfidenceAssessment } from "@/lib/catalog/candidateConfidence";
+import {
+  assessCandidateConfidence,
+  getTopConfidenceAssessment,
+  type CandidateConfidenceAssessment,
+} from "@/lib/catalog/candidateConfidence";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
 import { rankCatalogMatches } from "@/lib/catalog/rankingEngine";
 import { shouldAutoSelect } from "@/lib/catalog/autoSelect";
@@ -74,6 +78,72 @@ const CONFIDENCE_FIELD_LABELS: Record<string, string> = {
   parallel: "Parallel",
   misc: "Title",
 };
+
+// Vision Engine V2, Phase 7C: pure, exported-for-testability helpers for
+// safe candidate preselection. Kept outside the component so they can be
+// exercised directly by a throwaway verification script without rendering
+// React -- neither reads component state, both take everything as
+// arguments, and neither has any side effect.
+
+// Builds a stable identity for the current candidate-search cycle from
+// only the merged OCR fields that actually drive candidate lookup/scoring
+// (see candidateEngine.ts's WEIGHTS / candidateConfidence.ts's
+// FIELD_DEFINITIONS). Two mergedOcr values with the same underlying
+// evidence for these seven fields always produce the same key, even if
+// mergedOcr's own object identity or unrelated fields (conflictCount,
+// createdAt, teamName, etc.) differ.
+export function buildSearchCycleKey(merged: MergedCardOcrResult): string {
+  return [
+    merged.fields.playerName.value,
+    merged.fields.cardNumber.value,
+    merged.fields.setName.value,
+    merged.fields.year.value,
+    merged.fields.brand.value ?? merged.fields.manufacturer.value,
+    merged.fields.parallelText.value,
+    merged.fields.cardName.value,
+  ]
+    .map((v) => v ?? "")
+    .join("|");
+}
+
+export type CandidateAutoSelectContext = {
+  isWishlistCard: boolean;
+  hasSelectedCandidate: boolean;
+  hasManualInteraction: boolean;
+  alreadyAutoSelectedThisCycle: boolean;
+  candidatesResolvedForCurrentCycle: boolean;
+  topAssessment: CandidateConfidenceAssessment | undefined;
+};
+
+// The single decision of whether automatic preselection is currently
+// permitted. Every gate is a separate, named condition rather than one
+// combined boolean expression, so each required-behavior case (recommendation
+// handling, already-selected, manual interaction, missing identity evidence)
+// can be verified independently.
+export function shouldAutoSelectCandidate(ctx: CandidateAutoSelectContext): boolean {
+  if (ctx.isWishlistCard) return false;
+  if (ctx.hasSelectedCandidate) return false;
+  if (ctx.hasManualInteraction) return false;
+  if (ctx.alreadyAutoSelectedThisCycle) return false;
+  if (!ctx.candidatesResolvedForCurrentCycle) return false;
+
+  const top = ctx.topAssessment;
+  if (!top) return false;
+  // Recommendation handling: only "safe_to_preselect" ever auto-selects.
+  // strong_match / review / insufficient_evidence never do, regardless of
+  // confidence value.
+  if (top.recommendation !== "safe_to_preselect") return false;
+
+  // Re-checked directly here (not just trusted from the recommendation)
+  // so malformed upstream data can never cause an auto-select without
+  // genuine player + card number identity evidence.
+  const playerField = top.fieldAssessments.find((f) => f.field === "player");
+  const cardNumberField = top.fieldAssessments.find((f) => f.field === "cardNumber");
+  if (!playerField || playerField.quality === "missing") return false;
+  if (!cardNumberField || cardNumberField.quality === "missing") return false;
+
+  return true;
+}
 
 // Vision Engine V2, Phase 6A correction: minimal, side-specific OCR status
 // text -- never exposes raw model JSON/extracted fields, just a concise
@@ -463,48 +533,129 @@ function NewCardPageInner() {
     [frontOcrResult, backOcrResult],
   );
 
+  // Vision Engine V2, Phase 7C: a stable identity for the current
+  // candidate-search cycle, built only from the merged OCR fields that
+  // actually drive candidate lookup/scoring (see candidateEngine.ts's
+  // WEIGHTS / candidateConfidence.ts's FIELD_DEFINITIONS). Deliberately a
+  // plain string, not mergedOcr itself -- mergedOcr's object identity can
+  // change (e.g. conflictCount/createdAt) without any of these values
+  // actually changing, and this key must NOT change in that case (used
+  // below to reset the manual-interaction guard only on a genuinely new
+  // search, never merely because confidence recalculated or the page
+  // rerendered).
+  const searchCycleKey = useMemo(() => buildSearchCycleKey(mergedOcr), [mergedOcr]);
+
   // Vision Engine V2, Phase 7A: catalog candidate engine -- a ranked,
   // scored search result only. findCatalogCandidates() hits the database
   // (searches, never mutates), so it can't be a plain synchronous useMemo;
   // this is the async equivalent (effect + state, recomputed only when the
-  // merged OCR result actually changes). Nothing here selects a candidate,
-  // fills any form field, or changes catalogQuery/saved data -- see the
-  // read-only summary display below.
+  // merged OCR result actually changes). Nothing here selects a candidate
+  // or changes catalogQuery/saved data on its own -- see Phase 7C's
+  // auto-preselect effect and the read-only summary display below.
   const [candidateResults, setCandidateResults] = useState<CatalogCandidate[]>([]);
+  // Vision Engine V2, Phase 7C: which search-cycle key candidateResults
+  // actually corresponds to, set only once a fetch for that cycle has
+  // resolved. Needed so the auto-preselect effect never acts on a stale
+  // candidateResults array left over from the previous cycle while a new
+  // search is still in flight (candidateResults is deliberately not
+  // cleared at the start of a new search, so its content alone can't tell
+  // "still loading" apart from "loaded, found nothing").
+  const [resolvedCandidateCycleKey, setResolvedCandidateCycleKey] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     if (!mergedOcr.frontAvailable && !mergedOcr.backAvailable) {
       setCandidateResults([]);
+      setResolvedCandidateCycleKey(searchCycleKey);
       return;
     }
 
     findCatalogCandidates(mergedOcr)
       .then((results) => {
-        if (active) setCandidateResults(results);
+        if (!active) return;
+        setCandidateResults(results);
+        setResolvedCandidateCycleKey(searchCycleKey);
       })
       .catch(() => {
-        if (active) setCandidateResults([]);
+        if (!active) return;
+        setCandidateResults([]);
+        setResolvedCandidateCycleKey(searchCycleKey);
       });
 
     return () => {
       active = false;
     };
-  }, [mergedOcr]);
+  }, [mergedOcr, searchCycleKey]);
 
   // Vision Engine V2, Phase 7B: candidate confidence/explainability. Pure
   // and synchronous (unlike candidate search, it never touches the
   // database -- it only re-examines mergedOcr + the already-fetched
-  // candidateResults), so a plain useMemo is enough. Purely advisory: it
-  // never selects a candidate, never fills a field, never changes
-  // catalogQuery/saved data, and safeToPreselect never causes an automatic
-  // selection -- this phase only exposes the signal for display below.
+  // candidateResults), so a plain useMemo is enough.
   const confidenceAssessments = useMemo(
     () => assessCandidateConfidence(mergedOcr, candidateResults),
     [mergedOcr, candidateResults],
   );
   const topConfidenceAssessment = getTopConfidenceAssessment(confidenceAssessments);
+
+  // Vision Engine V2, Phase 7C: safe candidate preselection. selectedCandidate
+  // is the one, shared source of truth for "is a candidate selected" --
+  // used both by manual selection (selectCandidateManually/
+  // clearSelectedCandidate below) and by automatic preselection, so there
+  // is exactly one field-population code path for both
+  // (applyCandidateSelection). candidateAutoSelected only affects the
+  // read-only notice text; it never gates any behavior.
+  const [selectedCandidate, setSelectedCandidate] = useState<CatalogCandidate | null>(null);
+  const [candidateAutoSelected, setCandidateAutoSelected] = useState(false);
+
+  // Tracks whether the user has manually selected, switched, or
+  // cleared/rejected a candidate during the CURRENT search cycle -- refs,
+  // not state, since flipping them must never itself trigger a render, and
+  // they must read as up-to-date inside the same effect pass that resets
+  // them. Reset only when searchCycleKey actually changes (see the effect
+  // below) -- never on an incidental rerender or a confidence recompute.
+  const hasManualCandidateInteractionRef = useRef(false);
+  // Belt-and-suspenders guard against auto-selecting more than once for the
+  // same cycle even across back-to-back effect invocations (e.g. React
+  // Strict Mode's dev-only double-invoke) that might run before the
+  // selectedCandidate state update from the first invocation has
+  // committed. The primary guard is still `selectedCandidate === null`.
+  const autoSelectedCandidateCycleKeyRef = useRef<string | null>(null);
+  const lastSearchCycleKeyRef = useRef(searchCycleKey);
+
+  useEffect(() => {
+    if (lastSearchCycleKeyRef.current === searchCycleKey) return;
+    lastSearchCycleKeyRef.current = searchCycleKey;
+    hasManualCandidateInteractionRef.current = false;
+    autoSelectedCandidateCycleKeyRef.current = null;
+  }, [searchCycleKey]);
+
+  // Shared selection/field-population code path -- the ONE place that
+  // writes candidate fields onto the form, used identically by manual
+  // selection and by automatic preselection below. Only fills the fields
+  // CatalogCandidate actually carries (playerName/year/setName/cardNumber/
+  // parallel); never touches catalogQuery, never saves, never mutates the
+  // catalog.
+  function applyCandidateSelection(candidate: CatalogCandidate) {
+    setPlayerName(candidate.playerName ?? "");
+    if (candidate.year) setYear(candidate.year);
+    if (candidate.setName) setSetName(candidate.setName);
+    setCardNumber(candidate.cardNumber);
+    if (candidate.parallel) setParallel(candidate.parallel);
+    setSelectedCandidate(candidate);
+  }
+
+  function selectCandidateManually(candidate: CatalogCandidate) {
+    hasManualCandidateInteractionRef.current = true;
+    setCandidateAutoSelected(false);
+    applyCandidateSelection(candidate);
+  }
+
+  function clearSelectedCandidate() {
+    hasManualCandidateInteractionRef.current = true;
+    setCandidateAutoSelected(false);
+    setSelectedCandidate(null);
+  }
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -529,6 +680,40 @@ function NewCardPageInner() {
   }, [isWishlist, isForSaleIntent]);
 
   const isWishlistCard = isWishlist || status === "WANT";
+
+  // Vision Engine V2, Phase 7C: automatic preselection of the top
+  // candidate -- ONLY when every one of these holds:
+  //  - not a wishlist card (candidate search/fields aren't shown there)
+  //  - the top candidate's recommendation is exactly "safe_to_preselect"
+  //  - candidateResults has finished loading FOR THIS cycle
+  //    (resolvedCandidateCycleKey === searchCycleKey guards against acting
+  //    on a stale array while a new search is still in flight)
+  //  - no candidate is already selected (manual or auto)
+  //  - the user hasn't manually selected/switched/cleared a candidate
+  //    during this search cycle
+  //  - this exact cycle hasn't already been auto-selected (rerender guard)
+  //  - player AND card number evidence are both present -- re-checked here
+  //    directly rather than trusted from the recommendation alone, so
+  //    malformed upstream data can never cause an auto-select without
+  //    genuine identity evidence
+  // This never creates a catalog row, never saves, never mutates
+  // persistence -- it only calls the same applyCandidateSelection() a
+  // manual pick uses.
+  useEffect(() => {
+    const eligible = shouldAutoSelectCandidate({
+      isWishlistCard,
+      hasSelectedCandidate: selectedCandidate !== null,
+      hasManualInteraction: hasManualCandidateInteractionRef.current,
+      alreadyAutoSelectedThisCycle: autoSelectedCandidateCycleKeyRef.current === searchCycleKey,
+      candidatesResolvedForCurrentCycle: resolvedCandidateCycleKey === searchCycleKey,
+      topAssessment: confidenceAssessments[0],
+    });
+    if (!eligible) return;
+
+    autoSelectedCandidateCycleKeyRef.current = searchCycleKey;
+    applyCandidateSelection(confidenceAssessments[0].candidate);
+    setCandidateAutoSelected(true);
+  }, [isWishlistCard, selectedCandidate, resolvedCandidateCycleKey, searchCycleKey, confidenceAssessments]);
 
   useEffect(() => {
     if (!isWishlistCard) return;
@@ -1476,14 +1661,14 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        {/* Vision Engine V2, Phase 7A/7B: read-only candidate summary plus
-            confidence/explainability. This never fills a field, never
-            touches catalogQuery, and never saves anything -- ranking score
-            and confidence are shown as two distinct numbers on purpose
-            (confidence is not a rescale of score), and a "Safe to
-            preselect" recommendation never causes an automatic selection --
-            it's purely informational for a future review step to build
-            on. */}
+        {/* Vision Engine V2, Phase 7A/7B/7C: candidate summary plus
+            confidence/explainability, with a manual select/clear control
+            and (Phase 7C) automatic preselection for a "safe_to_preselect"
+            top candidate. Ranking score and confidence are shown as two
+            distinct numbers on purpose (confidence is not a rescale of
+            score). Selecting -- manually or automatically -- only fills
+            player/year/set/cardNumber/parallel; it never saves, never
+            touches catalogQuery, and never creates/mutates a catalog row. */}
         {!isWishlistCard && candidateResults.length > 0 && topConfidenceAssessment ? (
           <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
             <div className="font-semibold text-zinc-900">Top Candidate</div>
@@ -1509,6 +1694,30 @@ function NewCardPageInner() {
             </div>
             <div className="mt-2 text-zinc-500">
               Top {candidateResults.length} candidate{candidateResults.length === 1 ? "" : "s"} found
+            </div>
+            {selectedCandidate && selectedCandidate.cardId === candidateResults[0].cardId && candidateAutoSelected ? (
+              <div className="mt-2 text-emerald-700">
+                High-confidence catalog match selected automatically ({topConfidenceAssessment.confidence.toFixed(0)}%).
+              </div>
+            ) : null}
+            <div className="mt-2">
+              {selectedCandidate && selectedCandidate.cardId === candidateResults[0].cardId ? (
+                <button
+                  type="button"
+                  onClick={clearSelectedCandidate}
+                  className="text-zinc-600 underline"
+                >
+                  Clear selection
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => selectCandidateManually(candidateResults[0])}
+                  className="text-blue-700 underline"
+                >
+                  Use this candidate
+                </button>
+              )}
             </div>
           </div>
         ) : null}
