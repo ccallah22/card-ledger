@@ -36,6 +36,15 @@ export type CatalogCandidate = {
   playerName: string | null;
   setName: string | null;
   year: string | null;
+  // Vision Engine V2, Phase 7B: additive field for the confidence layer
+  // (src/lib/catalog/candidateConfidence.ts) and UI display -- cardTitle's
+  // fallback chain (card.title || player || "Card #N") means the card
+  // number is often entirely absent from any existing candidate field
+  // once a title or player name exists, and it's genuinely needed both to
+  // display (e.g. "Barry Sanders #3") and to re-assess match quality
+  // without parsing it back out of a display string. Always the real
+  // catalog value (cards.card_number is NOT NULL), never a display guess.
+  cardNumber: string;
 
   parallel: string | null;
 };
@@ -43,10 +52,13 @@ export type CatalogCandidate = {
 const MAX_CANDIDATES = 25;
 
 // Score contribution per matched field, out of 100 total when every field
-// matches. This is a candidate *search* score only -- not the future
-// confidence engine, which will also weigh visual/fingerprint signals this
-// phase never sees.
-const WEIGHTS = {
+// matches. This is a candidate *search* score only -- not the confidence
+// layer (src/lib/catalog/candidateConfidence.ts), which independently
+// re-assesses evidence quality/coverage/conflicts/ambiguity using these
+// same conceptual weights -- never simply rescales this score. Exported so
+// the confidence module reuses the identical weights rather than
+// duplicating/drifting from them.
+export const WEIGHTS = {
   player: 30,
   cardNumber: 25,
   set: 15,
@@ -286,6 +298,7 @@ async function scoreCandidate(
     playerName: playerActual,
     setName: card.setName,
     year: yearActual,
+    cardNumber: card.cardNumber,
     parallel,
   };
 }

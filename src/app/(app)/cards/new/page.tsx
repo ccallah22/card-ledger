@@ -38,6 +38,7 @@ import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr, toLegacyOcrResult, type CardOcrResult } from "@/lib/ocr";
 import { mergeCardOcrResults } from "@/lib/ocr/merge";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
+import { assessCandidateConfidence, getTopConfidenceAssessment } from "@/lib/catalog/candidateConfidence";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
 import { rankCatalogMatches } from "@/lib/catalog/rankingEngine";
 import { shouldAutoSelect } from "@/lib/catalog/autoSelect";
@@ -47,6 +48,32 @@ async function requireProfileId(): Promise<string> {
   if (!profile) throw new Error("Not logged in");
   return profile.id;
 }
+
+// Vision Engine V2, Phase 7B: display-only labels for the confidence
+// summary below -- never exposes internal formulas/raw JSON, just a
+// concise recommendation word and a handful of the most important
+// per-field match qualities.
+const RECOMMENDATION_LABELS: Record<
+  "insufficient_evidence" | "review" | "strong_match" | "safe_to_preselect",
+  string
+> = {
+  insufficient_evidence: "Insufficient evidence",
+  review: "Review required",
+  strong_match: "Strong match",
+  safe_to_preselect: "Safe to preselect",
+};
+
+const IMPORTANT_CONFIDENCE_FIELDS = new Set(["player", "cardNumber", "set", "parallel"]);
+
+const CONFIDENCE_FIELD_LABELS: Record<string, string> = {
+  player: "Player",
+  cardNumber: "Card number",
+  set: "Set",
+  year: "Year",
+  brand: "Brand",
+  parallel: "Parallel",
+  misc: "Title",
+};
 
 // Vision Engine V2, Phase 6A correction: minimal, side-specific OCR status
 // text -- never exposes raw model JSON/extracted fields, just a concise
@@ -465,6 +492,19 @@ function NewCardPageInner() {
       active = false;
     };
   }, [mergedOcr]);
+
+  // Vision Engine V2, Phase 7B: candidate confidence/explainability. Pure
+  // and synchronous (unlike candidate search, it never touches the
+  // database -- it only re-examines mergedOcr + the already-fetched
+  // candidateResults), so a plain useMemo is enough. Purely advisory: it
+  // never selects a candidate, never fills a field, never changes
+  // catalogQuery/saved data, and safeToPreselect never causes an automatic
+  // selection -- this phase only exposes the signal for display below.
+  const confidenceAssessments = useMemo(
+    () => assessCandidateConfidence(mergedOcr, candidateResults),
+    [mergedOcr, candidateResults],
+  );
+  const topConfidenceAssessment = getTopConfidenceAssessment(confidenceAssessments);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -1436,19 +1476,36 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        {/* Vision Engine V2, Phase 7A: read-only candidate summary. This
-            never fills a field, never touches catalogQuery, and never
-            saves anything -- it's purely informational, ranked-search
-            output for a future review step to build on. */}
-        {!isWishlistCard && candidateResults.length > 0 ? (
+        {/* Vision Engine V2, Phase 7A/7B: read-only candidate summary plus
+            confidence/explainability. This never fills a field, never
+            touches catalogQuery, and never saves anything -- ranking score
+            and confidence are shown as two distinct numbers on purpose
+            (confidence is not a rescale of score), and a "Safe to
+            preselect" recommendation never causes an automatic selection --
+            it's purely informational for a future review step to build
+            on. */}
+        {!isWishlistCard && candidateResults.length > 0 && topConfidenceAssessment ? (
           <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
             <div className="font-semibold text-zinc-900">Top Candidate</div>
             <div className="mt-1">
               {[candidateResults[0].setName, candidateResults[0].year].filter(Boolean).join(" ")}
             </div>
-            <div>{candidateResults[0].playerName ?? candidateResults[0].cardTitle}</div>
+            <div>
+              {candidateResults[0].playerName ?? candidateResults[0].cardTitle}
+              {candidateResults[0].cardNumber ? ` #${candidateResults[0].cardNumber}` : ""}
+            </div>
             <div className="mt-1 text-zinc-500">
-              Score: {candidateResults[0].score.toFixed(1)}
+              Ranking score: {candidateResults[0].score.toFixed(1)} • Confidence:{" "}
+              {topConfidenceAssessment.confidence.toFixed(1)}%
+            </div>
+            <div className="mt-1 font-medium text-zinc-700">
+              {RECOMMENDATION_LABELS[topConfidenceAssessment.recommendation]}
+            </div>
+            <div className="mt-1 text-zinc-500">
+              {topConfidenceAssessment.fieldAssessments
+                .filter((f) => IMPORTANT_CONFIDENCE_FIELDS.has(f.field))
+                .map((f) => `${CONFIDENCE_FIELD_LABELS[f.field] ?? f.field}: ${f.quality}`)
+                .join(" / ")}
             </div>
             <div className="mt-2 text-zinc-500">
               Top {candidateResults.length} candidate{candidateResults.length === 1 ? "" : "s"} found
