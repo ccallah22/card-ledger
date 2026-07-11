@@ -29,6 +29,10 @@ export type MergedCardOcrResult = {
     playerName: MergedOcrField;
     teamName: MergedOcrField;
     brand: MergedOcrField;
+    // Vision Engine V2, Phase 7A correction: the visible product/set name
+    // (e.g. "Select", "Prizm") -- distinct from brand/manufacturer, which
+    // name the company, not the product line. See CardOcrExtractedFields.
+    setName: MergedOcrField;
     year: MergedOcrField;
     cardName: MergedOcrField;
     parallelText: MergedOcrField;
@@ -152,6 +156,12 @@ export function mergeCardOcrResults(
     // Prefer front on conflict.
     playerName: mergeField(f.playerName, b.playerName, "front"),
     teamName: mergeField(f.teamName, b.teamName, "front"),
+    // setName prefers BACK on conflict (unlike the other front-priority
+    // fields above) -- official checklist/product wording on the back is
+    // usually more structured than a front logo/wordmark OCR reading, per
+    // this correction's explicit instruction. Both values and any conflict
+    // are still preserved exactly like every other field.
+    setName: mergeField(f.setName, b.setName, "back"),
     year: mergeYearField(f.visibleYear, b.copyrightYear),
     cardName: mergeField(f.cardName, b.cardName, "front"),
     parallelText: mergeField(f.parallelText, b.parallelText, "front"),

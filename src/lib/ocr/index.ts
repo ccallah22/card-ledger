@@ -33,6 +33,8 @@ function normalizeExtracted(raw: unknown): CardOcrExtractedFields {
     checklistText: toNullableString(raw.checklistText),
     serialNumbering: toNullableString(raw.serialNumbering),
     authenticationText: toNullableString(raw.authenticationText),
+
+    setName: toNullableString(raw.setName),
   };
 }
 

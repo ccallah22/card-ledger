@@ -435,3 +435,106 @@ export async function listCardsForChecklistSection(
     compareCardNumbers(a.card_number, b.card_number),
   );
 }
+
+// ---- Vision Engine V2, Phase 7A: catalog candidate engine search ----
+//
+// Reuses the exact per-field id-lookup building blocks searchCatalog()
+// above already has (cardIdsMatchingPlayerText/SetYear/SetText,
+// cardIdsMatchingOwnFields for card_number, intersectIdSets) rather than
+// duplicating that query logic. The only new behavior is *how* those
+// per-field id sets get combined: searchCatalog() ORs tokens together
+// per-field then intersects every token; this instead ANDs whichever
+// structured fields (player/year/set/card-number) are actually present,
+// with a fallback that progressively drops the least-recently-added field
+// (in Player -> Year -> Set -> Card Number priority order) if the
+// fully-narrowed combination returns nothing -- so one noisy OCR field
+// (e.g. a misread year) never zeroes out real candidates. This is a
+// deliberate simplification (drop-from-the-end-of-the-priority-list), not
+// an exhaustive search over every field subset.
+
+export type CandidateSearchFilters = {
+  playerName?: string | null;
+  year?: number | null;
+  // Text used for the "set" narrowing stage. Phase 7A correction: this is
+  // resolved by the caller (src/lib/catalog/candidateEngine.ts) from the
+  // merged OCR's genuine setName evidence, falling back to brand/
+  // manufacturer text ONLY when no setName evidence exists at all -- this
+  // repository function stays a plain single-value search stage and has no
+  // opinion on that fallback policy. cardIdsMatchingSetText already
+  // searches both sets.name and sets.search_text, so a brand/manufacturer
+  // fallback value is still a reasonable (if broader) text search here,
+  // even though it is never used for *scoring* set evidence.
+  setName?: string | null;
+  cardNumber?: string | null;
+};
+
+// Smaller than searchCatalog()'s TOKEN_ID_LOOKUP_LIMIT (200): the candidate
+// engine (src/lib/catalog/candidateEngine.ts) does one additional variant
+// lookup per pooled card to score the parallel field, so the pool this
+// feeds is deliberately kept modest.
+const CANDIDATE_POOL_LIMIT = 50;
+
+// Card numbers are compared/searched with a conservative normalization:
+// trim, and ignore a single leading "#" (a common OCR/typed artifact) --
+// nothing else is stripped, so meaningful prefixes/suffixes like "RC-12"
+// are preserved exactly.
+function normalizeCardNumberForSearch(value: string): string {
+  return value.trim().replace(/^#/, "");
+}
+
+/**
+ * Staged catalog narrowing for the OCR candidate engine: given whichever of
+ * playerName/year/setName/cardNumber are actually available, returns a
+ * bounded pool of CardWithContext candidates (same shape as
+ * searchCardsWithContext) for the engine to score -- never the whole
+ * catalog, and never empty just because one field didn't narrow cleanly
+ * when a broader combination would have matched something.
+ */
+export async function searchCandidateCards(
+  filters: CandidateSearchFilters,
+): Promise<CardWithContext[]> {
+  const stages: Array<() => Promise<number[]>> = [];
+
+  const playerName = filters.playerName?.trim();
+  if (playerName) {
+    stages.push(() => cardIdsMatchingPlayerText(playerName));
+  }
+  const year = filters.year;
+  if (year !== null && year !== undefined && Number.isFinite(year)) {
+    stages.push(() => cardIdsMatchingSetYear(year));
+  }
+  const setName = filters.setName?.trim();
+  if (setName) {
+    stages.push(() => cardIdsMatchingSetText(setName));
+  }
+  const cardNumber = filters.cardNumber?.trim();
+  if (cardNumber) {
+    const normalized = normalizeCardNumberForSearch(cardNumber);
+    stages.push(() => cardIdsMatchingOwnFields(`card_number.ilike.%${normalized}%`));
+  }
+
+  if (stages.length === 0) return [];
+
+  const idSets = (await Promise.all(stages.map((stage) => stage()))).map(
+    (ids) => new Set(ids),
+  );
+
+  let finalIds: number[] = [];
+  for (let count = idSets.length; count >= 1; count -= 1) {
+    finalIds = intersectIdSets(idSets.slice(0, count));
+    if (finalIds.length > 0) break;
+  }
+
+  if (finalIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("cards")
+    .select(CARD_CONTEXT_SELECT)
+    .in("id", finalIds)
+    .order("id", { ascending: true })
+    .limit(CANDIDATE_POOL_LIMIT);
+
+  if (error) throw error;
+
+  return ((data ?? []) as unknown as CardWithContextRow[]).map(toCardWithContext);
+}

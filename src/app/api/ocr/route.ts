@@ -12,6 +12,7 @@ const FRONT_FIELDS = [
   "playerName",
   "teamName",
   "brand",
+  "setName",
   "visibleYear",
   "cardName",
   "parallelText",
@@ -23,6 +24,7 @@ const BACK_FIELDS = [
   "cardNumber",
   "copyrightYear",
   "manufacturer",
+  "setName",
   "smallPrint",
   "statisticsText",
   "checklistText",
@@ -35,8 +37,8 @@ function buildPrompt(side: OcrSide): string {
   const sideLabel = side === "front" ? "FRONT" : "BACK";
   const priorityHint =
     side === "front"
-      ? "player identity, team, brand, year, card/subset name, parallel/color name, and any autograph or relic/memorabilia wording"
-      : "card number, copyright year, manufacturer, small print, statistics, checklist references, serial numbering, and any grading/authentication wording";
+      ? "player identity, team, brand/manufacturer, the visible product/set name (e.g. \"Select\", \"Prizm\", \"Donruss Optic\" -- the product line, NOT the manufacturer), year, card/subset name, parallel/color name, and any autograph or relic/memorabilia wording"
+      : "card number, copyright year, manufacturer, the official checklist/product/set wording (the product line name, distinct from the manufacturer), small print, statistics, checklist references, serial numbering, and any grading/authentication wording";
 
   return [
     `This image is the ${sideLabel} of a sports trading card. Prioritize ${priorityHint}.`,

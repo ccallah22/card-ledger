@@ -37,6 +37,7 @@ import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr, toLegacyOcrResult, type CardOcrResult } from "@/lib/ocr";
 import { mergeCardOcrResults } from "@/lib/ocr/merge";
+import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
 import { rankCatalogMatches } from "@/lib/catalog/rankingEngine";
 import { shouldAutoSelect } from "@/lib/catalog/autoSelect";
@@ -434,6 +435,36 @@ function NewCardPageInner() {
     () => mergeCardOcrResults(frontOcrResult, backOcrResult),
     [frontOcrResult, backOcrResult],
   );
+
+  // Vision Engine V2, Phase 7A: catalog candidate engine -- a ranked,
+  // scored search result only. findCatalogCandidates() hits the database
+  // (searches, never mutates), so it can't be a plain synchronous useMemo;
+  // this is the async equivalent (effect + state, recomputed only when the
+  // merged OCR result actually changes). Nothing here selects a candidate,
+  // fills any form field, or changes catalogQuery/saved data -- see the
+  // read-only summary display below.
+  const [candidateResults, setCandidateResults] = useState<CatalogCandidate[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!mergedOcr.frontAvailable && !mergedOcr.backAvailable) {
+      setCandidateResults([]);
+      return;
+    }
+
+    findCatalogCandidates(mergedOcr)
+      .then((results) => {
+        if (active) setCandidateResults(results);
+      })
+      .catch(() => {
+        if (active) setCandidateResults([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [mergedOcr]);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
@@ -1402,6 +1433,26 @@ function NewCardPageInner() {
             {mergedOcr.conflictCount > 0
               ? ` • ${mergedOcr.conflictCount} field conflict${mergedOcr.conflictCount === 1 ? "" : "s"}`
               : ""}
+          </div>
+        ) : null}
+
+        {/* Vision Engine V2, Phase 7A: read-only candidate summary. This
+            never fills a field, never touches catalogQuery, and never
+            saves anything -- it's purely informational, ranked-search
+            output for a future review step to build on. */}
+        {!isWishlistCard && candidateResults.length > 0 ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
+            <div className="font-semibold text-zinc-900">Top Candidate</div>
+            <div className="mt-1">
+              {[candidateResults[0].setName, candidateResults[0].year].filter(Boolean).join(" ")}
+            </div>
+            <div>{candidateResults[0].playerName ?? candidateResults[0].cardTitle}</div>
+            <div className="mt-1 text-zinc-500">
+              Score: {candidateResults[0].score.toFixed(1)}
+            </div>
+            <div className="mt-2 text-zinc-500">
+              Top {candidateResults.length} candidate{candidateResults.length === 1 ? "" : "s"} found
+            </div>
           </div>
         ) : null}
 

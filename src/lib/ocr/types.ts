@@ -54,6 +54,15 @@ export type CardOcrExtractedFields = {
   checklistText?: string | null;
   serialNumbering?: string | null;
   authenticationText?: string | null;
+
+  // Vision Engine V2, Phase 7A correction: the visible product/set name
+  // (e.g. "Select", "Prizm", "Donruss Optic") -- deliberately distinct from
+  // `brand`/`manufacturer` above, which name the *company* that made the
+  // card, not the *product line*. Asked about on BOTH sides (see the
+  // front/back prompts in src/app/api/ocr/route.ts): front usually shows
+  // this prominently as visible product text; back sometimes repeats it in
+  // official checklist/product wording, which is often more structured.
+  setName?: string | null;
 };
 
 // The structured, JSON-safe, side-aware OCR result. Written directly into
