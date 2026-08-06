@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { slugify } from "@/lib/slug";
 
@@ -23,8 +24,9 @@ export async function listParallelTypes(): Promise<ParallelTypeRow[]> {
 
 export async function findParallelTypeByName(
   name: string,
+  client: SupabaseClient = supabase,
 ): Promise<ParallelTypeRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("parallel_types")
     .select("*")
     .ilike("name", name)
@@ -37,11 +39,12 @@ export async function findParallelTypeByName(
 
 export async function findOrCreateParallelType(
   name: string,
+  client: SupabaseClient = supabase,
 ): Promise<ParallelTypeRow> {
-  const existing = await findParallelTypeByName(name);
+  const existing = await findParallelTypeByName(name, client);
   if (existing) return existing;
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("parallel_types")
     .insert({ name, slug: slugify(name) })
     .select("*")

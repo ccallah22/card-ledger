@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 export type CardPlayerRow = {
@@ -7,8 +8,11 @@ export type CardPlayerRow = {
   created_at: string;
 };
 
-export async function listCardPlayers(cardId: number): Promise<CardPlayerRow[]> {
-  const { data, error } = await supabase
+export async function listCardPlayers(
+  cardId: number,
+  client: SupabaseClient = supabase,
+): Promise<CardPlayerRow[]> {
+  const { data, error } = await client
     .from("card_players")
     .select("*")
     .eq("card_id", cardId);
@@ -67,8 +71,9 @@ export async function findOrCreateCardPlayer(
   cardId: number,
   playerId: number,
   role: string = "primary",
+  client: SupabaseClient = supabase,
 ): Promise<CardPlayerRow> {
-  const { data: existing, error: findError } = await supabase
+  const { data: existing, error: findError } = await client
     .from("card_players")
     .select("*")
     .eq("card_id", cardId)
@@ -78,7 +83,7 @@ export async function findOrCreateCardPlayer(
   if (findError) throw findError;
   if (existing) return existing as CardPlayerRow;
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("card_players")
     .insert({ card_id: cardId, player_id: playerId, role })
     .select("*")

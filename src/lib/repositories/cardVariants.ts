@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 export type CardVariantRow = {
@@ -72,8 +73,9 @@ export async function findCardVariant(
   cardId: number,
   parallelTypeId: number | null,
   printRun: number | null,
+  client: SupabaseClient = supabase,
 ): Promise<CardVariantRow | null> {
-  let query = supabase.from("card_variants").select("*").eq("card_id", cardId);
+  let query = client.from("card_variants").select("*").eq("card_id", cardId);
   query = parallelTypeId
     ? query.eq("parallel_type_id", parallelTypeId)
     : query.is("parallel_type_id", null);
@@ -88,8 +90,9 @@ export async function findCardVariant(
 
 export async function createCardVariant(
   input: CreateCardVariantInput,
+  client: SupabaseClient = supabase,
 ): Promise<CardVariantRow> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("card_variants")
     .insert({
       card_id: input.card_id,
@@ -114,14 +117,16 @@ export async function createCardVariant(
 
 export async function findOrCreateCardVariant(
   input: CreateCardVariantInput,
+  client: SupabaseClient = supabase,
 ): Promise<CardVariantRow> {
   const existing = await findCardVariant(
     input.card_id,
     input.parallel_type_id ?? null,
     input.print_run ?? null,
+    client,
   );
   if (existing) return existing;
-  return createCardVariant(input);
+  return createCardVariant(input, client);
 }
 
 // ---- Catalog v2 (card_id, parallel_type_id, print_run, swatch_descriptor)
@@ -144,8 +149,9 @@ export type CreateCardVariantV2Input = {
 
 export async function findCardVariantV2(
   input: CreateCardVariantV2Input,
+  client: SupabaseClient = supabase,
 ): Promise<CardVariantRow | null> {
-  let query = supabase.from("card_variants").select("*").eq("card_id", input.cardId);
+  let query = client.from("card_variants").select("*").eq("card_id", input.cardId);
   query = input.parallelTypeId
     ? query.eq("parallel_type_id", input.parallelTypeId)
     : query.is("parallel_type_id", null);
@@ -164,11 +170,12 @@ export async function findCardVariantV2(
 
 export async function findOrCreateCardVariantV2(
   input: CreateCardVariantV2Input,
+  client: SupabaseClient = supabase,
 ): Promise<CardVariantRow> {
-  const existing = await findCardVariantV2(input);
+  const existing = await findCardVariantV2(input, client);
   if (existing) return existing;
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("card_variants")
     .insert({
       card_id: input.cardId,

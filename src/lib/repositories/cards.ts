@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 export type CardRow = {
@@ -289,8 +290,9 @@ export async function searchCatalog(query: string): Promise<CardWithContext[]> {
 export async function findCardBySetAndNumber(
   setId: number,
   cardNumber: string,
+  client: SupabaseClient = supabase,
 ): Promise<CardRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("cards")
     .select("*")
     .eq("set_id", setId)
@@ -315,8 +317,11 @@ export type CreateCardInput = {
   search_text?: string | null;
 };
 
-export async function createCard(input: CreateCardInput): Promise<CardRow> {
-  const { data, error } = await supabase
+export async function createCard(
+  input: CreateCardInput,
+  client: SupabaseClient = supabase,
+): Promise<CardRow> {
+  const { data, error } = await client
     .from("cards")
     .insert({
       set_id: input.set_id,
@@ -338,10 +343,13 @@ export async function createCard(input: CreateCardInput): Promise<CardRow> {
   return data as CardRow;
 }
 
-export async function findOrCreateCard(input: CreateCardInput): Promise<CardRow> {
-  const existing = await findCardBySetAndNumber(input.set_id, input.card_number);
+export async function findOrCreateCard(
+  input: CreateCardInput,
+  client: SupabaseClient = supabase,
+): Promise<CardRow> {
+  const existing = await findCardBySetAndNumber(input.set_id, input.card_number, client);
   if (existing) return existing;
-  return createCard(input);
+  return createCard(input, client);
 }
 
 // ---- Catalog v2 (checklist_section_id, card_number) identity ----
@@ -360,8 +368,9 @@ export type CardLookupInput = {
 export async function findCardBySectionAndNumber(
   checklistSectionId: number,
   cardNumber: string,
+  client: SupabaseClient = supabase,
 ): Promise<CardRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("cards")
     .select("*")
     .eq("checklist_section_id", checklistSectionId)
@@ -383,11 +392,18 @@ export type CreateCardV2Input = {
   isInsert?: boolean;
 };
 
-export async function findOrCreateCardV2(input: CreateCardV2Input): Promise<CardRow> {
-  const existing = await findCardBySectionAndNumber(input.checklistSectionId, input.cardNumber);
+export async function findOrCreateCardV2(
+  input: CreateCardV2Input,
+  client: SupabaseClient = supabase,
+): Promise<CardRow> {
+  const existing = await findCardBySectionAndNumber(
+    input.checklistSectionId,
+    input.cardNumber,
+    client,
+  );
   if (existing) return existing;
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("cards")
     .insert({
       set_id: input.setId,

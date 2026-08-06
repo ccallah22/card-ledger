@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { slugify } from "@/lib/slug";
 
@@ -61,8 +62,11 @@ export async function getSet(id: number): Promise<SetRow | null> {
   return data as SetRow | null;
 }
 
-export async function findSetBySlug(slug: string): Promise<SetRow | null> {
-  const { data, error } = await supabase
+export async function findSetBySlug(
+  slug: string,
+  client: SupabaseClient = supabase,
+): Promise<SetRow | null> {
+  const { data, error } = await client
     .from("sets")
     .select("*")
     .eq("slug", slug)
@@ -87,8 +91,11 @@ export type ManufacturerRow = {
   updated_at: string;
 };
 
-export async function findManufacturerBySlug(slug: string): Promise<ManufacturerRow | null> {
-  const { data, error } = await supabase
+export async function findManufacturerBySlug(
+  slug: string,
+  client: SupabaseClient = supabase,
+): Promise<ManufacturerRow | null> {
+  const { data, error } = await client
     .from("manufacturers")
     .select("*")
     .eq("slug", slug)
@@ -105,8 +112,9 @@ export type CreateManufacturerInput = {
 
 export async function createManufacturer(
   input: CreateManufacturerInput,
+  client: SupabaseClient = supabase,
 ): Promise<ManufacturerRow> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("manufacturers")
     .insert({ name: input.name, slug: slugify(input.name) })
     .select("*")
@@ -119,10 +127,11 @@ export async function createManufacturer(
 
 export async function findOrCreateManufacturer(
   input: CreateManufacturerInput,
+  client: SupabaseClient = supabase,
 ): Promise<ManufacturerRow> {
-  const existing = await findManufacturerBySlug(slugify(input.name));
+  const existing = await findManufacturerBySlug(slugify(input.name), client);
   if (existing) return existing;
-  return createManufacturer(input);
+  return createManufacturer(input, client);
 }
 
 export type BrandRow = {
@@ -137,8 +146,9 @@ export type BrandRow = {
 export async function findBrandBySlug(
   manufacturerId: number,
   slug: string,
+  client: SupabaseClient = supabase,
 ): Promise<BrandRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("brands")
     .select("*")
     .eq("manufacturer_id", manufacturerId)
@@ -155,8 +165,11 @@ export type CreateBrandInput = {
   name: string;
 };
 
-export async function createBrand(input: CreateBrandInput): Promise<BrandRow> {
-  const { data, error } = await supabase
+export async function createBrand(
+  input: CreateBrandInput,
+  client: SupabaseClient = supabase,
+): Promise<BrandRow> {
+  const { data, error } = await client
     .from("brands")
     .insert({
       manufacturer_id: input.manufacturer_id,
@@ -171,10 +184,13 @@ export async function createBrand(input: CreateBrandInput): Promise<BrandRow> {
   return data as BrandRow;
 }
 
-export async function findOrCreateBrand(input: CreateBrandInput): Promise<BrandRow> {
-  const existing = await findBrandBySlug(input.manufacturer_id, slugify(input.name));
+export async function findOrCreateBrand(
+  input: CreateBrandInput,
+  client: SupabaseClient = supabase,
+): Promise<BrandRow> {
+  const existing = await findBrandBySlug(input.manufacturer_id, slugify(input.name), client);
   if (existing) return existing;
-  return createBrand(input);
+  return createBrand(input, client);
 }
 
 export type CreateSetInput = {
@@ -188,7 +204,10 @@ export type CreateSetInput = {
   search_text?: string | null;
 };
 
-export async function createSet(input: CreateSetInput): Promise<SetRow> {
+export async function createSet(
+  input: CreateSetInput,
+  client: SupabaseClient = supabase,
+): Promise<SetRow> {
   const slug = slugify(`${input.name}-${input.release_year ?? ""}`);
 
   // Catalog v2: resolve manufacturer/brand names to real rows when
@@ -202,17 +221,20 @@ export async function createSet(input: CreateSetInput): Promise<SetRow> {
 
   const manufacturerName = input.manufacturer?.trim();
   if (manufacturerName) {
-    const manufacturer = await findOrCreateManufacturer({ name: manufacturerName });
+    const manufacturer = await findOrCreateManufacturer({ name: manufacturerName }, client);
     manufacturerId = manufacturer.id;
 
     const brandName = input.brand?.trim();
     if (brandName) {
-      const brand = await findOrCreateBrand({ manufacturer_id: manufacturer.id, name: brandName });
+      const brand = await findOrCreateBrand(
+        { manufacturer_id: manufacturer.id, name: brandName },
+        client,
+      );
       brandId = brand.id;
     }
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("sets")
     .insert({
       name: input.name,
@@ -235,9 +257,12 @@ export async function createSet(input: CreateSetInput): Promise<SetRow> {
   return data as SetRow;
 }
 
-export async function findOrCreateSet(input: CreateSetInput): Promise<SetRow> {
+export async function findOrCreateSet(
+  input: CreateSetInput,
+  client: SupabaseClient = supabase,
+): Promise<SetRow> {
   const slug = slugify(`${input.name}-${input.release_year ?? ""}`);
-  const existing = await findSetBySlug(slug);
+  const existing = await findSetBySlug(slug, client);
   if (existing) return existing;
-  return createSet(input);
+  return createSet(input, client);
 }

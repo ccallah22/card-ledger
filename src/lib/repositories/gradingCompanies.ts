@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 export type GradingCompanyRow = {
@@ -22,8 +23,9 @@ export async function listGradingCompanies(): Promise<GradingCompanyRow[]> {
 
 export async function findGradingCompanyByName(
   name: string,
+  client: SupabaseClient = supabase,
 ): Promise<GradingCompanyRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("grading_companies")
     .select("*")
     .or(`name.ilike.${name},abbreviation.ilike.${name}`)
@@ -36,11 +38,12 @@ export async function findGradingCompanyByName(
 
 export async function findOrCreateGradingCompany(
   name: string,
+  client: SupabaseClient = supabase,
 ): Promise<GradingCompanyRow> {
-  const existing = await findGradingCompanyByName(name);
+  const existing = await findGradingCompanyByName(name, client);
   if (existing) return existing;
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("grading_companies")
     .insert({ name, abbreviation: name })
     .select("*")

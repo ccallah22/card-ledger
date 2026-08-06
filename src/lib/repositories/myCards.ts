@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { CardCondition, CardComp, CardStatus, GradingStatus, ImageType } from "@/lib/types";
 import { findOrCreateSet, getSet, type SetRow } from "@/lib/repositories/sets";
@@ -302,19 +303,23 @@ async function resolveCardForPlayer(
   cardNumber: string,
   playerId: number | null,
   cardFields: { title: string | null; rookie_card: boolean; is_insert: boolean },
+  client: SupabaseClient = supabase,
 ): Promise<CardRow> {
   let candidateNumber = cardNumber;
   let attempt = 1;
 
   while (true) {
-    const existing = await findCardBySetAndNumber(setId, candidateNumber);
+    const existing = await findCardBySetAndNumber(setId, candidateNumber, client);
 
     if (!existing) {
-      return createCard({
-        set_id: setId,
-        card_number: candidateNumber,
-        ...cardFields,
-      });
+      return createCard(
+        {
+          set_id: setId,
+          card_number: candidateNumber,
+          ...cardFields,
+        },
+        client,
+      );
     }
 
     if (playerId === null) {
@@ -322,7 +327,7 @@ async function resolveCardForPlayer(
       return existing;
     }
 
-    const links = await listCardPlayers(existing.id);
+    const links = await listCardPlayers(existing.id, client);
     if (links.length === 0 || links.some((l) => l.player_id === playerId)) {
       return existing;
     }
@@ -332,17 +337,33 @@ async function resolveCardForPlayer(
   }
 }
 
-async function resolveCatalogIds(profileId: string, input: MyCardInput) {
+/**
+ * `client` defaults to the browser anon-key singleton so every existing
+ * caller (createMyCard, called from the browser) is unaffected. The Phase 1
+ * server-only catalog resolution route passes a service-role client
+ * explicitly instead, reusing this exact function -- same collision
+ * handling, same find-before-create semantics, same resolved id shape -- so
+ * there is exactly one implementation of catalog identity/collision logic
+ * regardless of which key resolves it.
+ */
+export async function resolveCatalogIds(
+  profileId: string,
+  input: MyCardInput,
+  client: SupabaseClient = supabase,
+) {
   const releaseYear = input.year ? Number.parseInt(input.year, 10) : NaN;
 
-  const set = await findOrCreateSet({
-    name: input.setName,
-    release_year: Number.isFinite(releaseYear) ? releaseYear : null,
-  });
+  const set = await findOrCreateSet(
+    {
+      name: input.setName,
+      release_year: Number.isFinite(releaseYear) ? releaseYear : null,
+    },
+    client,
+  );
 
   const trimmedPlayerName = input.playerName.trim();
   const player = trimmedPlayerName
-    ? await findOrCreatePlayer({ full_name: trimmedPlayerName })
+    ? await findOrCreatePlayer({ full_name: trimmedPlayerName }, client)
     : null;
 
   // Catalog v2: when a checklist section is given, resolve the card through
@@ -350,26 +371,35 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput) {
   // resolveCardForPlayer path. Omitted (the case for every existing caller
   // today) falls through to the exact existing Catalog v1 behavior.
   const card = input.checklistSectionId
-    ? await findOrCreateCardV2({
-        checklistSectionId: input.checklistSectionId,
-        setId: set.id,
-        cardNumber: input.cardNumber ?? "",
-        title: input.insert ?? null,
-        isInsert: !!input.insert,
-      })
-    : await resolveCardForPlayer(set.id, input.cardNumber ?? "", player?.id ?? null, {
-        title: input.insert ?? null,
-        rookie_card: input.isRookie ?? false,
-        is_insert: !!input.insert,
-      });
+    ? await findOrCreateCardV2(
+        {
+          checklistSectionId: input.checklistSectionId,
+          setId: set.id,
+          cardNumber: input.cardNumber ?? "",
+          title: input.insert ?? null,
+          isInsert: !!input.insert,
+        },
+        client,
+      )
+    : await resolveCardForPlayer(
+        set.id,
+        input.cardNumber ?? "",
+        player?.id ?? null,
+        {
+          title: input.insert ?? null,
+          rookie_card: input.isRookie ?? false,
+          is_insert: !!input.insert,
+        },
+        client,
+      );
 
   if (player) {
-    await findOrCreateCardPlayer(card.id, player.id);
+    await findOrCreateCardPlayer(card.id, player.id, "primary", client);
   }
 
   let parallelTypeId: number | null = null;
   if (input.parallel?.trim()) {
-    const parallelType = await findOrCreateParallelType(input.parallel.trim());
+    const parallelType = await findOrCreateParallelType(input.parallel.trim(), client);
     parallelTypeId = parallelType.id;
   }
 
@@ -378,33 +408,39 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput) {
   // identity instead of the v1 (card, parallel, print run) lookup. Omitted
   // falls through to the exact existing Catalog v1 behavior.
   const variant = input.swatchDescriptor
-    ? await findOrCreateCardVariantV2({
-        cardId: card.id,
-        parallelTypeId,
-        printRun: input.serialTotal ?? null,
-        swatchDescriptor: input.swatchDescriptor,
-        isAutograph: input.isAutograph ?? false,
-        isMemorabilia: input.isPatch ?? false,
-      })
-    : await findOrCreateCardVariant({
-        card_id: card.id,
-        parallel_type_id: parallelTypeId,
-        print_run: input.serialTotal ?? null,
-        name_override: input.variation ?? null,
-        serial_numbered: !!input.serialTotal,
-        has_autograph: input.isAutograph ?? false,
-        has_memorabilia: input.isPatch ?? false,
-      });
+    ? await findOrCreateCardVariantV2(
+        {
+          cardId: card.id,
+          parallelTypeId,
+          printRun: input.serialTotal ?? null,
+          swatchDescriptor: input.swatchDescriptor,
+          isAutograph: input.isAutograph ?? false,
+          isMemorabilia: input.isPatch ?? false,
+        },
+        client,
+      )
+    : await findOrCreateCardVariant(
+        {
+          card_id: card.id,
+          parallel_type_id: parallelTypeId,
+          print_run: input.serialTotal ?? null,
+          name_override: input.variation ?? null,
+          serial_numbered: !!input.serialTotal,
+          has_autograph: input.isAutograph ?? false,
+          has_memorabilia: input.isPatch ?? false,
+        },
+        client,
+      );
 
   let locationId: number | null = null;
   if (input.location?.trim()) {
-    const location = await findOrCreateLocation(profileId, input.location.trim());
+    const location = await findOrCreateLocation(profileId, input.location.trim(), client);
     locationId = location.id;
   }
 
   let gradingCompanyId: number | null = null;
   if (input.grader?.trim()) {
-    const company = await findOrCreateGradingCompany(input.grader.trim());
+    const company = await findOrCreateGradingCompany(input.grader.trim(), client);
     gradingCompanyId = company.id;
   }
 

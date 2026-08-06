@@ -1,0 +1,45 @@
+/**
+ * Pure types shared by the /api/catalog/resolve-card route and its future
+ * client caller. Deliberately has no runtime code and no "server-only"
+ * import, so a client component can safely `import type` from this file
+ * without pulling in anything server-only.
+ *
+ * CatalogResolutionInput is a narrow subset of MyCardInput
+ * (src/lib/repositories/myCards.ts): only the fields resolveCatalogIds
+ * actually reads today. It intentionally does NOT include manufacturer/
+ * brand -- MyCardInput has no such fields, so the live "add missing card"
+ * flow never populates them either, even though findOrCreateSet supports
+ * resolving them when present (only the bulk catalog importer passes
+ * them). Adding them here would widen the contract beyond what "the actual
+ * fields needed by the current catalog resolution logic" covers.
+ */
+export type CatalogResolutionInput = {
+  playerName: string;
+  setName: string;
+  year?: string | null;
+  cardNumber?: string | null;
+
+  checklistSectionId?: number | null;
+  swatchDescriptor?: string | null;
+
+  insert?: string | null;
+  parallel?: string | null;
+  variation?: string | null;
+
+  serialTotal?: number | null;
+
+  isRookie?: boolean;
+  isAutograph?: boolean;
+  isPatch?: boolean;
+
+  location?: string | null;
+  grader?: string | null;
+};
+
+/** Exactly the shape resolveCatalogIds already returns today -- unchanged. */
+export type CatalogResolutionResult = {
+  cardId: number;
+  cardVariantId: number;
+  locationId: number | null;
+  gradingCompanyId: number | null;
+};

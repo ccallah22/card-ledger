@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { slugify } from "@/lib/slug";
 
@@ -144,8 +145,9 @@ export async function getPlayer(id: number): Promise<PlayerRow | null> {
 export async function findPlayerBySlug(
   slug: string,
   leagueId?: number | null,
+  client: SupabaseClient = supabase,
 ): Promise<PlayerRow | null> {
-  let query = supabase.from("players").select("*").eq("slug", slug);
+  let query = client.from("players").select("*").eq("slug", slug);
   query = leagueId ? query.eq("league_id", leagueId) : query.is("league_id", null);
 
   const { data, error } = await query.maybeSingle();
@@ -164,8 +166,11 @@ export type CreatePlayerInput = {
   search_text?: string | null;
 };
 
-export async function createPlayer(input: CreatePlayerInput): Promise<PlayerRow> {
-  const { data, error } = await supabase
+export async function createPlayer(
+  input: CreatePlayerInput,
+  client: SupabaseClient = supabase,
+): Promise<PlayerRow> {
+  const { data, error } = await client
     .from("players")
     .insert({
       full_name: input.full_name,
@@ -184,9 +189,12 @@ export async function createPlayer(input: CreatePlayerInput): Promise<PlayerRow>
   return data as PlayerRow;
 }
 
-export async function findOrCreatePlayer(input: CreatePlayerInput): Promise<PlayerRow> {
+export async function findOrCreatePlayer(
+  input: CreatePlayerInput,
+  client: SupabaseClient = supabase,
+): Promise<PlayerRow> {
   const slug = slugify(input.full_name);
-  const existing = await findPlayerBySlug(slug, input.league_id ?? null);
+  const existing = await findPlayerBySlug(slug, input.league_id ?? null, client);
   if (existing) return existing;
-  return createPlayer(input);
+  return createPlayer(input, client);
 }

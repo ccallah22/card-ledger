@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 export type LocationRow = {
@@ -26,8 +27,9 @@ export async function listLocations(
 export async function findLocationByName(
   profileId: string,
   name: string,
+  client: SupabaseClient = supabase,
 ): Promise<LocationRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("locations")
     .select("*")
     .eq("profile_id", profileId)
@@ -42,11 +44,12 @@ export async function findLocationByName(
 export async function findOrCreateLocation(
   profileId: string,
   name: string,
+  client: SupabaseClient = supabase,
 ): Promise<LocationRow> {
-  const existing = await findLocationByName(profileId, name);
+  const existing = await findLocationByName(profileId, name, client);
   if (existing) return existing;
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("locations")
     .insert({ profile_id: profileId, name })
     .select("*")
