@@ -843,11 +843,15 @@ function NewCardPageInner() {
 
   // Vision Engine V2, Phase 7B: candidate confidence/explainability. Pure
   // and synchronous (unlike candidate search, it never touches the
-  // database -- it only re-examines mergedOcr + the already-fetched
-  // candidateResults), so a plain useMemo is enough.
+  // database -- it only re-examines ocrOnlyFusedEvidence + the already-
+  // fetched candidateResults), so a plain useMemo is enough.
+  // Vision Engine V3, Phase V3.2E: now reads ocrOnlyFusedEvidence instead of
+  // mergedOcr directly -- candidateConfidence.ts no longer accepts
+  // MergedCardOcrResult at all. mergedOcr itself stays alive below purely
+  // for variantCandidateEngine, which is untouched in this phase.
   const confidenceAssessments = useMemo(
-    () => assessCandidateConfidence(mergedOcr, candidateResults),
-    [mergedOcr, candidateResults],
+    () => assessCandidateConfidence(ocrOnlyFusedEvidence, candidateResults),
+    [ocrOnlyFusedEvidence, candidateResults],
   );
   const topConfidenceAssessment = getTopConfidenceAssessment(confidenceAssessments);
 

@@ -1,4 +1,4 @@
-import type { MergedCardOcrResult, MergedOcrField, OcrFieldSource } from "@/lib/ocr/merge";
+import type { EvidenceField, FusedEvidence } from "@/lib/evidence/types";
 import { WEIGHTS, type CandidateMatchReason, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 
 // Vision Engine V2, Phase 7B: candidate *confidence and explainability*.
@@ -11,6 +11,17 @@ import { WEIGHTS, type CandidateMatchReason, type CatalogCandidate } from "@/lib
 // Nothing here mutates its inputs, selects a candidate, or persists
 // anything -- it only produces an advisory, read-only assessment per
 // candidate for the UI to display.
+//
+// Vision Engine V3, Phase V3.2E: migrated from MergedCardOcrResult to
+// FusedEvidence -- this module has no knowledge of OCR or Vision anymore.
+// This is an architectural boundary migration only, not a scoring redesign:
+// MatchQuality, the confidence formula, coverage/conflict/ambiguity
+// calculations, and every threshold below are all byte-for-byte unchanged.
+// The only thing that changed is where per-field source/conflict
+// information is read from (evidence.<field> instead of merged.fields.<field>)
+// -- see deriveFieldSourceLabel below. Evidence confidence/
+// supportingObservations/conflicts are deliberately NOT used for scoring in
+// this phase; that redesign is out of scope here.
 
 export type MatchQuality =
   | "exact"
@@ -28,7 +39,11 @@ export type FieldConfidenceAssessment = {
   contribution: number;
   expected: string | null;
   actual: string | null;
-  source: OcrFieldSource;
+  // Same four values MergedOcrField.source ("front"|"back"|"both"|"unknown")
+  // always produced -- derived from FusedEvidence now (see
+  // deriveFieldSourceLabel), not re-exported from @/lib/ocr/merge, since
+  // this module must no longer import OCR types.
+  source: "front" | "back" | "both" | "unknown";
   conflict: boolean;
 };
 
@@ -154,53 +169,83 @@ function classifyField(field: string, expected: string | null, actual: string | 
   return EXACT_ONLY_FIELDS.has(field) ? classifyExactOnly(field, expected, actual) : classifyFreeText(expected, actual);
 }
 
+// Reproduces MergedOcrField.source's exact four-value meaning
+// ("front"|"back"|"both"|"unknown") from an OCR-only EvidenceField instead:
+//   - "unknown": no usable observation at all (EvidenceField.state === "missing").
+//   - "both": both ocr_front and ocr_back contributed to this field's
+//     supportingObservations (whether or not that reached "confirmed" --
+//     merge.ts's own "both" label never depended on a confidence threshold
+//     either, just literal front+back agreement).
+//   - "front"/"back": only one side contributed, OR a genuine conflict
+//     exists (EvidenceField.state === "conflicted") and this reports
+//     whichever side FusedEvidence currently selected as primarySource --
+//     the side merge.ts's own fixed per-field priority would have picked in
+//     the common case (equal front/back confidence), and the side the
+//     V3.2C-documented confidence-margin override picks otherwise (see this
+//     phase's report for that intentional divergence).
+function deriveFieldSourceLabel(field: EvidenceField<string>): "front" | "back" | "both" | "unknown" {
+  if (field.state === "missing" || !field.primarySource) return "unknown";
+
+  const contributingKinds = new Set(field.supportingObservations.map((o) => o.source.kind));
+  const hasFront = contributingKinds.has("ocr_front");
+  const hasBack = contributingKinds.has("ocr_back");
+
+  if (field.state === "conflicted") {
+    return field.primarySource.kind === "ocr_back" ? "back" : "front";
+  }
+  if (hasFront && hasBack) return "both";
+  if (hasBack) return "back";
+  return "front";
+}
+
 type FieldDefinition = {
   field: string;
   weight: number;
   reasonField: string;
-  mergedField: (merged: MergedCardOcrResult) => MergedOcrField;
+  evidenceField: (evidence: FusedEvidence) => EvidenceField<string>;
 };
 
 // Exact field-to-candidate mapping (documented per the Phase 7B spec):
-//   merged playerName        -> candidate playerName            (reasons "player")
-//   merged cardNumber        -> candidate card number evidence   (reasons "cardNumber")
-//   merged setName           -> candidate setName                (reasons "set")
-//   merged year               -> candidate year                   (reasons "year")
-//   merged brand/manufacturer -> candidate brand/manufacturer     (reasons "brand")
-//   merged parallelText       -> candidate parallel                (reasons "parallel")
-//   merged cardName           -> candidate title/misc              (reasons "misc")
+//   evidence.playerName        -> candidate playerName            (reasons "player")
+//   evidence.cardNumber        -> candidate card number evidence   (reasons "cardNumber")
+//   evidence.setName           -> candidate setName                (reasons "set")
+//   evidence.year              -> candidate year                   (reasons "year")
+//   evidence.brand/manufacturer -> candidate brand/manufacturer     (reasons "brand")
+//   evidence.parallelText      -> candidate parallel                (reasons "parallel")
+//   evidence.cardName          -> candidate title/misc              (reasons "misc")
 // Structured expected/actual values are read from candidate.reasons (already
 // computed by candidateEngine.ts against the real catalog columns) rather
 // than re-derived from candidate.cardTitle, which is a display string with
 // a fallback chain (card.title || playerName || "Card #N") that is not
 // safe to reverse-parse.
 const FIELD_DEFINITIONS: FieldDefinition[] = [
-  { field: "player", weight: WEIGHTS.player, reasonField: "player", mergedField: (m) => m.fields.playerName },
-  { field: "cardNumber", weight: WEIGHTS.cardNumber, reasonField: "cardNumber", mergedField: (m) => m.fields.cardNumber },
-  { field: "set", weight: WEIGHTS.set, reasonField: "set", mergedField: (m) => m.fields.setName },
-  { field: "year", weight: WEIGHTS.year, reasonField: "year", mergedField: (m) => m.fields.year },
+  { field: "player", weight: WEIGHTS.player, reasonField: "player", evidenceField: (e) => e.playerName },
+  { field: "cardNumber", weight: WEIGHTS.cardNumber, reasonField: "cardNumber", evidenceField: (e) => e.cardNumber },
+  { field: "set", weight: WEIGHTS.set, reasonField: "set", evidenceField: (e) => e.setName },
+  { field: "year", weight: WEIGHTS.year, reasonField: "year", evidenceField: (e) => e.year },
   {
     field: "brand",
     weight: WEIGHTS.brand,
     reasonField: "brand",
     // Same "prefer brand, else manufacturer" precedence candidateEngine.ts's
     // brandOrManufacturerMatches already uses for its `expected` value.
-    mergedField: (m) => (m.fields.brand.value ? m.fields.brand : m.fields.manufacturer),
+    evidenceField: (e) => (e.brand.value ? e.brand : e.manufacturer),
   },
-  { field: "parallel", weight: WEIGHTS.parallel, reasonField: "parallel", mergedField: (m) => m.fields.parallelText },
-  { field: "misc", weight: WEIGHTS.misc, reasonField: "misc", mergedField: (m) => m.fields.cardName },
+  { field: "parallel", weight: WEIGHTS.parallel, reasonField: "parallel", evidenceField: (e) => e.parallelText },
+  { field: "misc", weight: WEIGHTS.misc, reasonField: "misc", evidenceField: (e) => e.cardName },
 ];
 
 function findReason(reasons: CandidateMatchReason[], field: string): CandidateMatchReason | undefined {
   return reasons.find((r) => r.field === field);
 }
 
-function assessFields(merged: MergedCardOcrResult, candidate: CatalogCandidate): FieldConfidenceAssessment[] {
-  return FIELD_DEFINITIONS.map(({ field, weight, reasonField, mergedField }) => {
+function assessFields(evidence: FusedEvidence, candidate: CatalogCandidate): FieldConfidenceAssessment[] {
+  return FIELD_DEFINITIONS.map(({ field, weight, reasonField, evidenceField }) => {
     const reason = findReason(candidate.reasons, reasonField);
     const expected = reason?.expected ?? null;
     const actual = reason?.actual ?? null;
-    const merged_ = mergedField(merged);
+    const evidenceField_ = evidenceField(evidence);
+    const conflict = evidenceField_.state === "conflicted";
 
     let quality = classifyField(field, expected, actual);
     // A field that genuinely conflicted between front and back, and whose
@@ -211,7 +256,7 @@ function assessFields(merged: MergedCardOcrResult, candidate: CatalogCandidate):
     // normalized/partial quality; the conflict is only reflected via the
     // `conflict` flag and the separate global conflictPenalty, never by
     // downgrading an otherwise-good quality here.
-    if (merged_.conflict && quality === "mismatch") {
+    if (conflict && quality === "mismatch") {
       quality = "conflict";
     }
 
@@ -226,8 +271,8 @@ function assessFields(merged: MergedCardOcrResult, candidate: CatalogCandidate):
       contribution,
       expected,
       actual,
-      source: merged_.source,
-      conflict: merged_.conflict,
+      source: deriveFieldSourceLabel(evidenceField_),
+      conflict,
     };
   });
 }
@@ -386,13 +431,13 @@ function computeRecommendation(
 
 /**
  * Produces an independent confidence/explainability assessment for every
- * candidate, given the merged OCR result they were scored against. Pure and
- * read-only: never mutates mergedOcr/candidates, never selects a candidate,
+ * candidate, given the fused evidence they were scored against. Pure and
+ * read-only: never mutates evidence/candidates, never selects a candidate,
  * never touches the catalog or persistence. Preserves candidate ordering
  * (the array is assessed in place, not re-sorted).
  */
 export function assessCandidateConfidence(
-  mergedOcr: MergedCardOcrResult,
+  evidence: FusedEvidence,
   candidates: CatalogCandidate[],
 ): CandidateConfidenceAssessment[] {
   if (candidates.length === 0) return [];
@@ -400,7 +445,7 @@ export function assessCandidateConfidence(
   const scores = candidates.map((c) => c.score);
 
   return candidates.map((candidate, index) => {
-    const fieldAssessments = assessFields(mergedOcr, candidate);
+    const fieldAssessments = assessFields(evidence, candidate);
     const evidenceCoverage = computeEvidenceCoverage(fieldAssessments);
     const conflictPenalty = computeConflictPenalty(fieldAssessments);
 
