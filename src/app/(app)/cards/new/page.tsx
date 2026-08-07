@@ -40,6 +40,12 @@ import { mergeCardOcrResults, type MergedCardOcrResult } from "@/lib/ocr/merge";
 import { runVisionAnalysis, type CardVisionAnalysis, type VisionImageSide } from "@/lib/vision";
 import { isCardVisionAnalysis } from "@/lib/vision/validateVisionAnalysis";
 import { VISION_ANALYSIS_VERSION } from "@/lib/vision/types";
+import {
+  buildObservationList,
+  hasSignificantUncertainty,
+  qualitySummaryLabel,
+  summarizeImageQuality,
+} from "@/lib/vision/formatObservations";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
@@ -220,6 +226,43 @@ function ocrStatusLabel(
     return result?.rawText ? `${label} text detected` : "No readable text detected";
   }
   return "";
+}
+
+// Vision Engine V3, Phase V3.1C: presentation-only cap on how many
+// warnings are ever shown for one side, per the requirement to keep this
+// compact and to never surface internal parser/provider detail wholesale.
+const MAX_VISIBLE_WARNINGS = 2;
+
+/**
+ * Read-only display for one side's completed CardVisionAnalysis. Every
+ * derived value comes from the pure helpers in
+ * src/lib/vision/formatObservations.ts -- this component itself contains
+ * no observation logic, no confidence math, and no field-name knowledge.
+ * Never fills a form field, never selects a candidate/variant, never calls
+ * the vision endpoint. Rendering this component cannot trigger a new
+ * analysis -- it only reads the already-resolved `result` prop.
+ */
+function VisualAnalysisSide({ label, result }: { label: string; result: CardVisionAnalysis }) {
+  const items = buildObservationList(result);
+  const quality = qualitySummaryLabel(summarizeImageQuality(result.imageQuality));
+  const uncertain = hasSignificantUncertainty(result);
+  const warnings = (result.warnings ?? []).slice(0, MAX_VISIBLE_WARNINGS);
+
+  return (
+    <div className="mt-2 first:mt-0">
+      <h4 className="font-medium text-zinc-800">{label}</h4>
+      <p className="text-zinc-500">{quality}</p>
+      {items.length > 0 ? (
+        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : null}
+      {uncertain ? <p className="mt-1 text-zinc-400">Some details were unclear.</p> : null}
+      {warnings.length > 0 ? <p className="mt-1 text-zinc-400">{warnings.join(" • ")}</p> : null}
+    </div>
+  );
 }
 
 function NewCardPageInner() {
@@ -2109,6 +2152,27 @@ function NewCardPageInner() {
                 ))}
               </ul>
             )}
+          </div>
+        ) : null}
+
+        {/* Vision Engine V3, Phase V3.1C: read-only visual-observation
+            summary. Rendered only from frontVisionResult/backVisionResult,
+            which already exist as state (see the vision effects above) and
+            are never mutated by this section -- rendering it cannot trigger
+            a new /api/vision call, cannot fill a form field, and cannot
+            select a candidate or variant. Shown only when at least one side
+            has a completed result; a failed or missing side is simply
+            absent here (no failure banner in this phase -- see the vision
+            effects' own comments on failure handling). */}
+        {!isWishlistCard && (frontVisionResult || backVisionResult) ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
+            <h3 className="font-semibold text-zinc-900">Visual Analysis</h3>
+            {frontVisionResult ? (
+              <VisualAnalysisSide label="Front" result={frontVisionResult} />
+            ) : null}
+            {backVisionResult ? (
+              <VisualAnalysisSide label="Back" result={backVisionResult} />
+            ) : null}
           </div>
         ) : null}
 
