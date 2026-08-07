@@ -48,6 +48,7 @@ import {
 } from "@/lib/vision/formatObservations";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
+import { EvidenceInspector } from "@/components/evidence/EvidenceInspector";
 import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
 import {
@@ -2222,6 +2223,16 @@ function NewCardPageInner() {
             {backVisionResult ? (
               <VisualAnalysisSide label="Back" result={backVisionResult} />
             ) : null}
+          </div>
+        ) : null}
+
+        {/* Vision Engine V3, Phase V3.3A: read-only Evidence Inspector.
+            Renders the same fullFusedEvidence object already computed above
+            for variant ranking -- never recomputed here, never mutated,
+            no callbacks, no save behavior. */}
+        {!isWishlistCard ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3">
+            <EvidenceInspector evidence={fullFusedEvidence} />
           </div>
         ) : null}
 
