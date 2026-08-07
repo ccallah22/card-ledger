@@ -1,4 +1,4 @@
-import type { MergedCardOcrResult } from "@/lib/ocr/merge";
+import type { FusedEvidence } from "@/lib/evidence/types";
 import {
   searchCandidateCards,
   type CardWithContext,
@@ -8,12 +8,26 @@ import {
   type CardVariantSummary,
 } from "@/lib/repositories/cardVariants";
 
-// Vision Engine V2, Phase 7A: catalog candidate engine. Given a merged OCR
-// result, searches the normalized catalog and produces a ranked, scored
+// Vision Engine V2, Phase 7A: catalog candidate engine. Given fused
+// evidence, searches the normalized catalog and produces a ranked, scored
 // list of plausible candidates -- it does NOT decide a winner. No
 // automatic selection, no catalog mutation, no confidence engine, no
 // visual/fingerprint matching. All of that is explicitly out of scope
 // here; this only narrows and scores.
+//
+// Vision Engine V3, Phase V3.2D: migrated from MergedCardOcrResult to
+// FusedEvidence -- this module has no knowledge of OCR or Vision anymore,
+// only of the evidence layer's provider-neutral shape. It reads exactly the
+// same seven conceptual fields it always has
+// (playerName/cardNumber/setName/year/brand/manufacturer/parallelText/
+// cardName) via evidence.<field>.value; it does not yet read confidence,
+// state, conflicts, or supportingObservations, and it does not read any
+// visual-only field (dominantColor/borderColor/orientation/
+// serialAreaVisible/autographPresent/memorabiliaPresent) -- those remain
+// out of scope for CARD candidate ranking in this phase. Callers are
+// responsible for what evidence they pass in; see cards/new/page.tsx's
+// deliberately OCR-only FusedEvidence built for this call (Vision inputs
+// omitted) so visual evidence cannot yet influence card search.
 
 export type CandidateMatchReason = {
   field: string;
@@ -125,9 +139,9 @@ function toYearNumber(value: string | null): number | null {
 // narrowing fallback when OCR gave no set evidence at all, so the search
 // doesn't under-narrow just because the model only found a manufacturer
 // logo. This fallback is documented here and nowhere near scoring.
-function resolveSetSearchText(merged: MergedCardOcrResult): string | null {
-  if (merged.fields.setName.value) return merged.fields.setName.value;
-  return merged.fields.brand.value ?? merged.fields.manufacturer.value ?? null;
+function resolveSetSearchText(evidence: FusedEvidence): string | null {
+  if (evidence.setName.value) return evidence.setName.value;
+  return evidence.brand.value ?? evidence.manufacturer.value ?? null;
 }
 
 // Brand/manufacturer evidence is genuinely two OCR fields (brand,
@@ -137,11 +151,11 @@ function resolveSetSearchText(merged: MergedCardOcrResult): string | null {
 // agree -- still exactly one combined reason/weight, never double-scored,
 // and NEVER compared against setName (that was the bug this corrects).
 function brandOrManufacturerMatches(
-  merged: MergedCardOcrResult,
+  evidence: FusedEvidence,
   card: CardWithContext,
 ): { matched: boolean; expected: string | null; actual: string | null } {
-  const ocrBrand = merged.fields.brand.value;
-  const ocrManufacturer = merged.fields.manufacturer.value;
+  const ocrBrand = evidence.brand.value;
+  const ocrManufacturer = evidence.manufacturer.value;
   const catalogBrand = card.setBrand;
   const catalogManufacturer = card.setManufacturer;
 
@@ -178,11 +192,11 @@ function pickBestVariant(
 
 async function scoreCandidate(
   card: CardWithContext,
-  merged: MergedCardOcrResult,
+  evidence: FusedEvidence,
 ): Promise<CatalogCandidate> {
   const reasons: CandidateMatchReason[] = [];
 
-  const playerExpected = merged.fields.playerName.value;
+  const playerExpected = evidence.playerName.value;
   const playerActual = card.playerNames.length > 0 ? card.playerNames.join(" / ") : null;
   const playerMatched = playerExpected
     ? card.playerNames.some((name) => textMatches(playerExpected, name))
@@ -195,7 +209,7 @@ async function scoreCandidate(
     weight: playerMatched ? WEIGHTS.player : 0,
   });
 
-  const cardNumberExpected = merged.fields.cardNumber.value;
+  const cardNumberExpected = evidence.cardNumber.value;
   const cardNumberMatched = cardNumberMatches(cardNumberExpected, card.cardNumber);
   reasons.push({
     field: "cardNumber",
@@ -206,13 +220,13 @@ async function scoreCandidate(
   });
 
   // Phase 7A correction: "set" now compares ONLY genuine set-name evidence
-  // (merged.fields.setName, e.g. "Select") against the candidate's actual
+  // (evidence.setName, e.g. "Select") against the candidate's actual
   // set name (CardWithContext.setName, e.g. "2025 Panini Select
   // Football") -- brand/manufacturer text is never used to satisfy this
   // field, so a card whose set name merely happens to contain the
   // manufacturer's name can no longer score a false "set" match from
   // brand text alone.
-  const setExpected = merged.fields.setName.value;
+  const setExpected = evidence.setName.value;
   const setMatched = textMatches(setExpected, card.setName);
   reasons.push({
     field: "set",
@@ -222,7 +236,7 @@ async function scoreCandidate(
     weight: setMatched ? WEIGHTS.set : 0,
   });
 
-  const yearExpected = merged.fields.year.value;
+  const yearExpected = evidence.year.value;
   const yearActual = card.releaseYear !== null ? String(card.releaseYear) : null;
   const yearMatched = yearMatches(yearExpected, yearActual);
   reasons.push({
@@ -234,13 +248,13 @@ async function scoreCandidate(
   });
 
   // Phase 7A correction: "brand" now compares ONLY brand/manufacturer
-  // evidence (merged.fields.brand and/or merged.fields.manufacturer)
-  // against the candidate's brand/manufacturer columns (CardWithContext.
-  // setBrand -> sets.brand, CardWithContext.setManufacturer ->
-  // sets.manufacturer) -- never against setName. One OCR value can now
-  // satisfy at most one of "set"/"brand", never both, since the two
-  // reasons draw from disjoint OCR fields and disjoint catalog columns.
-  const brandResult = brandOrManufacturerMatches(merged, card);
+  // evidence (evidence.brand and/or evidence.manufacturer) against the
+  // candidate's brand/manufacturer columns (CardWithContext.setBrand ->
+  // sets.brand, CardWithContext.setManufacturer -> sets.manufacturer) --
+  // never against setName. One OCR value can now satisfy at most one of
+  // "set"/"brand", never both, since the two reasons draw from disjoint
+  // evidence fields and disjoint catalog columns.
+  const brandResult = brandOrManufacturerMatches(evidence, card);
   reasons.push({
     field: "brand",
     matched: brandResult.matched,
@@ -257,7 +271,7 @@ async function scoreCandidate(
   let parallelMatched = false;
   try {
     const variants = await listCardVariantsForCard(card.id);
-    const picked = pickBestVariant(variants, merged.fields.parallelText.value);
+    const picked = pickBestVariant(variants, evidence.parallelText.value);
     variantId = picked.variant?.id ?? null;
     parallel = picked.matched ? picked.variant?.parallelName ?? picked.variant?.swatchDescriptor ?? null : null;
     parallelMatched = picked.matched;
@@ -267,7 +281,7 @@ async function scoreCandidate(
   reasons.push({
     field: "parallel",
     matched: parallelMatched,
-    expected: merged.fields.parallelText.value,
+    expected: evidence.parallelText.value,
     actual: parallel,
     weight: parallelMatched ? WEIGHTS.parallel : 0,
   });
@@ -277,7 +291,7 @@ async function scoreCandidate(
   // an insert/subset name). Everything else useful (autograph/relic
   // wording, etc.) is already reflected structurally on card_variants and
   // isn't compared here to avoid inventing additional ad hoc rules.
-  const miscExpected = merged.fields.cardName.value;
+  const miscExpected = evidence.cardName.value;
   const miscMatched = textMatches(miscExpected, card.title);
   reasons.push({
     field: "misc",
@@ -304,25 +318,32 @@ async function scoreCandidate(
 }
 
 /**
- * Searches the normalized catalog for plausible candidates matching a
- * merged front/back OCR result, and returns them ranked highest-score-
- * first (stable ordering for ties). Never mutates the catalog, never picks
- * a single "winner" -- callers decide what (if anything) to do with the
- * ranked list. Returns an empty array if OCR produced nothing usable to
- * search with, or if nothing in the catalog matched at all.
+ * Searches the normalized catalog for plausible candidates matching fused
+ * evidence, and returns them ranked highest-score-first (stable ordering
+ * for ties). Never mutates the catalog, never picks a single "winner" --
+ * callers decide what (if anything) to do with the ranked list. Returns an
+ * empty array if the evidence had nothing usable to search with, or if
+ * nothing in the catalog matched at all.
+ *
+ * Reads only evidence.<field>.value for the same seven candidate-driving
+ * fields it always has -- never evidence confidence/state/conflicts/
+ * supportingObservations, and never a visual-only field. Card candidate
+ * ranking stays OCR-only for as long as callers only ever pass
+ * OCR-sourced evidence in; this function itself has no way to tell (or
+ * care) which producer supplied a given field's value.
  */
 export async function findCatalogCandidates(
-  merged: MergedCardOcrResult,
+  evidence: FusedEvidence,
 ): Promise<CatalogCandidate[]> {
-  const playerName = merged.fields.playerName.value;
-  const year = toYearNumber(merged.fields.year.value);
-  const setName = resolveSetSearchText(merged);
-  const cardNumber = merged.fields.cardNumber.value;
+  const playerName = evidence.playerName.value;
+  const year = toYearNumber(evidence.year.value);
+  const setName = resolveSetSearchText(evidence);
+  const cardNumber = evidence.cardNumber.value;
 
   const pool = await searchCandidateCards({ playerName, year, setName, cardNumber });
   if (pool.length === 0) return [];
 
-  const scored = await Promise.all(pool.map((card) => scoreCandidate(card, merged)));
+  const scored = await Promise.all(pool.map((card) => scoreCandidate(card, evidence)));
 
   // Array.prototype.sort is stable (ES2019+), so equal scores keep the
   // pool's original (deterministic, id-ordered) relative order.

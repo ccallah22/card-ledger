@@ -47,6 +47,7 @@ import {
   summarizeImageQuality,
 } from "@/lib/vision/formatObservations";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
+import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
 import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
 import {
@@ -760,6 +761,28 @@ function NewCardPageInner() {
     [frontOcrResult, backOcrResult],
   );
 
+  // Vision Engine V3, Phase V3.2D: OCR-only fused evidence for candidate
+  // search below -- frontVision/backVision are deliberately hardcoded null
+  // here, even though frontVisionResult/backVisionResult may already be
+  // populated, so visual evidence cannot yet influence card candidate
+  // ranking (see candidateEngine.ts's own doc comment). The real vision
+  // results continue to drive the independent Visual Analysis section only.
+  // Memoized on the same frontOcrResult/backOcrResult/mergedOcr inputs
+  // mergedOcr itself depends on, so its identity -- and therefore the
+  // candidate-search effect below -- never changes merely because Vision
+  // analysis arrives or completes later.
+  const ocrOnlyFusedEvidence = useMemo(
+    () =>
+      buildFusedEvidence({
+        frontOcr: frontOcrResult,
+        backOcr: backOcrResult,
+        mergedOcr,
+        frontVision: null,
+        backVision: null,
+      }),
+    [frontOcrResult, backOcrResult, mergedOcr],
+  );
+
   // Vision Engine V2, Phase 7C: a stable identity for the current
   // candidate-search cycle, built only from the merged OCR fields that
   // actually drive candidate lookup/scoring (see candidateEngine.ts's
@@ -779,6 +802,9 @@ function NewCardPageInner() {
   // merged OCR result actually changes). Nothing here selects a candidate
   // or changes catalogQuery/saved data on its own -- see Phase 7C's
   // auto-preselect effect and the read-only summary display below.
+  // Vision Engine V3, Phase V3.2D: now called with ocrOnlyFusedEvidence
+  // (see above) instead of mergedOcr directly -- candidateEngine.ts no
+  // longer accepts MergedCardOcrResult at all.
   const [candidateResults, setCandidateResults] = useState<CatalogCandidate[]>([]);
   // Vision Engine V2, Phase 7C: which search-cycle key candidateResults
   // actually corresponds to, set only once a fetch for that cycle has
@@ -798,7 +824,7 @@ function NewCardPageInner() {
       return;
     }
 
-    findCatalogCandidates(mergedOcr)
+    findCatalogCandidates(ocrOnlyFusedEvidence)
       .then((results) => {
         if (!active) return;
         setCandidateResults(results);
@@ -813,7 +839,7 @@ function NewCardPageInner() {
     return () => {
       active = false;
     };
-  }, [mergedOcr, searchCycleKey]);
+  }, [mergedOcr, ocrOnlyFusedEvidence, searchCycleKey]);
 
   // Vision Engine V2, Phase 7B: candidate confidence/explainability. Pure
   // and synchronous (unlike candidate search, it never touches the
