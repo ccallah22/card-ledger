@@ -97,6 +97,23 @@ function singleOwnerStrategy<K extends EvidenceFieldName>(
 }
 
 const OCR_PREFERRED: EvidenceSourceKind[] = ["ocr_front", "ocr_back"];
+// Vision Engine V3, Phase V3.2C addition: src/lib/ocr/merge.ts's own
+// mergeField() calls do not use one uniform front-priority rule for every
+// OCR field -- setName/brand/manufacturer/cardNumber/serialNumbering are
+// each explicitly merged with priority "back" (structured checklist/
+// product wording on the back is more reliable for these than a front
+// logo/wordmark reading). Discovered via V3.2C's golden-regression
+// comparison against mergeCardOcrResults: without this, every one of these
+// fields (three of which are candidate-driving) would silently prefer
+// front on a genuine conflict, diverging from today's behavior whenever
+// front/back OCR confidence happens to be equal. Listed back-first so
+// single_owner's confidence-tempered selection defaults to back, while
+// still letting front win when its confidence exceeds back's by more than
+// confidenceOverrideMargin -- see V3.2C's report for why this
+// confidence-aware behavior is an intentional, reported improvement over
+// merge.ts's confidence-blind, hardcoded priority rather than a literal
+// reproduction of it.
+const OCR_PREFERRED_BACK_FIRST: EvidenceSourceKind[] = ["ocr_back", "ocr_front"];
 const VISION_PREFERRED: EvidenceSourceKind[] = ["vision_front", "vision_back"];
 
 /**
@@ -107,17 +124,21 @@ const VISION_PREFERRED: EvidenceSourceKind[] = ["vision_front", "vision_back"];
  * cannot silently drift out of sync with FusedEvidence's shape.
  */
 export const FIELD_STRATEGIES: { [K in EvidenceFieldName]: FieldStrategy<K> } = {
-  // OCR-first: printed, unambiguous text; Vision was never asked to read
-  // these (out of scope per the original V3 design audit).
+  // OCR-first, front-priority (matches merge.ts's mergeField(..., "front")
+  // for these fields): printed, unambiguous text; Vision was never asked to
+  // read these (out of scope per the original V3 design audit).
   playerName: singleOwnerStrategy("playerName", OCR_PREFERRED),
   teamName: singleOwnerStrategy("teamName", OCR_PREFERRED),
-  setName: singleOwnerStrategy("setName", OCR_PREFERRED),
-  brand: singleOwnerStrategy("brand", OCR_PREFERRED),
-  manufacturer: singleOwnerStrategy("manufacturer", OCR_PREFERRED),
   year: singleOwnerStrategy("year", OCR_PREFERRED),
-  cardNumber: singleOwnerStrategy("cardNumber", OCR_PREFERRED),
   cardName: singleOwnerStrategy("cardName", OCR_PREFERRED),
-  serialNumberText: singleOwnerStrategy("serialNumberText", OCR_PREFERRED),
+
+  // OCR-first, back-priority (matches merge.ts's mergeField(..., "back")
+  // for these fields) -- see OCR_PREFERRED_BACK_FIRST above.
+  setName: singleOwnerStrategy("setName", OCR_PREFERRED_BACK_FIRST),
+  brand: singleOwnerStrategy("brand", OCR_PREFERRED_BACK_FIRST),
+  manufacturer: singleOwnerStrategy("manufacturer", OCR_PREFERRED_BACK_FIRST),
+  cardNumber: singleOwnerStrategy("cardNumber", OCR_PREFERRED_BACK_FIRST),
+  serialNumberText: singleOwnerStrategy("serialNumberText", OCR_PREFERRED_BACK_FIRST),
 
   // No fixed single owner: multiple partial signals may exist today or in
   // the future (OCR free text now, marketplace metadata later) -- resolved
