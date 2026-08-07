@@ -1,22 +1,14 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { CardCondition, CardComp, CardStatus, GradingStatus, ImageType } from "@/lib/types";
-import { findOrCreateSet, getSet, type SetRow } from "@/lib/repositories/sets";
-import { findOrCreatePlayer, type PlayerRow } from "@/lib/repositories/players";
-import {
-  findCardBySetAndNumber,
-  createCard,
-  findOrCreateCardV2,
-  getCard,
-  type CardRow,
-} from "@/lib/repositories/cards";
-import { findOrCreateCardPlayer, listCardPlayers } from "@/lib/repositories/cardPlayers";
-import { findOrCreateParallelType, type ParallelTypeRow } from "@/lib/repositories/parallelTypes";
-import {
-  findOrCreateCardVariant,
-  findOrCreateCardVariantV2,
-  type CardVariantRow,
-} from "@/lib/repositories/cardVariants";
+import type {
+  CatalogResolutionInput,
+  CatalogResolutionResult,
+} from "@/lib/catalog/resolveCatalogTypes";
+import { getSet, type SetRow } from "@/lib/repositories/sets";
+import { type PlayerRow } from "@/lib/repositories/players";
+import { getCard, type CardRow } from "@/lib/repositories/cards";
+import { type ParallelTypeRow } from "@/lib/repositories/parallelTypes";
+import { type CardVariantRow } from "@/lib/repositories/cardVariants";
 import { findOrCreateGradingCompany, type GradingCompanyRow } from "@/lib/repositories/gradingCompanies";
 import { findOrCreateLocation, type LocationRow } from "@/lib/repositories/locations";
 import {
@@ -290,168 +282,67 @@ export async function getMyCard(id: string): Promise<MyCard | null> {
 }
 
 /**
- * (set_id, card_number) is unique at the database level, so a card number
- * can only ever point at one catalog `cards` row. If that row already has a
- * different player attached, we must not silently attach ours to it too
- * (that would misattribute the card for every existing owner). Instead we
- * walk forward to a disambiguated card_number ("1", "1~2", "1~3", ...) until
- * we land on a slot that's either free, or already scoped to this same
- * player -- reusing that slot for legitimate duplicate copies.
+ * Phase 2 (secure catalog writes): the browser never resolves shared
+ * catalog ids itself -- it no longer imports or calls findOrCreateSet,
+ * findOrCreatePlayer, findOrCreateCard(V2), findOrCreateCardPlayer,
+ * findOrCreateParallelType, findOrCreateCardVariant(V2),
+ * findOrCreateManufacturer, or findOrCreateBrand at all (moved out of this
+ * file entirely -- see src/lib/catalog/resolveCatalogIdsServer.ts). It
+ * POSTs the same
+ * catalog-identifying fields that logic always read from MyCardInput to the
+ * trusted server endpoint (src/app/api/catalog/resolve-card/route.ts),
+ * which runs with a service-role client and returns only the resolved ids.
+ *
+ * This isn't just about what the browser *calls* at runtime: an earlier
+ * version of this change kept resolveCatalogIds exported from this same
+ * file (just unused by createMyCard), and a production build showed its
+ * catalog .insert(...) calls still shipped in the /cards/new client bundle
+ * anyway, since a still-exported function isn't eliminated just because
+ * nothing in the reachable call graph invokes it. Physically relocating the
+ * implementation is what keeps it out of the client bundle's source graph
+ * entirely.
  */
-async function resolveCardForPlayer(
-  setId: number,
-  cardNumber: string,
-  playerId: number | null,
-  cardFields: { title: string | null; rookie_card: boolean; is_insert: boolean },
-  client: SupabaseClient = supabase,
-): Promise<CardRow> {
-  let candidateNumber = cardNumber;
-  let attempt = 1;
+async function resolveCatalogIdsViaApi(input: MyCardInput): Promise<CatalogResolutionResult> {
+  const body: CatalogResolutionInput = {
+    playerName: input.playerName,
+    setName: input.setName,
+    year: input.year ?? null,
+    cardNumber: input.cardNumber ?? null,
+    checklistSectionId: input.checklistSectionId ?? null,
+    swatchDescriptor: input.swatchDescriptor ?? null,
+    insert: input.insert ?? null,
+    parallel: input.parallel ?? null,
+    variation: input.variation ?? null,
+    serialTotal: input.serialTotal ?? null,
+    isRookie: input.isRookie,
+    isAutograph: input.isAutograph,
+    isPatch: input.isPatch,
+    location: input.location ?? null,
+    grader: input.grader ?? null,
+  };
 
-  while (true) {
-    const existing = await findCardBySetAndNumber(setId, candidateNumber, client);
+  const res = await fetch("/api/catalog/resolve-card", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
-    if (!existing) {
-      return createCard(
-        {
-          set_id: setId,
-          card_number: candidateNumber,
-          ...cardFields,
-        },
-        client,
-      );
-    }
-
-    if (playerId === null) {
-      // No player being attached, so there's nothing to conflict with.
-      return existing;
-    }
-
-    const links = await listCardPlayers(existing.id, client);
-    if (links.length === 0 || links.some((l) => l.player_id === playerId)) {
-      return existing;
-    }
-
-    attempt += 1;
-    candidateNumber = `${cardNumber}~${attempt}`;
+  if (res.status === 401) {
+    throw new Error("Not logged in");
   }
-}
-
-/**
- * `client` defaults to the browser anon-key singleton so every existing
- * caller (createMyCard, called from the browser) is unaffected. The Phase 1
- * server-only catalog resolution route passes a service-role client
- * explicitly instead, reusing this exact function -- same collision
- * handling, same find-before-create semantics, same resolved id shape -- so
- * there is exactly one implementation of catalog identity/collision logic
- * regardless of which key resolves it.
- */
-export async function resolveCatalogIds(
-  profileId: string,
-  input: MyCardInput,
-  client: SupabaseClient = supabase,
-) {
-  const releaseYear = input.year ? Number.parseInt(input.year, 10) : NaN;
-
-  const set = await findOrCreateSet(
-    {
-      name: input.setName,
-      release_year: Number.isFinite(releaseYear) ? releaseYear : null,
-    },
-    client,
-  );
-
-  const trimmedPlayerName = input.playerName.trim();
-  const player = trimmedPlayerName
-    ? await findOrCreatePlayer({ full_name: trimmedPlayerName }, client)
-    : null;
-
-  // Catalog v2: when a checklist section is given, resolve the card through
-  // the section-scoped identity instead of the v1 set-scoped
-  // resolveCardForPlayer path. Omitted (the case for every existing caller
-  // today) falls through to the exact existing Catalog v1 behavior.
-  const card = input.checklistSectionId
-    ? await findOrCreateCardV2(
-        {
-          checklistSectionId: input.checklistSectionId,
-          setId: set.id,
-          cardNumber: input.cardNumber ?? "",
-          title: input.insert ?? null,
-          isInsert: !!input.insert,
-        },
-        client,
-      )
-    : await resolveCardForPlayer(
-        set.id,
-        input.cardNumber ?? "",
-        player?.id ?? null,
-        {
-          title: input.insert ?? null,
-          rookie_card: input.isRookie ?? false,
-          is_insert: !!input.insert,
-        },
-        client,
-      );
-
-  if (player) {
-    await findOrCreateCardPlayer(card.id, player.id, "primary", client);
+  if (res.status === 400) {
+    throw new Error("Please check the card details and try again.");
+  }
+  if (!res.ok) {
+    throw new Error("We couldn't save this card right now. Please try again.");
   }
 
-  let parallelTypeId: number | null = null;
-  if (input.parallel?.trim()) {
-    const parallelType = await findOrCreateParallelType(input.parallel.trim(), client);
-    parallelTypeId = parallelType.id;
-  }
-
-  // Catalog v2: when a swatch descriptor is given, resolve the variant
-  // through the wider (card, parallel, print run, swatch descriptor)
-  // identity instead of the v1 (card, parallel, print run) lookup. Omitted
-  // falls through to the exact existing Catalog v1 behavior.
-  const variant = input.swatchDescriptor
-    ? await findOrCreateCardVariantV2(
-        {
-          cardId: card.id,
-          parallelTypeId,
-          printRun: input.serialTotal ?? null,
-          swatchDescriptor: input.swatchDescriptor,
-          isAutograph: input.isAutograph ?? false,
-          isMemorabilia: input.isPatch ?? false,
-        },
-        client,
-      )
-    : await findOrCreateCardVariant(
-        {
-          card_id: card.id,
-          parallel_type_id: parallelTypeId,
-          print_run: input.serialTotal ?? null,
-          name_override: input.variation ?? null,
-          serial_numbered: !!input.serialTotal,
-          has_autograph: input.isAutograph ?? false,
-          has_memorabilia: input.isPatch ?? false,
-        },
-        client,
-      );
-
-  let locationId: number | null = null;
-  if (input.location?.trim()) {
-    const location = await findOrCreateLocation(profileId, input.location.trim(), client);
-    locationId = location.id;
-  }
-
-  let gradingCompanyId: number | null = null;
-  if (input.grader?.trim()) {
-    const company = await findOrCreateGradingCompany(input.grader.trim(), client);
-    gradingCompanyId = company.id;
-  }
-
-  return { cardId: card.id, cardVariantId: variant.id, locationId, gradingCompanyId };
+  return (await res.json()) as CatalogResolutionResult;
 }
 
 export async function createMyCard(profileId: string, input: MyCardInput): Promise<MyCard> {
-  const { cardId, cardVariantId, locationId, gradingCompanyId } = await resolveCatalogIds(
-    profileId,
-    input,
-  );
+  const { cardId, cardVariantId, locationId, gradingCompanyId } =
+    await resolveCatalogIdsViaApi(input);
 
   const row = await createUserCard({
     profile_id: profileId,
@@ -535,7 +426,7 @@ export async function updateMyCard(
       insert: input.insert,
     };
 
-    const { cardId, cardVariantId } = await resolveCatalogIds(profileId, merged);
+    const { cardId, cardVariantId } = await resolveCatalogIdsViaApi(merged);
     patch.card_id = cardId;
     patch.card_variant_id = cardVariantId;
   }
