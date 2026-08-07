@@ -48,6 +48,8 @@ import {
 } from "@/lib/vision/formatObservations";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
+import { applyManualOverrides, type ManualOverridesByField } from "@/lib/evidence/manualOverrides";
+import type { EvidenceFieldName, EvidenceValueForField } from "@/lib/evidence/types";
 import { EvidenceInspector } from "@/components/evidence/EvidenceInspector";
 import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
@@ -802,6 +804,41 @@ function NewCardPageInner() {
       }),
     [frontOcrResult, backOcrResult, mergedOcr, frontVisionResult, backVisionResult],
   );
+
+  // Vision Engine V3, Phase V3.3B: local-only manual Evidence Inspector
+  // overrides -- no persistence, no save-payload changes, no API. Kept
+  // entirely separate from every existing form-field state (playerName,
+  // year, etc. below); selecting/removing an override never writes to any
+  // of those, and never touches candidateEngine/candidateConfidence/
+  // variantCandidateEngine, all of which keep reading fullFusedEvidence/
+  // ocrOnlyFusedEvidence exactly as before. displayEvidence is the ONLY
+  // thing that changes -- a derived, re-fused view the Inspector renders
+  // instead of fullFusedEvidence directly.
+  const [manualOverrides, setManualOverrides] = useState<ManualOverridesByField>({});
+
+  const displayEvidence = useMemo(
+    () => applyManualOverrides(fullFusedEvidence, manualOverrides),
+    [fullFusedEvidence, manualOverrides],
+  );
+
+  function handleEvidenceOverride<K extends EvidenceFieldName>(
+    field: K,
+    value: EvidenceValueForField<K>,
+    explanation: string,
+  ) {
+    setManualOverrides((prev) => ({
+      ...prev,
+      [field]: { value, createdAt: new Date().toISOString(), explanation },
+    }));
+  }
+
+  function handleRemoveEvidenceOverride(field: EvidenceFieldName) {
+    setManualOverrides((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
 
   // Vision Engine V2, Phase 7C: a stable identity for the current
   // candidate-search cycle, built only from the merged OCR fields that
@@ -2226,13 +2263,19 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        {/* Vision Engine V3, Phase V3.3A: read-only Evidence Inspector.
-            Renders the same fullFusedEvidence object already computed above
-            for variant ranking -- never recomputed here, never mutated,
-            no callbacks, no save behavior. */}
+        {/* Vision Engine V3, Phase V3.3A/V3.3B: Evidence Inspector. Renders
+            displayEvidence -- fullFusedEvidence with any local manual
+            overrides applied (see applyManualOverrides above) -- never the
+            other way around; fullFusedEvidence itself is never mutated, and
+            manual overrides never reach candidateEngine/candidateConfidence/
+            variantCandidateEngine or any save path. */}
         {!isWishlistCard ? (
           <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3">
-            <EvidenceInspector evidence={fullFusedEvidence} />
+            <EvidenceInspector
+              evidence={displayEvidence}
+              onOverride={handleEvidenceOverride}
+              onRemoveOverride={handleRemoveEvidenceOverride}
+            />
           </div>
         ) : null}
 
