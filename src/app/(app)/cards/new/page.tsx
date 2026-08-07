@@ -37,6 +37,9 @@ import { CardImageUploader } from "@/components/cards/CardImageUploader";
 import { CardImageCropModal } from "@/components/cards/CardImageCropModal";
 import { runOcr, toLegacyOcrResult, type CardOcrResult } from "@/lib/ocr";
 import { mergeCardOcrResults, type MergedCardOcrResult } from "@/lib/ocr/merge";
+import { runVisionAnalysis, type CardVisionAnalysis, type VisionImageSide } from "@/lib/vision";
+import { isCardVisionAnalysis } from "@/lib/vision/validateVisionAnalysis";
+import { VISION_ANALYSIS_VERSION } from "@/lib/vision/types";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
@@ -145,6 +148,59 @@ export function shouldAutoSelectCandidate(ctx: CandidateAutoSelectContext): bool
   if (!cardNumberField || cardNumberField.quality === "missing") return false;
 
   return true;
+}
+
+// Vision Engine V3, Phase V3.1B: resolves the visual-analysis result (if
+// any) that is safe to persist for one side at save time. Exported,
+// side-effect-free (never touches component state directly) so it can be
+// exercised by a throwaway verification script without rendering React,
+// matching buildSearchCycleKey/shouldAutoSelectCandidate's pattern above.
+//
+// Bounded wait: if the cached result doesn't already match the current
+// image (still analyzing, or never started for this exact crop), and an
+// in-flight request for this side exists, waits up to VISION_SAVE_WAIT_MS
+// for it -- via Promise.race against a timeout, never indefinitely -- so a
+// slow model response can never hang Save. A rejected in-flight request is
+// swallowed here (.catch(() => null)) since a vision failure must never
+// throw out of the save cycle.
+//
+// Persistence safety gates (all must pass): the result must belong to the
+// exact current image (imageKey match -- guards against a stale result
+// from a since-replaced/removed image), declare the expected side, declare
+// a supported analysisVersion, and pass isCardVisionAnalysis's full
+// structural re-validation. Any failure returns null -- callers must then
+// skip persistence entirely for this side/cycle rather than write anything.
+const VISION_SAVE_WAIT_MS = 8000;
+
+export async function resolveVisionResultForSave(params: {
+  imageUrl: string;
+  side: VisionImageSide;
+  cachedResult: CardVisionAnalysis | null;
+  cachedImageKey: string | null;
+  inFlightRequest: Promise<CardVisionAnalysis> | null;
+}): Promise<CardVisionAnalysis | null> {
+  let result = params.cachedResult;
+  let resultKey = params.cachedImageKey;
+
+  if ((!result || resultKey !== params.imageUrl) && params.inFlightRequest) {
+    const awaited = await Promise.race([
+      params.inFlightRequest.catch(() => null),
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), VISION_SAVE_WAIT_MS);
+      }),
+    ]);
+    if (awaited) {
+      result = awaited;
+      resultKey = params.imageUrl;
+    }
+  }
+
+  if (!result || resultKey !== params.imageUrl) return null;
+  if (result.side !== params.side) return null;
+  if (result.analysisVersion !== VISION_ANALYSIS_VERSION) return null;
+  if (!isCardVisionAnalysis(result, params.side)) return null;
+
+  return result;
 }
 
 // Vision Engine V2, Phase 6A correction: minimal, side-specific OCR status
@@ -443,15 +499,52 @@ function NewCardPageInner() {
   const [backOcrError, setBackOcrError] = useState("");
   const pendingBackOcrRef = useRef(false);
 
+  // Vision Engine V3, Phase V3.1B (cleanup pass): visual-observation
+  // analysis state, one independent set per side -- deliberately separate
+  // from every OCR state field above so a vision failure can never touch
+  // OCR state (or vice versa). This phase has no visual-observations UI, so
+  // only what lifecycle correctness actually depends on is tracked as
+  // state/refs: the current validated result (frontVisionResult, read by
+  // save-time persistence and by a later UI phase), the image key that
+  // result belongs to (frontVisionImageKeyRef -- stale-response guard,
+  // checked again in resolveVisionResultForSave), the in-flight request
+  // (frontVisionRequestRef -- so save can await it, bounded), and the
+  // pending-analysis trigger (pendingFrontVisionRef -- fires at most once
+  // per confirmed crop). A per-side status/error React state pair
+  // (idle/analyzing/complete/failed + a display message) was deliberately
+  // NOT added back: nothing reads either value yet (there is no UI for
+  // them in this phase), so they would exist only to be unused -- lifecycle
+  // correctness (triggering, dedup, staleness, save-time waiting,
+  // persistence validation, front/back independence) does not depend on
+  // either. A future UI phase can reintroduce them once something actually
+  // renders them.
+  const [frontVisionResult, setFrontVisionResult] = useState<CardVisionAnalysis | null>(null);
+  const pendingFrontVisionRef = useRef(false);
+  const frontVisionImageKeyRef = useRef<string | null>(null);
+  const frontVisionRequestRef = useRef<Promise<CardVisionAnalysis> | null>(null);
+
+  const [backVisionResult, setBackVisionResult] = useState<CardVisionAnalysis | null>(null);
+  const pendingBackVisionRef = useRef(false);
+  const backVisionImageKeyRef = useRef<string | null>(null);
+  const backVisionRequestRef = useRef<Promise<CardVisionAnalysis> | null>(null);
+
   async function handleConfirmFrontCrop() {
     pendingFrontOcrRef.current = true;
     setFrontOcrResult(null);
+    pendingFrontVisionRef.current = true;
+    setFrontVisionResult(null);
+    frontVisionImageKeyRef.current = null;
+    frontVisionRequestRef.current = null;
     await frontImage.confirmCrop();
   }
 
   async function handleConfirmBackCrop() {
     pendingBackOcrRef.current = true;
     setBackOcrResult(null);
+    pendingBackVisionRef.current = true;
+    setBackVisionResult(null);
+    backVisionImageKeyRef.current = null;
+    backVisionRequestRef.current = null;
     await backImage.confirmCrop();
   }
 
@@ -519,6 +612,95 @@ function NewCardPageInner() {
         setBackOcrStatus("failed");
       }
     })();
+
+    return () => {
+      active = false;
+    };
+  }, [backImage.imageUrl]);
+
+  // Vision Engine V3, Phase V3.1B: visual-observation analysis, independent
+  // of OCR above -- same crop-confirmed trigger (pendingFrontVisionRef,
+  // armed in handleConfirmFrontCrop) and the same "fire at most once per
+  // confirmed crop" guard, but its own effect/state/ref set entirely, so a
+  // vision failure can never clear OCR output, block candidate search, or
+  // block save (candidate search below still depends only on mergedOcr,
+  // built only from frontOcrResult/backOcrResult -- untouched by this
+  // effect). Visual observations are not merged into mergedOcr in this
+  // phase.
+  //
+  // Stale-response guard: this effect is keyed on frontImage.imageUrl
+  // itself (a new crop/replace/retake/removal always changes that value),
+  // so React runs this effect's cleanup (active = false) before the next
+  // run starts -- an explicit, dependency-driven guard, not a reliance on
+  // component unmounting. A slow response from an image that's since been
+  // replaced always lands in a closure where active is already false.
+  useEffect(() => {
+    if (!frontImage.imageUrl) {
+      setFrontVisionResult(null);
+      frontVisionImageKeyRef.current = null;
+      frontVisionRequestRef.current = null;
+      return;
+    }
+    if (!pendingFrontVisionRef.current) return;
+    pendingFrontVisionRef.current = false;
+
+    let active = true;
+    const imageKey = frontImage.imageUrl;
+
+    const request = runVisionAnalysis(imageKey, "front");
+    frontVisionRequestRef.current = request;
+
+    request
+      .then((result) => {
+        if (!active) return;
+        setFrontVisionResult(result);
+        frontVisionImageKeyRef.current = imageKey;
+      })
+      .catch(() => {
+        if (!active) return;
+        // Covers every failure mode uniformly, including an anonymous
+        // session (/api/vision's 401): the side is simply left without a
+        // persistable result -- no retry loop, nothing that blocks
+        // cropping, OCR, or manual entry, no unhandled rejection (this
+        // .catch is the terminal handler for `request`), and no raw error
+        // exposed anywhere. No user-facing message is produced until a
+        // future UI phase.
+        setFrontVisionResult(null);
+        frontVisionImageKeyRef.current = null;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [frontImage.imageUrl]);
+
+  useEffect(() => {
+    if (!backImage.imageUrl) {
+      setBackVisionResult(null);
+      backVisionImageKeyRef.current = null;
+      backVisionRequestRef.current = null;
+      return;
+    }
+    if (!pendingBackVisionRef.current) return;
+    pendingBackVisionRef.current = false;
+
+    let active = true;
+    const imageKey = backImage.imageUrl;
+
+    const request = runVisionAnalysis(imageKey, "back");
+    backVisionRequestRef.current = request;
+
+    request
+      .then((result) => {
+        if (!active) return;
+        setBackVisionResult(result);
+        backVisionImageKeyRef.current = imageKey;
+      })
+      .catch(() => {
+        if (!active) return;
+        setBackVisionResult(null);
+        backVisionImageKeyRef.current = null;
+      });
 
     return () => {
       active = false;
@@ -1043,6 +1225,61 @@ function NewCardPageInner() {
       }
     }
 
+    // Vision Engine V3, Phase V3.1B: front vision_output persistence.
+    // Deliberately independent of the OCR block above and never
+    // contributes to anyFailed -- a missing/invalid/timed-out visual
+    // analysis is fully best-effort at save time and must never block
+    // save or gate "Save + Add Another"'s full-success check (unlike OCR,
+    // which does set anyFailed on failure). There is intentionally no
+    // pending/retry flag for vision -- a later Save click simply
+    // re-attempts this same best-effort block against whatever
+    // frontVisionResult/frontVisionRequestRef currently hold, which is
+    // idempotent (re-persisting the same already-valid result is a
+    // harmless no-op write).
+    //
+    // processing_status: this write, when it happens, always runs after
+    // the OCR block above within the same cycle, so on the row's shared
+    // processing_status column the *last* successful write wins. OCR
+    // unconditionally writes "ocr_complete" on its own success; vision
+    // unconditionally writes "vision_complete" on its own success. The
+    // four cases resolve exactly as intended: neither succeeds -> the
+    // column stays at whatever upload time set ("cropped"); only OCR
+    // succeeds -> "ocr_complete" (this block never writes); only vision
+    // succeeds -> this block's write is the only one that happens,
+    // correctly overwriting "cropped"; both succeed -> OCR writes
+    // "ocr_complete" first, then this block's "vision_complete" write
+    // lands after it and is therefore the final, most-advanced truthful
+    // value. Neither case ever implies catalog_matched/verified, which
+    // this phase never sets.
+    if (!isWishlistCard && frontImage.imageUrl) {
+      try {
+        if (!frontMediaRow) {
+          frontMediaRow = await getCardMediaBySide(cardId, "front");
+        }
+        if (frontMediaRow) {
+          const visionResult = await resolveVisionResultForSave({
+            imageUrl: frontImage.imageUrl,
+            side: "front",
+            cachedResult: frontVisionResult,
+            cachedImageKey: frontVisionImageKeyRef.current,
+            inFlightRequest: frontVisionRequestRef.current,
+          });
+          if (visionResult) {
+            await updateCardMedia(frontMediaRow.id, {
+              visionOutput: visionResult as unknown as JsonValue,
+              processingStatus: "vision_complete",
+            });
+            setFrontVisionResult(visionResult);
+            frontVisionImageKeyRef.current = frontImage.imageUrl;
+          }
+        }
+      } catch {
+        // Best-effort -- see comment above. The row keeps whatever
+        // processing_status the OCR block (if it ran) already set, or
+        // "cropped" if neither succeeded this cycle.
+      }
+    }
+
     if (needsBackMedia) {
       if (backImage.imageUrl) {
         try {
@@ -1100,6 +1337,37 @@ function NewCardPageInner() {
         setBackOcrError(
           "Card saved, but back text recognition failed. Press Save again to retry.",
         );
+      }
+    }
+
+    // Vision Engine V3, Phase V3.1B: back vision_output persistence --
+    // mirrors the front block above exactly, independently. See that
+    // block's comment for the full processing_status ordering rationale
+    // and why this never contributes to anyFailed.
+    if (!isWishlistCard && backImage.imageUrl) {
+      try {
+        if (!backMediaRow) {
+          backMediaRow = await getCardMediaBySide(cardId, "back");
+        }
+        if (backMediaRow) {
+          const visionResult = await resolveVisionResultForSave({
+            imageUrl: backImage.imageUrl,
+            side: "back",
+            cachedResult: backVisionResult,
+            cachedImageKey: backVisionImageKeyRef.current,
+            inFlightRequest: backVisionRequestRef.current,
+          });
+          if (visionResult) {
+            await updateCardMedia(backMediaRow.id, {
+              visionOutput: visionResult as unknown as JsonValue,
+              processingStatus: "vision_complete",
+            });
+            setBackVisionResult(visionResult);
+            backVisionImageKeyRef.current = backImage.imageUrl;
+          }
+        }
+      } catch {
+        // Best-effort -- see the front block's comment above.
       }
     }
 
@@ -1230,6 +1498,15 @@ function NewCardPageInner() {
       setBackOcrResult(null);
       setBackOcrStatus("idle");
       setBackOcrError("");
+
+      // Vision Engine V3, Phase V3.1B: vision state reset the same way,
+      // for the next card.
+      setFrontVisionResult(null);
+      frontVisionImageKeyRef.current = null;
+      frontVisionRequestRef.current = null;
+      setBackVisionResult(null);
+      backVisionImageKeyRef.current = null;
+      backVisionRequestRef.current = null;
     } finally {
       setIsSaving(false);
     }
