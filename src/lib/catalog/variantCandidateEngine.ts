@@ -1,16 +1,41 @@
-import type { MergedCardOcrResult } from "@/lib/ocr/merge";
+import type { EvidenceField, FusedEvidence } from "@/lib/evidence/types";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
 
 // Vision Engine V2, Phase 8A: variant-aware candidate search. Given a card
 // candidate's already-fetched catalog variants, ranks them against the
-// merged OCR evidence -- a separate, additive concern from candidateEngine
-// .ts's card-level score/reasons. Nothing here selects a variant, mutates
-// the catalog, or changes the existing card-candidate pipeline; it only
-// ranks and explains. Deliberately NOT wired into findCatalogCandidates's
-// eager per-candidate loop (that would mean a variants query for every one
-// of up to 25 pooled candidates on every search) -- see
-// getRankedVariantsForCard below, which callers invoke on demand for just
-// the one candidate they're actually displaying.
+// fused evidence -- a separate, additive concern from candidateEngine.ts's
+// card-level score/reasons. Nothing here selects a variant, mutates the
+// catalog, or changes the existing card-candidate pipeline; it only ranks
+// and explains. Deliberately NOT wired into findCatalogCandidates's eager
+// per-candidate loop (that would mean a variants query for every one of up
+// to 25 pooled candidates on every search) -- see getRankedVariantsForCard
+// below, which callers invoke on demand for just the one candidate they're
+// actually displaying.
+//
+// Vision Engine V3, Phase V3.2F: migrated from MergedCardOcrResult to
+// FusedEvidence, and Vision evidence now participates in variant ranking
+// (never card ranking or candidate confidence -- see cards/new/page.tsx,
+// which passes this module the FULL fused evidence including Vision, while
+// candidateEngine/candidateConfidence continue to receive an OCR-only
+// fused evidence). Two different strategies for letting Vision in,
+// depending on whether an OCR-driven concept already existed:
+//   - autographPresent/memorabiliaPresent: no new weight. assessAutograph/
+//     assessMemorabilia now read the FUSED evidence field directly, which
+//     already blends OCR text-indicator evidence with Vision's visual
+//     observation per FIELD_STRATEGIES (Vision-preferred). When Vision is
+//     absent, the fused value reduces exactly to OCR's own truthiness (see
+//     Phase V3.2C's golden regression), so this is a genuine byte-identical
+//     generalization, not a new scoring dimension.
+//   - dominant/border color, serial-area-visible: no OCR-driven equivalent
+//     ever existed for these, so they are new, small, purely additive
+//     VISION_WEIGHTS dimensions (see below), contributing 0 whenever Vision
+//     has no observation for them (which is always true when Vision is
+//     absent).
+//   - orientation is deliberately NOT scored: a card's rotation in the
+//     photo has no defensible mapping to which catalog variant it is (a
+//     sideways photo of a base card and a sideways photo of a Gold parallel
+//     look equally "sideways"), so inventing a scoring rule for it here
+//     would not be a genuine signal.
 
 export type VariantCandidate = {
   variantId: number;
@@ -26,14 +51,16 @@ export type VariantCandidate = {
   reasons: string[];
 };
 
-// Points available per field, out of 100 when every field has strong
-// supporting evidence. A separate point scale from candidateEngine.ts's
-// card-level WEIGHTS -- these are two independent scores by design (a
-// card's rankingScore/confidence must never be affected by variant
-// evidence, and vice versa). Parallel name is the primary distinguishing
-// signal for a variant; print run is strong corroborating evidence;
-// autograph/memorabilia are strong binary signals; swatch descriptor is a
-// secondary, sparser text signal.
+// Points available per OCR-derived field, out of 100 when every field has
+// strong supporting evidence -- unchanged from before this phase. A
+// separate point scale from candidateEngine.ts's card-level WEIGHTS --
+// these are two independent scores by design (a card's rankingScore/
+// confidence must never be affected by variant evidence, and vice versa).
+// Parallel name is the primary distinguishing signal for a variant; print
+// run is strong corroborating evidence; autograph/memorabilia are strong
+// binary signals; swatch descriptor is a secondary, sparser text signal.
+// See VISION_WEIGHTS below for the separate, smaller, purely additive
+// bonuses Vision evidence can contribute on top of this 100-point base.
 const VARIANT_WEIGHTS = {
   parallel: 40,
   printRun: 25,
@@ -45,8 +72,23 @@ const VARIANT_WEIGHTS = {
 // How much a contradiction costs, as a fraction of the field's own weight
 // -- always less than the full weight, so one conflicting field can never
 // by itself outweigh two or more genuinely matching fields for the same
-// variant.
+// variant. Shared by both the OCR-derived assessors and the tri-state
+// autograph/memorabilia assessor below -- one penalty mechanism, not two.
 const CONFLICT_FRACTION = 0.5;
+
+// Vision Engine V3, Phase V3.2F: modest, purely additive bonuses for visual
+// evidence with no pre-existing OCR-driven equivalent. Deliberately small
+// relative to VARIANT_WEIGHTS' 100-point OCR base (a visual corroboration
+// is a nice-to-have nudge, never a primary identifying signal the way
+// parallel text or print run are) -- every one of these contributes exactly
+// 0 whenever Vision has no observation for the field, which is always true
+// when Vision is absent (see the OCR-only golden regression this phase's
+// report documents).
+const VISION_WEIGHTS = {
+  dominantColor: 8,
+  borderColor: 5,
+  serialArea: 6,
+} as const;
 
 type VariantFieldAssessment = {
   // Positive for a match, negative for a contradiction, 0 when there is no
@@ -70,6 +112,10 @@ function normalizeCase(value: string): string {
 // logic).
 function normalizePunctuation(value: string): string {
   return value.replace(/[.,\-'’]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function capitalize(value: string): string {
+  return value.length > 0 ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
 // exact / normalized / partial / missing / mismatch ladder for a
@@ -98,9 +144,9 @@ function classifyText(expected: string | null, actual: string | null): TextQuali
 // variant's -- reasonable evidence this particular variant is the wrong
 // one, so it's penalized (not just left at 0) per requirement 5's
 // "contradictory evidence may reduce the variant score."
-function assessParallel(variant: CardVariantSummary, merged: MergedCardOcrResult): VariantFieldAssessment {
+function assessParallel(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
   const weight = VARIANT_WEIGHTS.parallel;
-  const expected = merged.fields.parallelText.value;
+  const expected = evidence.parallelText.value;
   const actual = variant.parallelName;
   const quality = classifyText(expected, actual);
 
@@ -127,9 +173,9 @@ function assessParallel(variant: CardVariantSummary, merged: MergedCardOcrResult
 // rarely has anything to do with a swatch descriptor even for the right
 // variant), so a text mismatch is left at 0 rather than penalized; only a
 // genuine match is rewarded.
-function assessSwatchDescriptor(variant: CardVariantSummary, merged: MergedCardOcrResult): VariantFieldAssessment {
+function assessSwatchDescriptor(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
   const weight = VARIANT_WEIGHTS.swatchDescriptor;
-  const expected = merged.fields.cardName.value;
+  const expected = evidence.cardName.value;
   const actual = variant.swatchDescriptor;
   const quality = classifyText(expected, actual);
 
@@ -188,74 +234,157 @@ function extractPrintRun(text: string | null): number | null {
   return null;
 }
 
-// serialNumbering is the dedicated OCR field for this ("23/99"-style
-// text); parallelText is a fallback, since a "numbered to 25" style label
-// is sometimes the only print-run wording OCR actually captures, and it
-// may land in the parallel/subset text rather than a distinct serial
+// serialNumberText is the dedicated OCR-derived field for this ("23/99"-
+// style text); parallelText is a fallback, since a "numbered to 25" style
+// label is sometimes the only print-run wording OCR actually captures, and
+// it may land in the parallel/subset text rather than a distinct serial
 // field.
-function extractPrintRunEvidence(merged: MergedCardOcrResult): number | null {
-  return extractPrintRun(merged.fields.serialNumbering.value) ?? extractPrintRun(merged.fields.parallelText.value);
+function extractPrintRunEvidence(evidence: FusedEvidence): number | null {
+  return extractPrintRun(evidence.serialNumberText.value) ?? extractPrintRun(evidence.parallelText.value);
 }
 
-function assessPrintRun(variant: CardVariantSummary, merged: MergedCardOcrResult): VariantFieldAssessment {
+function assessPrintRun(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
   const weight = VARIANT_WEIGHTS.printRun;
-  const evidence = extractPrintRunEvidence(merged);
+  const extracted = extractPrintRunEvidence(evidence);
   const actual = variant.printRun;
 
-  if (evidence === null) return { contribution: 0, reasonText: null };
+  if (extracted === null) return { contribution: 0, reasonText: null };
   // This variant simply isn't a numbered one -- absence of a print run on
   // the catalog side isn't a contradiction by itself.
   if (actual === null) return { contribution: 0, reasonText: null };
 
-  if (evidence === actual) {
+  if (extracted === actual) {
     return { contribution: weight, reasonText: `Print run matched: /${actual}` };
   }
   return {
     contribution: -weight * CONFLICT_FRACTION,
-    reasonText: `Print run conflicts with this variant (expected /${evidence}, this is /${actual})`,
+    reasonText: `Print run conflicts with this variant (expected /${extracted}, this is /${actual})`,
   };
 }
 
-// Shared boolean-flag assessor for autograph/memorabilia: positive OCR
-// evidence matching a true flag is rewarded; positive evidence against a
-// false flag is penalized; absence of OCR evidence never implies false and
-// never penalizes either value (requirement 5).
+// Shared tri-state assessor for autograph/memorabilia. `field` is the
+// FUSED evidence field (already blending OCR indicator text with Vision's
+// visual observation, Vision-preferred, per FIELD_STRATEGIES) -- this
+// function itself has no idea which producer supplied the value, only
+// whether the CURRENT primarySource happens to be a vision_front/
+// vision_back kind, purely to select accurate, non-generic explanation
+// wording (never to change the scoring rule itself).
+//
+// value === null: no usable evidence either way -- never implies false,
+//   never penalizes either flag value (requirement 5).
+// value === flagValue: matching evidence -- rewarded. This also covers the
+//   new case Vision makes possible that OCR alone never could
+//   (value === false, flagValue === false: Vision confidently saw no
+//   autograph/memorabilia, and this variant agrees) -- confirming evidence
+//   for a non-autograph/non-memorabilia variant is rewarded the same way
+//   confirming positive evidence always has been.
+// value !== flagValue: contradicting evidence -- penalized via the same
+//   CONFLICT_FRACTION every other contradiction in this module uses.
+//
+// When Vision is absent, evidence.autographPresent/memorabiliaPresent can
+// only ever be `true` (OCR found indicator text) or `null` (it found
+// nothing) -- never `false`, since the OCR adapter never emits a false
+// observation for these fields (see Phase V3.2C). That means this
+// function's behavior for Vision-absent input is a byte-identical
+// generalization of the old `hasEvidence: boolean` version: old
+// `Boolean(merged.fields.autographIndicator.value)` is `true` exactly when
+// `value === true` here, and `false` (meaning "OCR found nothing") maps
+// exactly onto `value === null` here -- both produce contribution 0.
 function assessBooleanFlag(
   label: string,
-  hasEvidence: boolean,
+  field: EvidenceField<boolean>,
   flagValue: boolean,
   weight: number,
 ): VariantFieldAssessment {
-  if (!hasEvidence) return { contribution: 0, reasonText: null };
-  if (flagValue) return { contribution: weight, reasonText: `${label} evidence matched` };
+  const value = field.value;
+  if (value === null) return { contribution: 0, reasonText: null };
+
+  const isVisual = field.primarySource?.kind === "vision_front" || field.primarySource?.kind === "vision_back";
+  const lowerLabel = label.toLowerCase();
+
+  if (value === flagValue) {
+    if (isVisual) {
+      return {
+        contribution: weight,
+        reasonText: value
+          ? `Visual analysis detected ${lowerLabel}.`
+          : `Visual analysis found no ${lowerLabel}, consistent with this variant.`,
+      };
+    }
+    return { contribution: weight, reasonText: `${label} evidence matched` };
+  }
+
+  if (isVisual) {
+    return {
+      contribution: -weight * CONFLICT_FRACTION,
+      reasonText: value
+        ? `Visual analysis detected ${lowerLabel}, conflicting with this variant.`
+        : `Visual analysis found no ${lowerLabel}, conflicting with this variant.`,
+    };
+  }
   return { contribution: -weight * CONFLICT_FRACTION, reasonText: `${label} evidence conflicts with this variant` };
 }
 
-function assessAutograph(variant: CardVariantSummary, merged: MergedCardOcrResult): VariantFieldAssessment {
-  return assessBooleanFlag(
-    "Autograph",
-    Boolean(merged.fields.autographIndicator.value),
-    variant.hasAutograph,
-    VARIANT_WEIGHTS.autograph,
-  );
+function assessAutograph(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
+  return assessBooleanFlag("Autograph", evidence.autographPresent, variant.hasAutograph, VARIANT_WEIGHTS.autograph);
 }
 
-function assessMemorabilia(variant: CardVariantSummary, merged: MergedCardOcrResult): VariantFieldAssessment {
-  return assessBooleanFlag(
-    "Memorabilia",
-    Boolean(merged.fields.relicIndicator.value),
-    variant.hasMemorabilia,
-    VARIANT_WEIGHTS.memorabilia,
-  );
+function assessMemorabilia(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
+  return assessBooleanFlag("Memorabilia", evidence.memorabiliaPresent, variant.hasMemorabilia, VARIANT_WEIGHTS.memorabilia);
 }
 
-function scoreVariant(variant: CardVariantSummary, merged: MergedCardOcrResult): VariantCandidate {
+// True when a variant's parallel name textually references a color family
+// (e.g. "Gold Vinyl" / "gold", "Black Prizm" / "black") -- a simple,
+// conservative substring check, consistent with this module's existing
+// text-matching conservatism (no fuzzy/synonym matching).
+function colorNameMatches(parallelName: string, colorFamily: string): boolean {
+  return normalizeCase(parallelName).includes(colorFamily);
+}
+
+// Vision Engine V3, Phase V3.2F: a small, positive-only corroborating
+// signal -- a color MISMATCH is deliberately never penalized (unlike
+// parallel TEXT, which directly names the parallel), since a card's
+// photographed dominant/border color often reflects the base card design
+// rather than the specific parallel treatment, so a non-match is far
+// weaker evidence than a text-based parallel disagreement.
+function assessVisualDominantColor(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
+  const parallelName = variant.parallelName;
+  const color = evidence.dominantColor.value;
+  if (!parallelName || !color || !colorNameMatches(parallelName, color)) return { contribution: 0, reasonText: null };
+  return { contribution: VISION_WEIGHTS.dominantColor, reasonText: `Dominant color matches ${capitalize(color)} parallel.` };
+}
+
+function assessVisualBorderColor(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
+  const parallelName = variant.parallelName;
+  const color = evidence.borderColor.value;
+  if (!parallelName || !color || !colorNameMatches(parallelName, color)) return { contribution: 0, reasonText: null };
+  return { contribution: VISION_WEIGHTS.borderColor, reasonText: `Border color matches ${capitalize(color)} parallel.` };
+}
+
+// Vision Engine V3, Phase V3.2F: a positive-only signal -- a card simply
+// not showing a visible serial-number AREA in the photo (cropped out,
+// glare, angle) is common and uninformative, so only a confirmed-visible
+// serial area contributes, and only when this variant actually IS a
+// numbered one (variant.printRun !== null). No penalty applies when
+// serialAreaVisible is false or absent, or the variant isn't numbered --
+// absence of visual confirmation is not evidence against a numbered
+// variant.
+function assessVisualSerialArea(variant: CardVariantSummary, evidence: FusedEvidence): VariantFieldAssessment {
+  if (evidence.serialAreaVisible.value !== true) return { contribution: 0, reasonText: null };
+  if (variant.printRun === null) return { contribution: 0, reasonText: null };
+  return { contribution: VISION_WEIGHTS.serialArea, reasonText: "Visual analysis supports numbered variant." };
+}
+
+function scoreVariant(variant: CardVariantSummary, evidence: FusedEvidence): VariantCandidate {
   const assessments = [
-    assessParallel(variant, merged),
-    assessPrintRun(variant, merged),
-    assessAutograph(variant, merged),
-    assessMemorabilia(variant, merged),
-    assessSwatchDescriptor(variant, merged),
+    assessParallel(variant, evidence),
+    assessPrintRun(variant, evidence),
+    assessAutograph(variant, evidence),
+    assessMemorabilia(variant, evidence),
+    assessSwatchDescriptor(variant, evidence),
+    assessVisualDominantColor(variant, evidence),
+    assessVisualBorderColor(variant, evidence),
+    assessVisualSerialArea(variant, evidence),
   ];
 
   const rankingScore = assessments.reduce((sum, a) => sum + a.contribution, 0);
@@ -276,19 +405,24 @@ function scoreVariant(variant: CardVariantSummary, merged: MergedCardOcrResult):
 }
 
 /**
- * Ranks an already-fetched list of a card's catalog variants against the
- * merged OCR evidence -- pure, deterministic, never mutates inputs, never
- * selects a variant. Ordering: higher rankingScore first (variants with no
- * matching evidence score 0 and rank below evidence-supported ones, but
- * remain in the list); ties broken deterministically by parallelName
- * (nulls last, then alphabetical), then by variantId ascending.
+ * Ranks an already-fetched list of a card's catalog variants against fused
+ * evidence -- pure, deterministic, never mutates inputs, never selects a
+ * variant. Ordering: higher rankingScore first (variants with no matching
+ * evidence score 0 and rank below evidence-supported ones, but remain in
+ * the list); ties broken deterministically by parallelName (nulls last,
+ * then alphabetical), then by variantId ascending.
+ *
+ * Callers decide how much of Vision to include -- see cards/new/page.tsx,
+ * which passes this function the full fused evidence (OCR + Vision) while
+ * candidateEngine/candidateConfidence continue to receive an OCR-only
+ * fused evidence, so Vision only ever affects variant ranking.
  */
 export function rankCardVariants(
   variants: CardVariantSummary[],
-  merged: MergedCardOcrResult,
+  evidence: FusedEvidence,
 ): VariantCandidate[] {
   return variants
-    .map((variant) => scoreVariant(variant, merged))
+    .map((variant) => scoreVariant(variant, evidence))
     .sort((a, b) => {
       if (b.rankingScore !== a.rankingScore) return b.rankingScore - a.rankingScore;
       const aName = a.parallelName ?? "";
@@ -300,15 +434,15 @@ export function rankCardVariants(
 
 /**
  * Fetches (via the existing repository function -- no duplicate query)
- * and ranks a single card's variants against the merged OCR evidence.
- * Intended to be called on demand for one candidate at a time (the
- * selected candidate, or the top candidate when nothing is selected) --
- * never in a loop over every pooled search candidate.
+ * and ranks a single card's variants against fused evidence. Intended to
+ * be called on demand for one candidate at a time (the selected candidate,
+ * or the top candidate when nothing is selected) -- never in a loop over
+ * every pooled search candidate.
  */
 export async function getRankedVariantsForCard(
   cardId: number,
-  merged: MergedCardOcrResult,
+  evidence: FusedEvidence,
 ): Promise<VariantCandidate[]> {
   const variants = await listCardVariantsForCard(cardId);
-  return rankCardVariants(variants, merged);
+  return rankCardVariants(variants, evidence);
 }

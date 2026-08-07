@@ -131,6 +131,22 @@ export const FIELD_STRATEGIES: { [K in EvidenceFieldName]: FieldStrategy<K> } = 
   teamName: singleOwnerStrategy("teamName", OCR_PREFERRED),
   year: singleOwnerStrategy("year", OCR_PREFERRED),
   cardName: singleOwnerStrategy("cardName", OCR_PREFERRED),
+  // V3.2F pre-commit fix: parallelText was originally modeled as
+  // "no_fixed_owner" (multiple future free-text producers, resolved by
+  // confidence alone -- see the Evidence Fusion Engine design doc §7/§8).
+  // But merge.ts's mergeField(f.parallelText, b.parallelText, "front") IS a
+  // fixed front-priority rule today, same as playerName/teamName/year/
+  // cardName above -- the "no fixed owner" framing was never actually true
+  // of parallelText's only real producer (OCR) and was discovered to
+  // silently diverge from legacy behavior during V3.2F's variant-engine
+  // regression testing (a genuine front/back conflict, at equal OCR
+  // confidence, let the newer back observation win a tie that legacy
+  // mergeCardOcrResults always gives to front). Reclassified as
+  // single_owner/front-priority, exactly like the other four front-priority
+  // OCR fields -- Vision has no producer for this field at all (see
+  // requirement 2 below), so this only ever adjudicates between ocr_front
+  // and ocr_back, same as before.
+  parallelText: singleOwnerStrategy("parallelText", OCR_PREFERRED),
 
   // OCR-first, back-priority (matches merge.ts's mergeField(..., "back")
   // for these fields) -- see OCR_PREFERRED_BACK_FIRST above.
@@ -139,19 +155,6 @@ export const FIELD_STRATEGIES: { [K in EvidenceFieldName]: FieldStrategy<K> } = 
   manufacturer: singleOwnerStrategy("manufacturer", OCR_PREFERRED_BACK_FIRST),
   cardNumber: singleOwnerStrategy("cardNumber", OCR_PREFERRED_BACK_FIRST),
   serialNumberText: singleOwnerStrategy("serialNumberText", OCR_PREFERRED_BACK_FIRST),
-
-  // No fixed single owner: multiple partial signals may exist today or in
-  // the future (OCR free text now, marketplace metadata later) -- resolved
-  // by confidence rather than a fixed rank. See Evidence Fusion Engine
-  // design doc §7/§8.
-  parallelText: {
-    field: "parallelText",
-    preferred: [],
-    ownershipMode: "no_fixed_owner",
-    confidenceOverrideMargin: DEFAULT_CONFIDENCE_OVERRIDE_MARGIN,
-    equalConfidenceIsSevere: false,
-    userOverrideWins: true,
-  },
 
   // Vision-first: OCR's text-based indicators describe the product line
   // (e.g. "AUTOGRAPH EDITION"), not necessarily this specific photographed

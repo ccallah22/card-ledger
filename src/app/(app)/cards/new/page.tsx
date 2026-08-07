@@ -783,6 +783,25 @@ function NewCardPageInner() {
     [frontOcrResult, backOcrResult, mergedOcr],
   );
 
+  // Vision Engine V3, Phase V3.2F: full fused evidence (OCR + Vision), used
+  // only for variant ranking below. Unlike ocrOnlyFusedEvidence above, this
+  // deliberately includes frontVisionResult/backVisionResult, so variant
+  // ranking -- and only variant ranking -- can improve once Vision analysis
+  // arrives; candidateEngine/candidateConfidence keep receiving
+  // ocrOnlyFusedEvidence, never this value, so visual evidence still cannot
+  // influence card identity or confidence.
+  const fullFusedEvidence = useMemo(
+    () =>
+      buildFusedEvidence({
+        frontOcr: frontOcrResult,
+        backOcr: backOcrResult,
+        mergedOcr,
+        frontVision: frontVisionResult,
+        backVision: backVisionResult,
+      }),
+    [frontOcrResult, backOcrResult, mergedOcr, frontVisionResult, backVisionResult],
+  );
+
   // Vision Engine V2, Phase 7C: a stable identity for the current
   // candidate-search cycle, built only from the merged OCR fields that
   // actually drive candidate lookup/scoring (see candidateEngine.ts's
@@ -930,8 +949,8 @@ function NewCardPageInner() {
   // Small in-memory, page-level cache of the RAW (unranked) variant list
   // per card ID -- a card's own catalog variants don't change while this
   // page is open, so once fetched for a given cardId there's no need to
-  // re-query just because mergedOcr changed (ranking against the latest
-  // OCR evidence is a cheap, pure, synchronous recompute via
+  // re-query just because fullFusedEvidence changed (ranking against the
+  // latest OCR+Vision evidence is a cheap, pure, synchronous recompute via
   // rankCardVariants, done on every effect run regardless of cache hits).
   // A failed fetch is evicted from the cache so a later retry is possible.
   const variantFetchCacheRef = useRef<Map<number, Promise<CardVariantSummary[]>>>(new Map());
@@ -968,7 +987,7 @@ function NewCardPageInner() {
     fetchVariantsForCardCached(activeVariantCardId)
       .then((variants) => {
         if (!active) return;
-        setVariantResults(rankCardVariants(variants, mergedOcr));
+        setVariantResults(rankCardVariants(variants, fullFusedEvidence));
         setVariantsLoading(false);
       })
       .catch(() => {
@@ -981,7 +1000,7 @@ function NewCardPageInner() {
     return () => {
       active = false;
     };
-  }, [activeVariantCardId, mergedOcr]);
+  }, [activeVariantCardId, fullFusedEvidence]);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
