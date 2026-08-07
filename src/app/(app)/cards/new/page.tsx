@@ -764,35 +764,16 @@ function NewCardPageInner() {
     [frontOcrResult, backOcrResult],
   );
 
-  // Vision Engine V3, Phase V3.2D: OCR-only fused evidence for candidate
-  // search below -- frontVision/backVision are deliberately hardcoded null
-  // here, even though frontVisionResult/backVisionResult may already be
-  // populated, so visual evidence cannot yet influence card candidate
-  // ranking (see candidateEngine.ts's own doc comment). The real vision
-  // results continue to drive the independent Visual Analysis section only.
-  // Memoized on the same frontOcrResult/backOcrResult/mergedOcr inputs
-  // mergedOcr itself depends on, so its identity -- and therefore the
-  // candidate-search effect below -- never changes merely because Vision
-  // analysis arrives or completes later.
-  const ocrOnlyFusedEvidence = useMemo(
-    () =>
-      buildFusedEvidence({
-        frontOcr: frontOcrResult,
-        backOcr: backOcrResult,
-        mergedOcr,
-        frontVision: null,
-        backVision: null,
-      }),
-    [frontOcrResult, backOcrResult, mergedOcr],
-  );
-
-  // Vision Engine V3, Phase V3.2F: full fused evidence (OCR + Vision), used
-  // only for variant ranking below. Unlike ocrOnlyFusedEvidence above, this
-  // deliberately includes frontVisionResult/backVisionResult, so variant
-  // ranking -- and only variant ranking -- can improve once Vision analysis
-  // arrives; candidateEngine/candidateConfidence keep receiving
-  // ocrOnlyFusedEvidence, never this value, so visual evidence still cannot
-  // influence card identity or confidence.
+  // Vision Engine V3, Phase V3.2F: full fused evidence (OCR + Vision).
+  // Vision Engine V3, Phase V3.4A: this is now the base displayEvidence is
+  // built from below, which in turn is the single evidence object driving
+  // candidate search, candidate confidence, AND variant ranking -- the
+  // OCR-only restriction from V3.2D-V3.2F (a separate ocrOnlyFusedEvidence
+  // value, passed only to candidateEngine/candidateConfidence) has been
+  // retired: this phase's whole point is that reasoning becomes "live"
+  // against the complete local evidence picture (OCR + Vision + manual
+  // overrides), not OCR-only. See displayEvidence's own comment below for
+  // what this means for search-cycle/re-fetch behavior.
   const fullFusedEvidence = useMemo(
     () =>
       buildFusedEvidence({
@@ -809,13 +790,26 @@ function NewCardPageInner() {
   // overrides -- no persistence, no save-payload changes, no API. Kept
   // entirely separate from every existing form-field state (playerName,
   // year, etc. below); selecting/removing an override never writes to any
-  // of those, and never touches candidateEngine/candidateConfidence/
-  // variantCandidateEngine, all of which keep reading fullFusedEvidence/
-  // ocrOnlyFusedEvidence exactly as before. displayEvidence is the ONLY
-  // thing that changes -- a derived, re-fused view the Inspector renders
-  // instead of fullFusedEvidence directly.
+  // of those.
   const [manualOverrides, setManualOverrides] = useState<ManualOverridesByField>({});
 
+  // Vision Engine V3, Phase V3.4A: the single evidence object driving
+  // candidate search, candidate confidence, variant ranking, AND the
+  // Inspector -- reusing applyManualOverrides() (unchanged, not duplicated)
+  // rather than re-fusing here. Memoized on [fullFusedEvidence,
+  // manualOverrides] only, so it recomputes exactly once per genuine
+  // change to either, never redundantly.
+  //
+  // Because displayEvidence's identity now depends on fullFusedEvidence
+  // (which itself depends on frontVisionResult/backVisionResult), the
+  // reasoning effects below correctly re-run not only when an override
+  // changes but also when Vision analysis completes -- this is the
+  // intended "live, local-evidence" behavior this phase introduces, not an
+  // accident. It does NOT re-trigger OCR or Vision network calls
+  // themselves (those effects depend only on frontImage.imageUrl/
+  // backImage.imageUrl, untouched by this phase), and it does NOT change
+  // searchCycleKey (still built solely from mergedOcr, below) or reset the
+  // manual-candidate-interaction/auto-select guards that key gates.
   const displayEvidence = useMemo(
     () => applyManualOverrides(fullFusedEvidence, manualOverrides),
     [fullFusedEvidence, manualOverrides],
@@ -859,9 +853,10 @@ function NewCardPageInner() {
   // merged OCR result actually changes). Nothing here selects a candidate
   // or changes catalogQuery/saved data on its own -- see Phase 7C's
   // auto-preselect effect and the read-only summary display below.
-  // Vision Engine V3, Phase V3.2D: now called with ocrOnlyFusedEvidence
-  // (see above) instead of mergedOcr directly -- candidateEngine.ts no
-  // longer accepts MergedCardOcrResult at all.
+  // Vision Engine V3, Phase V3.2D: now called with fused evidence instead
+  // of mergedOcr directly -- candidateEngine.ts no longer accepts
+  // MergedCardOcrResult at all. Vision Engine V3, Phase V3.4A: that
+  // evidence is now displayEvidence (see below), not an OCR-only value.
   const [candidateResults, setCandidateResults] = useState<CatalogCandidate[]>([]);
   // Vision Engine V2, Phase 7C: which search-cycle key candidateResults
   // actually corresponds to, set only once a fetch for that cycle has
@@ -881,7 +876,7 @@ function NewCardPageInner() {
       return;
     }
 
-    findCatalogCandidates(ocrOnlyFusedEvidence)
+    findCatalogCandidates(displayEvidence)
       .then((results) => {
         if (!active) return;
         setCandidateResults(results);
@@ -896,19 +891,26 @@ function NewCardPageInner() {
     return () => {
       active = false;
     };
-  }, [mergedOcr, ocrOnlyFusedEvidence, searchCycleKey]);
+    // Vision Engine V3, Phase V3.4A: depends on displayEvidence (not just
+    // mergedOcr) so a manual override -- or Vision completing -- reruns
+    // this search; mergedOcr stays a dependency too since the early-return
+    // gate above reads it directly. searchCycleKey is NOT used to gate or
+    // trigger this effect's re-fetch (it never was) -- it only identifies
+    // which cycle a resolved result belongs to, and continues to change
+    // only when mergedOcr's candidate-driving fields change (see
+    // buildSearchCycleKey), independent of displayEvidence.
+  }, [mergedOcr, displayEvidence, searchCycleKey]);
 
   // Vision Engine V2, Phase 7B: candidate confidence/explainability. Pure
   // and synchronous (unlike candidate search, it never touches the
-  // database -- it only re-examines ocrOnlyFusedEvidence + the already-
-  // fetched candidateResults), so a plain useMemo is enough.
-  // Vision Engine V3, Phase V3.2E: now reads ocrOnlyFusedEvidence instead of
-  // mergedOcr directly -- candidateConfidence.ts no longer accepts
-  // MergedCardOcrResult at all. mergedOcr itself stays alive below purely
-  // for variantCandidateEngine, which is untouched in this phase.
+  // database -- it only re-examines displayEvidence + the already-fetched
+  // candidateResults), so a plain useMemo is enough.
+  // Vision Engine V3, Phase V3.4A: now reads displayEvidence -- the same
+  // single evidence object candidate search and variant ranking use --
+  // instead of a separate OCR-only value.
   const confidenceAssessments = useMemo(
-    () => assessCandidateConfidence(ocrOnlyFusedEvidence, candidateResults),
-    [ocrOnlyFusedEvidence, candidateResults],
+    () => assessCandidateConfidence(displayEvidence, candidateResults),
+    [displayEvidence, candidateResults],
   );
   const topConfidenceAssessment = getTopConfidenceAssessment(confidenceAssessments);
 
@@ -987,8 +989,8 @@ function NewCardPageInner() {
   // Small in-memory, page-level cache of the RAW (unranked) variant list
   // per card ID -- a card's own catalog variants don't change while this
   // page is open, so once fetched for a given cardId there's no need to
-  // re-query just because fullFusedEvidence changed (ranking against the
-  // latest OCR+Vision evidence is a cheap, pure, synchronous recompute via
+  // re-query just because displayEvidence changed (ranking against the
+  // latest evidence is a cheap, pure, synchronous recompute via
   // rankCardVariants, done on every effect run regardless of cache hits).
   // A failed fetch is evicted from the cache so a later retry is possible.
   const variantFetchCacheRef = useRef<Map<number, Promise<CardVariantSummary[]>>>(new Map());
@@ -1025,7 +1027,7 @@ function NewCardPageInner() {
     fetchVariantsForCardCached(activeVariantCardId)
       .then((variants) => {
         if (!active) return;
-        setVariantResults(rankCardVariants(variants, fullFusedEvidence));
+        setVariantResults(rankCardVariants(variants, displayEvidence));
         setVariantsLoading(false);
       })
       .catch(() => {
@@ -1038,7 +1040,11 @@ function NewCardPageInner() {
     return () => {
       active = false;
     };
-  }, [activeVariantCardId, fullFusedEvidence]);
+    // Vision Engine V3, Phase V3.4A: reranks against displayEvidence
+    // (was fullFusedEvidence) -- a manual override now immediately
+    // reranks variants for the currently-displayed card, in addition to
+    // Vision arriving, exactly as before.
+  }, [activeVariantCardId, displayEvidence]);
 
   const { fingerprint, sharedImage, reportInfo } = useSharedImageLookup({
     year,
