@@ -111,3 +111,21 @@ export function formatOrientationValue(value: unknown): string {
   if (typeof value !== "string") return NULL_VALUE_DISPLAY;
   return ORIENTATION_LABELS[value] ?? titleCase(value);
 }
+
+// Vision Engine V3, Phase V3.3C: compact local time for one timeline
+// event's observedAt -- deliberately never an ISO string. Includes seconds
+// (e.g. "10:42:13 AM") since two observations for the same field can
+// genuinely land within the same minute (front/back OCR of one upload).
+// Uses the browser's default locale/timezone (this only ever runs
+// client-side, inside the Evidence Inspector).
+export function formatObservedAtTime(observedAt: string): string {
+  const date = new Date(observedAt);
+  if (Number.isNaN(date.getTime())) return NULL_VALUE_DISPLAY;
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+// Timeline event badge labels -- centralized here alongside this module's
+// other display strings rather than inlined in the component.
+export const CURRENT_EVIDENCE_LABEL = "✓ Current Evidence";
+export const MANUAL_OVERRIDE_LABEL = "★ Manual Override";
+export const CONFLICTED_LABEL = "Conflicted";

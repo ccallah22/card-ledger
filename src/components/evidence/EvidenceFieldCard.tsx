@@ -138,7 +138,13 @@ export function EvidenceFieldCard({
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
                   Supporting observations
                 </div>
-                <EvidenceObservationList observations={field.supportingObservations} formatValue={formatValue} />
+                <EvidenceObservationList
+                  observations={field.supportingObservations}
+                  formatValue={formatValue}
+                  currentValue={field.value}
+                  currentSourceKind={field.primarySource?.kind}
+                  conflictObservations={field.conflicts.flatMap((conflict) => conflict.observations)}
+                />
               </div>
 
               {field.conflicts.length > 0 ? (
