@@ -23,6 +23,13 @@ import {
 } from "@/lib/db/cardMediaStorage";
 import { runOcr, type CardOcrResult } from "@/lib/ocr";
 import { mergeCardOcrResults } from "@/lib/ocr/merge";
+import type { CardVisionAnalysis } from "@/lib/vision/types";
+import { isCardVisionAnalysis } from "@/lib/vision/validateVisionAnalysis";
+import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
+import { applyManualOverrides, type ManualOverridesByField } from "@/lib/evidence/manualOverrides";
+import type { EvidenceFieldName, EvidenceValueForField } from "@/lib/evidence/types";
+import { EvidenceInspector } from "@/components/evidence/EvidenceInspector";
+import { listManualEvidenceOverrides } from "@/lib/repositories/manualEvidenceOverrides";
 
 // Vision Engine V2, Phase 6A: defensive shape check before trusting a
 // loaded card_media.ocr_output value as a real CardOcrResult -- it was
@@ -178,6 +185,24 @@ export default function EditCardPage({
   const [backOcrError, setBackOcrError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // Vision Engine V3, Phase V3.5A3: persisted per-side Vision results,
+  // loaded read-only from card_media.vision_output (see the load effect
+  // below) -- mirrors frontOcrResult/backOcrResult's own load-only
+  // treatment exactly. No automatic /api/vision call is ever made from
+  // this page; this phase reconstructs already-persisted evidence only.
+  const [frontVisionResult, setFrontVisionResult] = useState<CardVisionAnalysis | null>(null);
+  const [backVisionResult, setBackVisionResult] = useState<CardVisionAnalysis | null>(null);
+
+  // Vision Engine V3, Phase V3.5A3: durable manual evidence overrides,
+  // loaded read-only via listManualEvidenceOverrides (see the load
+  // effect). Local edits made through the Evidence Inspector on this page
+  // update this state exactly like /cards/new's manualOverrides does, but
+  // -- unlike /cards/new -- nothing in this phase writes it back to the
+  // manual_evidence_overrides table; see handleEvidenceOverride/
+  // handleRemoveEvidenceOverride below and this phase's own scope notes.
+  const [manualOverrides, setManualOverrides] = useState<ManualOverridesByField>({});
+  const [manualOverridesLoadError, setManualOverridesLoadError] = useState("");
+
   // Vision Engine V2, Phase 6B: pure, in-memory reconciliation of the two
   // independent side results, kept available for future use -- not
   // persisted (front/back card_media.ocr_output are untouched) and not
@@ -186,6 +211,53 @@ export default function EditCardPage({
     () => mergeCardOcrResults(frontOcrResult, backOcrResult),
     [frontOcrResult, backOcrResult],
   );
+
+  // Vision Engine V3, Phase V3.5A3: the same Evidence pipeline /cards/new
+  // uses (buildFusedEvidence -> applyManualOverrides), reused verbatim --
+  // no duplicated adapter/fusion logic. fullFusedEvidence is never
+  // mutated; displayEvidence is the only value the Inspector renders.
+  const fullFusedEvidence = useMemo(
+    () =>
+      buildFusedEvidence({
+        frontOcr: frontOcrResult,
+        backOcr: backOcrResult,
+        mergedOcr,
+        frontVision: frontVisionResult,
+        backVision: backVisionResult,
+      }),
+    [frontOcrResult, backOcrResult, mergedOcr, frontVisionResult, backVisionResult],
+  );
+
+  const displayEvidence = useMemo(
+    () => applyManualOverrides(fullFusedEvidence, manualOverrides),
+    [fullFusedEvidence, manualOverrides],
+  );
+
+  // Vision Engine V3, Phase V3.5A3: session-only local override editing --
+  // deliberately identical shape to /cards/new's handleEvidenceOverride/
+  // handleRemoveEvidenceOverride, but this phase never calls
+  // upsertManualEvidenceOverride/replaceManualEvidenceOverride/
+  // removeManualEvidenceOverride from here. onSave below does not read
+  // manualOverrides at all, so nothing typed into the Inspector on this
+  // page is persisted yet (V3.5A4 scope).
+  function handleEvidenceOverride<K extends EvidenceFieldName>(
+    field: K,
+    value: EvidenceValueForField<K>,
+    explanation: string,
+  ) {
+    setManualOverrides((prev) => ({
+      ...prev,
+      [field]: { value, createdAt: new Date().toISOString(), explanation },
+    }));
+  }
+
+  function handleRemoveEvidenceOverride(field: EvidenceFieldName) {
+    setManualOverrides((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
 
   useEffect(() => {
     let active = true;
@@ -303,6 +375,44 @@ export default function EditCardPage({
       );
       setBackOcrStatus("idle");
       setBackOcrError("");
+
+      // Vision Engine V3, Phase V3.5A3: load each side's persisted
+      // vision_output as-is, re-validated with the exact same structural
+      // check /cards/new uses for a network response (isCardVisionAnalysis)
+      // -- an invalid/malformed stored value is simply treated as absent,
+      // never crashes the page. No /api/vision call is ever made here.
+      setFrontVisionResult(
+        isCardVisionAnalysis(frontMedia?.visionOutput, "front")
+          ? (frontMedia!.visionOutput as unknown as CardVisionAnalysis)
+          : null,
+      );
+      setBackVisionResult(
+        isCardVisionAnalysis(backMedia?.visionOutput, "back")
+          ? (backMedia!.visionOutput as unknown as CardVisionAnalysis)
+          : null,
+      );
+
+      // Vision Engine V3, Phase V3.5A3: load durable manual overrides,
+      // independently of the card_media try/catch above -- a failure here
+      // must never block base OCR/Vision evidence from rendering (req #14),
+      // so it gets its own try/catch rather than sharing the media block's.
+      // A single malformed stored row is already skipped, not fatal, by
+      // listManualEvidenceOverrides itself (see
+      // src/lib/repositories/manualEvidenceOverrides.ts's
+      // parseManualEvidenceOverrideRow) -- the rest of that card's
+      // overrides still load normally.
+      let loadedOverrides: ManualOverridesByField = {};
+      let overridesLoadFailed = false;
+      try {
+        loadedOverrides = await listManualEvidenceOverrides(found.id);
+      } catch {
+        overridesLoadFailed = true;
+      }
+      if (!active) return;
+      setManualOverrides(loadedOverrides);
+      setManualOverridesLoadError(
+        overridesLoadFailed ? "Some evidence corrections could not be loaded right now." : "",
+      );
 
       setLoading(false);
     })();
@@ -732,6 +842,15 @@ export default function EditCardPage({
                       setFrontOcrResult(null);
                       setFrontOcrError("");
                       setFrontOcrStatus("idle");
+                      // Vision Engine V3, Phase V3.5A3: the loaded
+                      // vision_output belonged to the image just replaced --
+                      // clearing it locally prevents stale persisted Vision
+                      // from continuing to feed fullFusedEvidence for a
+                      // photo that's no longer shown. No automatic Vision
+                      // re-run is added here (not part of existing edit
+                      // behavior); the DB row's vision_output itself is left
+                      // untouched by this phase (see this phase's report).
+                      setFrontVisionResult(null);
                     } catch (err) {
                       setImageError((err as Error).message || "Image failed validation.");
                     }
@@ -752,6 +871,11 @@ export default function EditCardPage({
                     setFrontOcrResult(null);
                     setFrontOcrStatus("idle");
                     setFrontOcrError("");
+                    // Vision Engine V3, Phase V3.5A3: same staleness guard
+                    // as the replace handler above -- the removed image's
+                    // persisted Vision result no longer describes anything
+                    // currently shown.
+                    setFrontVisionResult(null);
                   }}
                   className="btn-secondary text-xs"
                 >
@@ -816,6 +940,10 @@ export default function EditCardPage({
                       setBackOcrResult(null);
                       setBackOcrError("");
                       setBackOcrStatus("idle");
+                      // Vision Engine V3, Phase V3.5A3: see the front
+                      // handler's comment above -- same staleness guard,
+                      // independent of front.
+                      setBackVisionResult(null);
                     } catch (err) {
                       setBackImageError((err as Error).message || "Image failed validation.");
                     }
@@ -835,6 +963,9 @@ export default function EditCardPage({
                     setBackOcrResult(null);
                     setBackOcrStatus("idle");
                     setBackOcrError("");
+                    // Vision Engine V3, Phase V3.5A3: same staleness guard
+                    // as the remove-front handler above.
+                    setBackVisionResult(null);
                   }}
                   className="btn-secondary text-xs"
                 >
@@ -863,6 +994,34 @@ export default function EditCardPage({
               : ""}
           </div>
         ) : null}
+
+        {/* Vision Engine V3, Phase V3.5A3: reconstructs the same Evidence
+            pipeline /cards/new uses (persisted OCR + persisted Vision +
+            durable manual overrides -> displayEvidence), placed near the
+            OCR/Vision review area above rather than at the very top of the
+            form -- this page's existing field order (editable fields
+            first, image/OCR review last) is the reverse of /cards/new's,
+            so "near the OCR/Vision review area" and "before the main
+            editable fields" can't both be satisfied literally; this phase
+            keeps the page's existing field order unchanged and places the
+            Inspector alongside the review area it depends on. READ-ONLY
+            with respect to persistence: onOverride/onRemoveOverride only
+            update local manualOverrides state for this session -- onSave
+            below never reads manualOverrides, so nothing entered here is
+            written to manual_evidence_overrides yet (V3.5A4 scope). */}
+        <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3">
+          <EvidenceInspector
+            evidence={displayEvidence}
+            onOverride={handleEvidenceOverride}
+            onRemoveOverride={handleRemoveEvidenceOverride}
+          />
+          <div className="mt-2 text-xs text-amber-700">
+            Evidence corrections made here are temporary until edit-page persistence is enabled.
+          </div>
+          {manualOverridesLoadError ? (
+            <div className="mt-1 text-xs text-red-600">{manualOverridesLoadError}</div>
+          ) : null}
+        </div>
 
         <div className="sm:col-span-2 flex justify-end gap-2">
           <Link href={`/cards/${String(id)}`} className="btn-secondary">
