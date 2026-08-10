@@ -50,6 +50,7 @@ import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/cand
 import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
 import { applyManualOverrides, type ManualOverridesByField } from "@/lib/evidence/manualOverrides";
 import type { EvidenceFieldName, EvidenceValueForField } from "@/lib/evidence/types";
+import { replaceManualEvidenceOverrides } from "@/lib/repositories/manualEvidenceOverrides";
 import { EvidenceInspector } from "@/components/evidence/EvidenceInspector";
 import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
@@ -793,6 +794,26 @@ function NewCardPageInner() {
   // of those.
   const [manualOverrides, setManualOverrides] = useState<ManualOverridesByField>({});
 
+  // Vision Engine V3, Phase V3.5A2: durable persistence of manualOverrides
+  // for /cards/new only -- mirrors the media/OCR pending-retry pattern
+  // above (createdCardId + per-step "pending" flags), but recomputes its
+  // "needs work" decision fresh on every runSaveCycle call instead of
+  // deciding once at card-creation time. Overrides remain live/editable
+  // (see displayEvidence) for as long as the user stays on this page,
+  // including while a retry is pending after an unrelated step's failure,
+  // so freezing the intended set at creation time the way media does would
+  // silently drop a correction the user made after the first attempt.
+  // manualOverridesPending only affects the Save button's retry label
+  // (folded into hasPendingRetry below) -- it does not gate whether a
+  // retry re-attempts persistence; lastPersistedManualOverridesRef does
+  // that (skips the network call entirely when the snapshot object is
+  // reference-identical to the last snapshot that persisted successfully,
+  // relying on manualOverrides only ever being replaced wholesale via
+  // setManualOverrides, never mutated in place).
+  const [manualOverridesPending, setManualOverridesPending] = useState(false);
+  const [manualOverridesError, setManualOverridesError] = useState("");
+  const lastPersistedManualOverridesRef = useRef<ManualOverridesByField | null>(null);
+
   // Vision Engine V3, Phase V3.4A: the single evidence object driving
   // candidate search, candidate confidence, variant ranking, AND the
   // Inspector -- reusing applyManualOverrides() (unchanged, not duplicated)
@@ -1131,7 +1152,8 @@ function NewCardPageInner() {
       frontMediaPending ||
       backMediaPending ||
       frontOcrPending ||
-      backOcrPending);
+      backOcrPending ||
+      manualOverridesPending);
 
   // Save eligibility remains gated on the FRONT slot only -- the back slot
   // is not required and does not block saving in this phase.
@@ -1266,6 +1288,42 @@ function NewCardPageInner() {
     }
 
     let anyFailed = false;
+
+    // Vision Engine V3, Phase V3.5A2: manual evidence override persistence.
+    // Runs immediately after cardId is resolved and before every other
+    // post-creation step (legacy/media/OCR/vision/shared-image), per this
+    // phase's required sequence. Unlike those steps, this is NOT
+    // best-effort: overrides are irreproducible human input, so a failure
+    // here sets anyFailed and produces a dedicated retry message, the same
+    // way a media/OCR failure does.
+    //
+    // manualOverridesSnapshot is an immutable local snapshot of the current
+    // manualOverrides state, taken synchronously here (before any awaits in
+    // this cycle) -- manualOverrides itself is never mutated in place (see
+    // setManualOverrides above), so this reference can never change out
+    // from under the persistence call that follows, even though the async
+    // call yields control back to React in between.
+    const manualOverridesSnapshot = manualOverrides;
+    const needsManualOverrides = Object.keys(manualOverridesSnapshot).length > 0;
+    const manualOverridesAlreadyPersisted =
+      lastPersistedManualOverridesRef.current === manualOverridesSnapshot;
+
+    if (needsManualOverrides && !manualOverridesAlreadyPersisted) {
+      try {
+        await replaceManualEvidenceOverrides(cardId, manualOverridesSnapshot);
+        lastPersistedManualOverridesRef.current = manualOverridesSnapshot;
+        setManualOverridesPending(false);
+        setManualOverridesError("");
+      } catch {
+        anyFailed = true;
+        setManualOverridesPending(true);
+        setManualOverridesError(
+          "Card saved, but your evidence corrections could not be stored. Press Save again to retry.",
+        );
+      }
+    } else {
+      setManualOverridesPending(false);
+    }
 
     // Legacy localStorage save -- tracked independently of private media,
     // per side, so a legacy failure never blocks (or is masked by) the
@@ -1643,6 +1701,16 @@ function NewCardPageInner() {
       setBackVisionResult(null);
       backVisionImageKeyRef.current = null;
       backVisionRequestRef.current = null;
+
+      // Vision Engine V3, Phase V3.5A2: fixes the confirmed "Save and Add
+      // Another" bug where manualOverrides leaked into the next card --
+      // reset only now that `result.succeeded` is true (every required
+      // step, including manual-override persistence, has already
+      // completed), matching every other reset above.
+      setManualOverrides({});
+      setManualOverridesPending(false);
+      setManualOverridesError("");
+      lastPersistedManualOverridesRef.current = null;
     } finally {
       setIsSaving(false);
     }
@@ -2282,6 +2350,9 @@ function NewCardPageInner() {
               onOverride={handleEvidenceOverride}
               onRemoveOverride={handleRemoveEvidenceOverride}
             />
+            {manualOverridesError ? (
+              <div className="mt-2 text-xs text-red-600">{manualOverridesError}</div>
+            ) : null}
           </div>
         ) : null}
 

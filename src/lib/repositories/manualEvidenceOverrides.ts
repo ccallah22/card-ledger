@@ -5,11 +5,11 @@ import type { ManualOverride, ManualOverridesByField } from "@/lib/evidence/manu
 
 // Vision Engine V3, Phase V3.5A1: repository for the additive
 // `manual_evidence_overrides` table (see
-// supabase/migrations/202608070001_manual_evidence_overrides.sql). Nothing
-// in the application calls this yet -- these functions are unused
-// foundation, following the same "modify only the minimum files necessary"
-// discipline used for the earlier Catalog v2 lookup foundations and
-// card_media's own introduction.
+// supabase/migrations/202608070001_manual_evidence_overrides.sql).
+// Phase V3.5A2 wired replaceManualEvidenceOverrides into /cards/new's
+// save cycle (src/app/(app)/cards/new/page.tsx's runSaveCycle) -- listed
+// there are the only caller; /cards/[id]/edit does not call this module
+// yet.
 //
 // These are private, user-owned rows protected by RLS (ownership checked
 // indirectly through user_cards.profile_id = auth.uid(), exactly like
@@ -116,6 +116,20 @@ function isValidTimestamp(value: unknown): value is string {
 }
 
 /**
+ * Compares two ISO-ish timestamp strings by the instant they represent,
+ * not by raw string equality -- a DB-loaded created_at (PostgREST's own
+ * timestamptz serialization, e.g. trailing "+00:00" and/or a different
+ * fractional-second digit count) is never guaranteed to be byte-identical
+ * to the local `new Date().toISOString()` string that originally produced
+ * it, even when both name the exact same instant. Used only for the
+ * idempotent-retry comparison below; never for validation (isValidTimestamp
+ * already covers that) or for anything persisted.
+ */
+function sameInstant(a: string, b: string): boolean {
+  return Date.parse(a) === Date.parse(b);
+}
+
+/**
  * Validates one stored row and, if valid, converts it into the field name
  * + ManualOverride<unknown> pair listManualEvidenceOverrides assembles into
  * a ManualOverridesByField. Returns null for anything malformed -- an
@@ -195,18 +209,30 @@ export async function listManualEvidenceOverrides(userCardId: string): Promise<M
  * history). The function runs SECURITY INVOKER, so the same RLS policies
  * that would apply to direct calls apply here too -- no ownership check is
  * duplicated in this repository function.
+ *
+ * `createdAt` must be the ORIGINAL local ManualOverride.createdAt (see
+ * src/lib/evidence/manualOverrides.ts) -- Vision Engine V3, Phase V3.5A2
+ * pre-commit fix (202608100001_manual_evidence_overrides_created_at.sql):
+ * the RPC now writes this value verbatim as the new row's created_at
+ * instead of defaulting to insert time, so the Evidence Timeline stays
+ * truthful after reload. This function deliberately never generates a
+ * replacement timestamp itself (e.g. `new Date().toISOString()`) -- the
+ * caller's local createdAt is the only source of truth for when the
+ * manual action actually happened.
  */
 export async function upsertManualEvidenceOverride<K extends EvidenceFieldName>(
   userCardId: string,
   fieldName: K,
   value: EvidenceValueForField<K>,
   explanation: string,
+  createdAt: string,
 ): Promise<ManualEvidenceOverrideRow> {
   const { data, error } = await supabase.rpc("replace_manual_evidence_override", {
     p_user_card_id: userCardId,
     p_field_name: fieldName,
     p_value: value,
     p_explanation: explanation,
+    p_created_at: createdAt,
   });
 
   if (error) throw error;
@@ -237,15 +263,40 @@ export async function removeManualEvidenceOverride(
 /**
  * Makes every field present in `overrides` active with its supplied value,
  * and supersedes any currently-active field NOT present in `overrides` --
- * the batch operation /cards/new's save cycle (V3.5A2, not this phase)
- * will call once per save with the page's whole local manualOverrides map.
- * Each field's own transition (upsert or supersede) is independently
- * atomic (see above); this function does not attempt cross-field
- * atomicity, since each field is independent evidence and there is no
- * product requirement that a partial failure here roll back an unrelated
- * field's already-successful write.
+ * the batch operation /cards/new's save cycle (V3.5A2) calls once per save
+ * attempt with the page's whole local manualOverrides map (see
+ * runSaveCycle in src/app/(app)/cards/new/page.tsx).
  *
- * Not called from any page yet -- see this phase's scope.
+ * Atomicity: each field's own transition (upsert-via-RPC or supersede-via-
+ * UPDATE) is independently atomic (see those functions' own comments).
+ * This function does NOT attempt cross-field atomicity -- a crash between
+ * two fields' calls can leave some fields updated and others not, by
+ * design, since each field is independent evidence and there is no product
+ * requirement that a partial failure here roll back an unrelated field's
+ * already-successful write. The caller (runSaveCycle) is built around this:
+ * a rejected Promise.all here still leaves every already-applied field
+ * change in place, and a subsequent retry only needs to (re)apply whatever
+ * didn't succeed.
+ *
+ * Retry-safety / idempotence: before writing, each supplied field is
+ * compared against its current active row (already fetched by
+ * listManualEvidenceOverrides above). A field whose active value,
+ * explanation, AND createdAt already match the supplied override is
+ * skipped entirely -- no RPC call, no new history row -- so calling this
+ * function again with an unchanged `overrides` map (e.g. a retry after a
+ * sibling field failed, or after an unrelated post-creation step like
+ * media/OCR failed) never creates a meaningless duplicate active version
+ * for a field that already persisted correctly. createdAt is part of this
+ * comparison (Vision Engine V3, Phase V3.5A2 pre-commit fix) so a
+ * genuinely new manual action -- the user replacing an override with the
+ * same value/explanation but a new createdAt -- is correctly treated as a
+ * new historical version rather than silently deduped away; createdAt is
+ * compared by instant (sameInstant), not raw string equality, since a
+ * DB-round-tripped timestamptz string is not guaranteed to be
+ * byte-identical to the local ISO string that produced it. A field whose
+ * value/explanation/createdAt genuinely differs (or that has no active row
+ * yet) is still written via upsertManualEvidenceOverride, preserving that
+ * field's own history exactly as before.
  */
 export async function replaceManualEvidenceOverrides(
   userCardId: string,
@@ -253,6 +304,7 @@ export async function replaceManualEvidenceOverrides(
 ): Promise<void> {
   const active = await listManualEvidenceOverrides(userCardId);
   const overridesBag = overrides as Record<EvidenceFieldName, ManualOverride<unknown> | undefined>;
+  const activeBag = active as Record<EvidenceFieldName, ManualOverride<unknown> | undefined>;
   const activeFieldNames = Object.keys(active) as EvidenceFieldName[];
   const suppliedFieldNames = Object.keys(overrides) as EvidenceFieldName[];
   const suppliedSet = new Set(suppliedFieldNames);
@@ -264,13 +316,28 @@ export async function replaceManualEvidenceOverrides(
     ...suppliedFieldNames.map((fieldName) => {
       const override = overridesBag[fieldName];
       if (!override) return Promise.resolve();
+
+      const currentActive = activeBag[fieldName];
+      const alreadyIdentical =
+        !!currentActive &&
+        currentActive.value === override.value &&
+        currentActive.explanation === override.explanation &&
+        sameInstant(currentActive.createdAt, override.createdAt);
+      if (alreadyIdentical) return Promise.resolve();
+
       // Same narrow, documented bridge cast as elsewhere in this file --
       // `fieldName` is a runtime-iterated EvidenceFieldName, not a single
       // literal K, so TypeScript cannot correlate it back to
       // EvidenceValueForField<K> here even though the correlation holds at
       // every real entry in `overridesBag`.
       const value = override.value as EvidenceValueForField<EvidenceFieldName>;
-      return upsertManualEvidenceOverride(userCardId, fieldName, value, override.explanation);
+      return upsertManualEvidenceOverride(
+        userCardId,
+        fieldName,
+        value,
+        override.explanation,
+        override.createdAt,
+      );
     }),
   ]);
 }
