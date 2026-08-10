@@ -541,12 +541,24 @@ export default function EditCardPage({
               side: "front",
               dataUrl: imageUrl,
             });
+            // Vision Engine V3, Phase V3.5A3.1: visionOutput is explicitly
+            // null here (not omitted) -- toUpdatePatch (cardMedia.ts)
+            // already distinguishes undefined ("leave column untouched")
+            // from null ("clear it"), but this call previously omitted
+            // visionOutput entirely, which silently left the PREVIOUS
+            // image's persisted vision_output attached to this new image.
+            // No edit-side Vision analysis exists yet (V3.5A3.1 does not
+            // add one), so there is never a new valid result to write
+            // instead -- explicit null is the only truthful value for a
+            // just-replaced image, written atomically in this same upsert
+            // rather than as a separate clear step.
             const media = await upsertCardMediaBySide({
               userCardId: original.id,
               side: "front",
               originalPath: null,
               processedPath: path,
               processingStatus: "cropped",
+              visionOutput: null,
             });
             frontRowId = media.id;
             setFrontMediaRowId(frontRowId);
@@ -606,12 +618,16 @@ export default function EditCardPage({
               side: "back",
               dataUrl: backImageUrl,
             });
+            // Vision Engine V3, Phase V3.5A3.1: see the front block's
+            // comment above -- same explicit-null staleness fix,
+            // independent of front.
             const media = await upsertCardMediaBySide({
               userCardId: original.id,
               side: "back",
               originalPath: null,
               processedPath: path,
               processingStatus: "cropped",
+              visionOutput: null,
             });
             backRowId = media.id;
             setBackMediaRowId(backRowId);
@@ -848,8 +864,10 @@ export default function EditCardPage({
                       // from continuing to feed fullFusedEvidence for a
                       // photo that's no longer shown. No automatic Vision
                       // re-run is added here (not part of existing edit
-                      // behavior); the DB row's vision_output itself is left
-                      // untouched by this phase (see this phase's report).
+                      // behavior). Vision Engine V3, Phase V3.5A3.1: the
+                      // persisted side (card_media.vision_output) is now
+                      // also correctly cleared on Save -- see onSave's
+                      // upsertCardMediaBySide call for this side.
                       setFrontVisionResult(null);
                     } catch (err) {
                       setImageError((err as Error).message || "Image failed validation.");
@@ -874,7 +892,12 @@ export default function EditCardPage({
                     // Vision Engine V3, Phase V3.5A3: same staleness guard
                     // as the replace handler above -- the removed image's
                     // persisted Vision result no longer describes anything
-                    // currently shown.
+                    // currently shown. Vision Engine V3, Phase V3.5A3.1:
+                    // on Save, onSave's existing imageRemoved branch already
+                    // deletes the whole card_media row for this side
+                    // (deleteCardMediaBySide) -- vision_output is removed
+                    // along with it, so no separate explicit-null write is
+                    // needed for removal, only for replacement.
                     setFrontVisionResult(null);
                   }}
                   className="btn-secondary text-xs"
