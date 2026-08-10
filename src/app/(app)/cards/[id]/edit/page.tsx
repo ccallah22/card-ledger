@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
 import { type MyCard, type MyCardInput, getMyCard, updateMyCard } from "@/lib/repositories/myCards";
@@ -29,7 +29,10 @@ import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
 import { applyManualOverrides, type ManualOverridesByField } from "@/lib/evidence/manualOverrides";
 import type { EvidenceFieldName, EvidenceValueForField } from "@/lib/evidence/types";
 import { EvidenceInspector } from "@/components/evidence/EvidenceInspector";
-import { listManualEvidenceOverrides } from "@/lib/repositories/manualEvidenceOverrides";
+import {
+  listManualEvidenceOverrides,
+  replaceManualEvidenceOverrides,
+} from "@/lib/repositories/manualEvidenceOverrides";
 
 // Vision Engine V2, Phase 6A: defensive shape check before trusting a
 // loaded card_media.ocr_output value as a real CardOcrResult -- it was
@@ -196,12 +199,30 @@ export default function EditCardPage({
   // Vision Engine V3, Phase V3.5A3: durable manual evidence overrides,
   // loaded read-only via listManualEvidenceOverrides (see the load
   // effect). Local edits made through the Evidence Inspector on this page
-  // update this state exactly like /cards/new's manualOverrides does, but
-  // -- unlike /cards/new -- nothing in this phase writes it back to the
-  // manual_evidence_overrides table; see handleEvidenceOverride/
-  // handleRemoveEvidenceOverride below and this phase's own scope notes.
+  // update this state exactly like /cards/new's manualOverrides does.
+  // Vision Engine V3, Phase V3.5A4: onSave now persists this state via
+  // replaceManualEvidenceOverrides -- see handleEvidenceOverride/
+  // handleRemoveEvidenceOverride below and onSave's manual-override block.
   const [manualOverrides, setManualOverrides] = useState<ManualOverridesByField>({});
   const [manualOverridesLoadError, setManualOverridesLoadError] = useState("");
+  // Vision Engine V3, Phase V3.5A4: save-time (as opposed to load-time)
+  // override error -- distinct state so a load failure and a save failure
+  // are never conflated (they mean different things: "we might be missing
+  // some of this card's real overrides" vs. "your local edits didn't
+  // save").
+  const [manualOverridesSaveError, setManualOverridesSaveError] = useState("");
+  // Vision Engine V3, Phase V3.5A4: reference-identity marker for "the
+  // manualOverrides snapshot currently known to match the DB's active
+  // rows" -- seeded to the just-loaded snapshot in the load effect (so an
+  // untouched card's first Save is already a no-op, not a redundant
+  // network round trip) and advanced to the just-persisted snapshot after
+  // every successful save. Works because manualOverrides is always
+  // replaced wholesale via setManualOverrides (see handleEvidenceOverride/
+  // handleRemoveEvidenceOverride), never mutated in place, so an
+  // unchanged snapshot is always the exact same object reference -- the
+  // same pattern /cards/new's runSaveCycle uses for
+  // lastPersistedManualOverridesRef.
+  const lastPersistedManualOverridesRef = useRef<ManualOverridesByField | null>(null);
 
   // Vision Engine V2, Phase 6B: pure, in-memory reconciliation of the two
   // independent side results, kept available for future use -- not
@@ -233,13 +254,14 @@ export default function EditCardPage({
     [fullFusedEvidence, manualOverrides],
   );
 
-  // Vision Engine V3, Phase V3.5A3: session-only local override editing --
-  // deliberately identical shape to /cards/new's handleEvidenceOverride/
-  // handleRemoveEvidenceOverride, but this phase never calls
-  // upsertManualEvidenceOverride/replaceManualEvidenceOverride/
-  // removeManualEvidenceOverride from here. onSave below does not read
-  // manualOverrides at all, so nothing typed into the Inspector on this
-  // page is persisted yet (V3.5A4 scope).
+  // Vision Engine V3, Phase V3.5A3: local override editing -- deliberately
+  // identical shape to /cards/new's handleEvidenceOverride/
+  // handleRemoveEvidenceOverride. These two functions themselves still
+  // never call the network -- they only update local manualOverrides
+  // state immediately, exactly as before. Vision Engine V3, Phase V3.5A4:
+  // onSave now persists whatever manualOverrides holds at Save time (see
+  // onSave's manual-override block) via replaceManualEvidenceOverrides,
+  // but that call lives entirely in onSave, not here.
   function handleEvidenceOverride<K extends EvidenceFieldName>(
     field: K,
     value: EvidenceValueForField<K>,
@@ -413,6 +435,20 @@ export default function EditCardPage({
       setManualOverridesLoadError(
         overridesLoadFailed ? "Some evidence corrections could not be loaded right now." : "",
       );
+      setManualOverridesSaveError("");
+      // Vision Engine V3, Phase V3.5A4: seed the "known to match the DB"
+      // marker to this exact loaded object on a successful load, so an
+      // untouched card produces zero override-persistence network calls
+      // on its first Save. On a FAILED load, deliberately left null (never
+      // set to `loadedOverrides`, which is just the {} fallback here) --
+      // onSave's manual-override block checks manualOverridesLoadError
+      // directly and refuses to persist in that case regardless of this
+      // ref, since local state is not a trustworthy picture of this
+      // card's real active overrides when the load itself failed (see
+      // onSave for why persisting an incomplete {} snapshot would risk
+      // silently superseding real active overrides that just failed to
+      // load).
+      lastPersistedManualOverridesRef.current = overridesLoadFailed ? null : loadedOverrides;
 
       setLoading(false);
     })();
@@ -665,13 +701,75 @@ export default function EditCardPage({
       setFrontOcrError(frontOcrFailed ?? "");
       setBackOcrError(backOcrFailed ?? "");
 
-      // Only navigate away once front AND back media AND OCR have all
-      // either succeeded or had nothing to do -- otherwise the user would
-      // never see the error set above (this page unmounts on navigation).
-      // The card itself is already saved either way, and the retained row
-      // ids/pending flags mean a retry never repeats already-successful
-      // work.
-      if (!frontMediaError && !backMediaError && !frontOcrFailed && !backOcrFailed) {
+      // Vision Engine V3, Phase V3.5A4: manual evidence override
+      // persistence. Runs after the existing image/media/OCR integrity
+      // work above (not before, unlike /cards/new where it runs
+      // immediately after card creation) -- there is no "creation" step
+      // here needing userCardId to first come into existence, and placing
+      // it last keeps this phase's change additive at the very end of the
+      // existing save sequence rather than threaded through it. Like
+      // media/OCR, this is NOT best-effort: a failure blocks navigation
+      // and is retryable, since manual corrections are irreproducible
+      // user-authored input.
+      //
+      // manualOverridesSnapshot is an immutable local snapshot of the
+      // current manualOverrides state, taken synchronously here (before
+      // any await in this block) -- manualOverrides is only ever replaced
+      // wholesale (see handleEvidenceOverride/handleRemoveEvidenceOverride
+      // above), never mutated in place, so this reference can never
+      // change out from under the persistence call that follows.
+      let manualOverridesFailed = false;
+
+      if (manualOverridesLoadError) {
+        // The initial load of this card's active overrides failed, so
+        // local manualOverrides is not a trustworthy full picture of what
+        // this card's active overrides actually are -- it may be missing
+        // real active rows that simply never made it into local state.
+        // replaceManualEvidenceOverrides supersedes any active field NOT
+        // present in the supplied map, so blindly persisting an
+        // incomplete local snapshot here could silently wipe out real,
+        // never-loaded overrides the user never even saw. Treated as a
+        // required-step failure (not silently skipped) so the user knows
+        // to reload before evidence corrections can be trusted to save.
+        manualOverridesFailed = true;
+        setManualOverridesSaveError(
+          "Your card changes were saved, but evidence corrections could not be verified. Reload the page and try again.",
+        );
+      } else {
+        const manualOverridesSnapshot = manualOverrides;
+        const manualOverridesAlreadyPersisted =
+          lastPersistedManualOverridesRef.current === manualOverridesSnapshot;
+
+        if (manualOverridesAlreadyPersisted) {
+          setManualOverridesSaveError("");
+        } else {
+          try {
+            await replaceManualEvidenceOverrides(original.id, manualOverridesSnapshot);
+            lastPersistedManualOverridesRef.current = manualOverridesSnapshot;
+            setManualOverridesSaveError("");
+          } catch {
+            manualOverridesFailed = true;
+            setManualOverridesSaveError(
+              "Your card changes were saved, but your evidence corrections could not be fully stored. Press Save again to retry.",
+            );
+          }
+        }
+      }
+
+      // Only navigate away once front AND back media AND OCR AND manual
+      // overrides have all either succeeded or had nothing to do --
+      // otherwise the user would never see the error set above (this page
+      // unmounts on navigation). The card itself is already saved either
+      // way, and the retained row ids/pending flags (plus, for overrides,
+      // the repository's own idempotent per-field comparison) mean a
+      // retry never repeats already-successful work.
+      if (
+        !frontMediaError &&
+        !backMediaError &&
+        !frontOcrFailed &&
+        !backOcrFailed &&
+        !manualOverridesFailed
+      ) {
         router.push(`/cards/${original.id}`);
       }
     } finally {
@@ -1027,20 +1125,24 @@ export default function EditCardPage({
             so "near the OCR/Vision review area" and "before the main
             editable fields" can't both be satisfied literally; this phase
             keeps the page's existing field order unchanged and places the
-            Inspector alongside the review area it depends on. READ-ONLY
-            with respect to persistence: onOverride/onRemoveOverride only
-            update local manualOverrides state for this session -- onSave
-            below never reads manualOverrides, so nothing entered here is
-            written to manual_evidence_overrides yet (V3.5A4 scope). */}
+            Inspector alongside the review area it depends on.
+            Vision Engine V3, Phase V3.5A4: onOverride/onRemoveOverride
+            still only update local manualOverrides state immediately
+            (Resolve/Override/Remove Override never themselves call the
+            network) -- persistence happens exclusively in onSave, once
+            the user presses the existing Save button, via
+            replaceManualEvidenceOverrides. The former "temporary until
+            edit-page persistence is enabled" notice is removed: it is no
+            longer true. */}
         <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3">
           <EvidenceInspector
             evidence={displayEvidence}
             onOverride={handleEvidenceOverride}
             onRemoveOverride={handleRemoveEvidenceOverride}
           />
-          <div className="mt-2 text-xs text-amber-700">
-            Evidence corrections made here are temporary until edit-page persistence is enabled.
-          </div>
+          {manualOverridesSaveError ? (
+            <div className="mt-2 text-xs text-red-600">{manualOverridesSaveError}</div>
+          ) : null}
           {manualOverridesLoadError ? (
             <div className="mt-1 text-xs text-red-600">{manualOverridesLoadError}</div>
           ) : null}
