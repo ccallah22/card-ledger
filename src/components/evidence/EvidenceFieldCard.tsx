@@ -29,12 +29,18 @@ function ManualOverrideEditor({
 
   return (
     <div className="flex flex-wrap items-center gap-1">
+      {/* Vision Engine V3 responsive fix (Phase 3A): min-w-0 flex-1 lets the
+          input grow to fill available row width (unchanged desktop
+          behavior is a normal-sized text input) while still being able to
+          shrink below its own intrinsic width on narrow screens, instead of
+          forcing this row wider than its container. shrink-0 on Save/Cancel
+          keeps them from ever being visually compressed. */}
       <input
         type="text"
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder="Enter value"
-        className="rounded border border-zinc-300 px-1.5 py-0.5 text-base sm:text-sm text-zinc-800"
+        className="min-w-0 flex-1 rounded border border-zinc-300 px-1.5 py-0.5 text-base sm:text-sm text-zinc-800"
       />
       <button
         type="button"
@@ -42,11 +48,11 @@ function ManualOverrideEditor({
         onClick={() => {
           if (parsed !== null) onSave(parsed);
         }}
-        className="rounded border border-zinc-300 px-1.5 py-0.5 text-zinc-700 hover:enabled:bg-zinc-100 disabled:opacity-40"
+        className="shrink-0 rounded border border-zinc-300 px-1.5 py-0.5 text-zinc-700 hover:enabled:bg-zinc-100 disabled:opacity-40"
       >
         Save
       </button>
-      <button type="button" onClick={onCancel} className="text-zinc-500 underline">
+      <button type="button" onClick={onCancel} className="shrink-0 text-zinc-500 underline">
         Cancel
       </button>
     </div>
@@ -114,14 +120,20 @@ export function EvidenceFieldCard({
         onClick={() => setExpanded((prev) => !prev)}
         className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left"
       >
-        <span className="flex flex-wrap items-center gap-1.5">
+        {/* Vision Engine V3 responsive fix (Phase 3A): min-w-0 on both this
+            row and the value span (below) lets an unbounded resolved value
+            (e.g. a long OCR token) actually shrink/wrap within this
+            flex-wrap row instead of forcing it -- and the collapse
+            button/card -- wider than the available width. Badges are short,
+            fixed-length labels and need no such protection. */}
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="font-medium text-zinc-800">{label}</span>
-          <span className="text-zinc-600">{formatValue(field.value)}</span>
+          <span className="min-w-0 break-words text-zinc-600">{formatValue(field.value)}</span>
           <EvidenceStateBadge state={field.state} />
           <EvidenceConfidenceBadge confidence={field.confidence} />
           <EvidenceSourceBadge source={field.primarySource} />
         </span>
-        <span aria-hidden="true" className="text-zinc-400">
+        <span aria-hidden="true" className="shrink-0 text-zinc-400">
           {expanded ? "−" : "+"}
         </span>
       </button>
@@ -132,7 +144,7 @@ export function EvidenceFieldCard({
             <p className="text-zinc-400">No evidence available.</p>
           ) : (
             <>
-              <p className="text-zinc-700">{field.explanation}</p>
+              <p className="break-words text-zinc-700">{field.explanation}</p>
 
               <div className="mt-2">
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
@@ -176,7 +188,7 @@ export function EvidenceFieldCard({
                       key={valueLabel}
                       type="button"
                       onClick={() => onOverride(value, RESOLVE_EXPLANATION)}
-                      className="rounded border border-zinc-300 px-1.5 py-0.5 text-zinc-700 hover:bg-zinc-100"
+                      className="min-w-0 max-w-full break-words rounded border border-zinc-300 px-1.5 py-0.5 text-zinc-700 hover:bg-zinc-100"
                     >
                       Use {valueLabel}
                     </button>

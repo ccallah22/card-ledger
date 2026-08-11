@@ -57,7 +57,10 @@ export function EvidenceObservationList({
 
         return (
           <li key={index} className="flex gap-2">
-            <div className="flex flex-col items-center">
+            {/* Vision Engine V3 responsive fix (Phase 3A): shrink-0 keeps the
+                dot/connector column a fixed small size regardless of how
+                long the sibling content column's value/explanation gets. */}
+            <div className="flex shrink-0 flex-col items-center">
               <span
                 className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
                   isManualOverride ? "bg-blue-500" : isCurrentWinner ? "bg-emerald-500" : "bg-zinc-300"
@@ -65,11 +68,16 @@ export function EvidenceObservationList({
               />
               {!isLast ? <span className="w-px flex-1 bg-zinc-200" /> : null}
             </div>
-            <div className={`flex-1 ${isLast ? "" : "pb-2"}`}>
+            {/* min-w-0 is required here even though this is already flex-1:
+                flex-basis:0 alone does not remove a flex item's default
+                min-width:auto, so without it a long unbroken value/
+                explanation below could still force this column -- and the
+                row/card/page -- wider than available space. */}
+            <div className={`min-w-0 flex-1 ${isLast ? "" : "pb-2"}`}>
               <div className="flex flex-wrap items-center gap-1">
                 <span className="text-zinc-400">{formatObservedAtTime(observation.observedAt)}</span>
                 <EvidenceSourceBadge source={observation.source} />
-                <span className="text-zinc-700">{formatValue(observation.value)}</span>
+                <span className="min-w-0 break-words text-zinc-700">{formatValue(observation.value)}</span>
                 <EvidenceConfidenceBadge confidence={observation.confidence} />
                 {isManualOverride ? (
                   <span className="inline-block rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
@@ -87,7 +95,7 @@ export function EvidenceObservationList({
                   </span>
                 ) : null}
               </div>
-              <p className="text-zinc-500">{observation.explanation}</p>
+              <p className="break-words text-zinc-500">{observation.explanation}</p>
             </div>
           </li>
         );

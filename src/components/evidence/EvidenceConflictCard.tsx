@@ -30,9 +30,13 @@ export function EvidenceConflictCard({
         {SEVERITY_LABELS[conflict.severity]}
       </span>
       {conflict.suggestedResolution !== null ? (
-        <p className="mt-1 text-zinc-700">Suggested resolution: {formatValue(conflict.suggestedResolution)}</p>
+        <p className="mt-1 break-words text-zinc-700">
+          Suggested resolution: {formatValue(conflict.suggestedResolution)}
+        </p>
       ) : null}
-      {conflict.suggestedResolutionReason ? <p className="text-zinc-500">{conflict.suggestedResolutionReason}</p> : null}
+      {conflict.suggestedResolutionReason ? (
+        <p className="break-words text-zinc-500">{conflict.suggestedResolutionReason}</p>
+      ) : null}
       <div className="mt-1.5">
         <EvidenceObservationList observations={conflict.observations} formatValue={formatValue} />
       </div>
