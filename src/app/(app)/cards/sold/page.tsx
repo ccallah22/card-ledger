@@ -331,9 +331,18 @@ export default function SoldHistoryPage() {
         />
       </div>
 
-      {/* Table */}
+      {/* Table -- overflow-hidden here is purely cosmetic (clips the header
+          row's square bg-zinc-50 corners to this container's rounded-xl
+          border); it never needs to hide overflowing row content now that
+          rows can no longer force horizontal overflow (see below), so it's
+          kept for its original rounding purpose only. */}
       <div className="overflow-hidden rounded-xl border bg-white">
-        <div className="grid grid-cols-12 gap-2 border-b bg-zinc-50 px-4 py-2 text-xs font-medium text-zinc-600">
+        {/* Vision Engine V3 responsive fix (Phase 2B): column header row is
+            desktop-only -- below sm: each row becomes a stacked mobile card
+            that carries its own inline field labels instead (see
+            SoldRowField below), so a header row naming columns that no
+            longer exist would be meaningless there. */}
+        <div className="hidden border-b bg-zinc-50 px-4 py-2 text-xs font-medium text-zinc-600 sm:grid sm:grid-cols-12 sm:gap-2">
           <div className="col-span-4">Card</div>
           <div className="col-span-2 whitespace-nowrap">Sold date</div>
           <div className="col-span-1 text-right">Days</div>
@@ -348,16 +357,18 @@ export default function SoldHistoryPage() {
             <div className="divide-y">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={`sold-skel-${i}`} className="px-4 py-3 animate-pulse">
-                  <div className="grid grid-cols-12 gap-2 text-sm">
-                    <div className="col-span-4 space-y-2">
+                  <div className="flex flex-col gap-2 sm:grid sm:grid-cols-12 sm:gap-2 sm:text-sm">
+                    <div className="space-y-2 sm:col-span-4">
                       <div className="h-3 w-3/4 rounded bg-zinc-200/70" />
                       <div className="h-3 w-1/2 rounded bg-zinc-200/70" />
                     </div>
-                    <div className="col-span-2 h-3 w-3/4 rounded bg-zinc-200/70" />
-                    <div className="col-span-1 h-3 w-2/3 rounded bg-zinc-200/70" />
-                    <div className="col-span-2 h-3 w-3/4 rounded bg-zinc-200/70" />
-                    <div className="col-span-2 h-3 w-3/4 rounded bg-zinc-200/70" />
-                    <div className="col-span-1 h-3 w-2/3 rounded bg-zinc-200/70" />
+                    <div className="grid grid-cols-2 gap-2 sm:contents">
+                      <div className="h-3 w-3/4 rounded bg-zinc-200/70 sm:col-span-2" />
+                      <div className="h-3 w-2/3 rounded bg-zinc-200/70 sm:col-span-1" />
+                      <div className="h-3 w-3/4 rounded bg-zinc-200/70 sm:col-span-2" />
+                      <div className="h-3 w-3/4 rounded bg-zinc-200/70 sm:col-span-2" />
+                      <div className="h-3 w-2/3 rounded bg-zinc-200/70 sm:col-span-1" />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -388,9 +399,18 @@ export default function SoldHistoryPage() {
               return (
                 <li key={c.id} className="px-4 py-3 hover:bg-zinc-50">
                   <Link href={`/cards/${c.id}`} className="block">
-                    <div className="grid grid-cols-12 gap-2 text-sm">
-                      <div className="col-span-4">
-                        <div className="font-medium">
+                    {/* Mobile: stacked card (Card, then a compact 2-column
+                        grid of labeled secondary fields). sm: and up:
+                        reverts to the original 12-column row, byte-identical
+                        to before this phase -- same col-spans, same gap, no
+                        items-center (matches the original, which never had
+                        it either). */}
+                    <div className="flex flex-col gap-3 text-sm sm:grid sm:grid-cols-12 sm:gap-2">
+                      <div className="min-w-0 sm:col-span-4">
+                        <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 sm:hidden">
+                          Card
+                        </div>
+                        <div className="break-words font-medium">
                           {c.playerName}
                           <span className="ml-2 text-xs text-zinc-500">
                             • {c.year} • {c.setName}
@@ -400,24 +420,45 @@ export default function SoldHistoryPage() {
                         {c.team ? <div className="text-xs text-zinc-500">{c.team}</div> : null}
                       </div>
 
-                      <div className="col-span-2 whitespace-nowrap text-zinc-700">
-                        {soldDate || "—"}
-                      </div>
+                      {/* sm:contents dissolves this wrapper at sm: and up,
+                          so each field below becomes a direct child of the
+                          outer grid-cols-12 row -- same pattern already used
+                          for /cards' bulk-action rows. */}
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:contents">
+                        <SoldRowField
+                          label="Sold date"
+                          value={soldDate || "—"}
+                          className="sm:col-span-2"
+                          valueClassName="text-zinc-700 sm:whitespace-nowrap"
+                        />
 
-                      <div className="col-span-1 text-right tabular-nums text-zinc-700">
-                        {typeof hold === "number" ? `${hold}` : "—"}
-                      </div>
+                        <SoldRowField
+                          label="Days held"
+                          value={typeof hold === "number" ? `${hold}` : "—"}
+                          className="sm:col-span-1 sm:text-right"
+                          valueClassName="tabular-nums text-zinc-700"
+                        />
 
-                      <div className="col-span-2 text-right tabular-nums text-zinc-700">
-                        {paid ? formatCurrency(paid) : "—"}
-                      </div>
+                        <SoldRowField
+                          label="Paid"
+                          value={paid ? formatCurrency(paid) : "—"}
+                          className="sm:col-span-2 sm:text-right"
+                          valueClassName="tabular-nums text-zinc-700"
+                        />
 
-                      <div className="col-span-2 text-right tabular-nums text-zinc-700">
-                        {soldPrice ? formatCurrency(soldPrice) : "—"}
-                      </div>
+                        <SoldRowField
+                          label="Sold price"
+                          value={soldPrice ? formatCurrency(soldPrice) : "—"}
+                          className="sm:col-span-2 sm:text-right"
+                          valueClassName="tabular-nums text-zinc-700"
+                        />
 
-                      <div className={`col-span-1 text-right tabular-nums font-semibold ${plClass}`}>
-                        {formatCurrency(pl, { accounting: true })}
+                        <SoldRowField
+                          label="P/L"
+                          value={formatCurrency(pl, { accounting: true })}
+                          className="sm:col-span-1 sm:text-right"
+                          valueClassName={`tabular-nums font-semibold ${plClass}`}
+                        />
                       </div>
                     </div>
                   </Link>
@@ -500,6 +541,32 @@ function Stat({
     <div className={`rounded-xl border p-4 ${borderClass}`}>
       <div className="text-[11px] text-zinc-500 leading-snug break-words">{label}</div>
       <div className={`mt-1 text-lg sm:text-xl font-semibold ${valueClass}`}>{value}</div>
+    </div>
+  );
+}
+
+// Vision Engine V3 responsive fix (Phase 2B): one sold-row field, rendered
+// with its own inline label below sm: (where there is no column header to
+// convey what a lone value means) and as a bare value at sm: and up (where
+// `label` is sm:hidden and `className`/`valueClassName` reproduce that
+// field's exact original grid placement/alignment/styling).
+function SoldRowField({
+  label,
+  value,
+  className,
+  valueClassName,
+}: {
+  label: string;
+  value: React.ReactNode;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={className}>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 sm:hidden">
+        {label}
+      </div>
+      <div className={valueClassName}>{value}</div>
     </div>
   );
 }
