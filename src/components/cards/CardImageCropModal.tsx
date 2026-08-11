@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
+import { computeCoverScale } from "@/lib/cropGeometry";
 
 type CropData = { dataUrl: string; width: number; height: number };
 type CropOffset = { x: number; y: number };
@@ -40,7 +41,7 @@ export type CardImageCropModalProps = {
   setCropZoom: (v: number) => void;
   cropRotationBase: number;
   cropRotationFine: number;
-  applyCropRotation: (nextBase: number, nextFine: number) => Promise<void>;
+  applyCropRotation: (nextBase: number, nextFine: number) => void;
   confirmCrop: () => Promise<void>;
   cropBoxWidth: number;
   cropBoxHeight: number;
@@ -186,8 +187,16 @@ export function CardImageCropModal({
                   style={{
                     width: cropData.width,
                     height: cropData.height,
-                    transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) translate(-50%, -50%) scale(${
-                      Math.max(cropBoxWidth / cropData.width, cropBoxHeight / cropData.height) * cropZoom
+                    transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) translate(-50%, -50%) rotate(${
+                      cropRotationBase + cropRotationFine
+                    }deg) scale(${
+                      computeCoverScale(
+                        cropRotationBase + cropRotationFine,
+                        cropData.width,
+                        cropData.height,
+                        cropBoxWidth,
+                        cropBoxHeight
+                      ) * cropZoom
                     })`,
                   }}
                 />

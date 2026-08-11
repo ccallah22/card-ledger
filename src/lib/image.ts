@@ -23,63 +23,41 @@ function loadImage(src: string) {
   });
 }
 
-export type CropRect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+export type RenderCropParams = {
+  offsetX: number;
+  offsetY: number;
+  rotationDeg: number;
+  scale: number;
+  outWidth: number;
+  outHeight: number;
 };
 
-export async function cropImageDataUrl(
+// Renders the final crop export directly from the original (never rebaked)
+// source image using one compound canvas transform -- translate to the
+// image's center position (frame center + pan offset), rotate, then scale --
+// applied in the same order as CardImageCropModal's live CSS preview
+// transform. Because export and preview share the same transform chain and
+// both read from the same untouched source bitmap, the exported pixels are
+// guaranteed to match what the user saw, at any rotation angle.
+export async function renderCroppedImage(
   dataUrl: string,
-  crop: CropRect,
-  outputType = "image/webp",
-  quality = 0.92,
-  outputSize?: { width: number; height: number }
-) {
-  const img = await loadImage(dataUrl);
-  const canvas = document.createElement("canvas");
-  const width = Math.max(1, Math.floor(outputSize?.width ?? crop.width));
-  const height = Math.max(1, Math.floor(outputSize?.height ?? crop.height));
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Failed to process image.");
-  ctx.drawImage(
-    img,
-    Math.max(0, crop.x),
-    Math.max(0, crop.y),
-    Math.max(1, Math.floor(crop.width)),
-    Math.max(1, Math.floor(crop.height)),
-    0,
-    0,
-    width,
-    height
-  );
-  return canvas.toDataURL(outputType, quality);
-}
-
-export async function rotateImageDataUrl(
-  dataUrl: string,
-  degrees: number,
+  params: RenderCropParams,
   outputType = "image/webp",
   quality = 0.92
 ) {
   const img = await loadImage(dataUrl);
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
-  const radians = (degrees * Math.PI) / 180;
-  const cos = Math.abs(Math.cos(radians));
-  const sin = Math.abs(Math.sin(radians));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(width * cos + height * sin));
-  canvas.height = Math.max(1, Math.round(width * sin + height * cos));
+  canvas.width = Math.max(1, Math.floor(params.outWidth));
+  canvas.height = Math.max(1, Math.floor(params.outHeight));
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Failed to process image.");
 
-  ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.rotate(radians);
-  ctx.drawImage(img, -width / 2, -height / 2);
+  ctx.translate(canvas.width / 2 + params.offsetX, canvas.height / 2 + params.offsetY);
+  ctx.rotate((params.rotationDeg * Math.PI) / 180);
+  ctx.scale(params.scale, params.scale);
+  ctx.drawImage(img, -width / 2, -height / 2, width, height);
   return canvas.toDataURL(outputType, quality);
 }
 

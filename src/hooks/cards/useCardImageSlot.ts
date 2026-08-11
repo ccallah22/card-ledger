@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { cropImageDataUrl, processImageFile, rotateImageDataUrl } from "@/lib/image";
+import { processImageFile, renderCroppedImage } from "@/lib/image";
+import { computeCoverScale, clampOffsetForRotation } from "@/lib/cropGeometry";
 
 type CropData = { dataUrl: string; width: number; height: number };
 
@@ -63,22 +64,25 @@ export function useCardImageSlot(side: CardImageSlotSide) {
     next: { x: number; y: number },
     data: { width: number; height: number }
   ) {
-    const baseScale = Math.max(CROP_BOX_WIDTH / data.width, CROP_BOX_HEIGHT / data.height);
-    const scale = baseScale * cropZoom;
-    const scaledW = data.width * scale;
-    const scaledH = data.height * scale;
-    const maxX = Math.max(0, (scaledW - CROP_BOX_WIDTH) / 2);
-    const maxY = Math.max(0, (scaledH - CROP_BOX_HEIGHT) / 2);
-    return {
-      x: Math.max(-maxX, Math.min(maxX, next.x)),
-      y: Math.max(-maxY, Math.min(maxY, next.y)),
-    };
+    const rotationDeg = cropRotationBase + cropRotationFine;
+    const scale =
+      computeCoverScale(rotationDeg, data.width, data.height, CROP_BOX_WIDTH, CROP_BOX_HEIGHT) *
+      cropZoom;
+    return clampOffsetForRotation(
+      next,
+      data.width,
+      data.height,
+      CROP_BOX_WIDTH,
+      CROP_BOX_HEIGHT,
+      rotationDeg,
+      scale
+    );
   }
 
   useEffect(() => {
     if (!cropData) return;
     setCropOffset((prev) => clampCropOffset(prev, cropData));
-  }, [cropZoom, cropData]);
+  }, [cropZoom, cropData, cropRotationBase, cropRotationFine]);
 
   async function runImageCheck(dataUrl: string) {
     const res = await fetch("/api/image-check", {
@@ -104,20 +108,23 @@ export function useCardImageSlot(side: CardImageSlotSide) {
 
   async function confirmCrop() {
     if (!cropData) return;
-    const baseScale = Math.max(CROP_BOX_WIDTH / cropData.width, CROP_BOX_HEIGHT / cropData.height);
-    const scale = baseScale * cropZoom;
-    const rawCropW = CROP_BOX_WIDTH / scale;
-    const rawCropH = CROP_BOX_HEIGHT / scale;
-    const cropW = Math.min(cropData.width, rawCropW);
-    const cropH = Math.min(cropData.height, rawCropH);
-    const x = cropData.width / 2 + ((-CROP_BOX_WIDTH / 2 - cropOffset.x) / scale);
-    const y = cropData.height / 2 + ((-CROP_BOX_HEIGHT / 2 - cropOffset.y) / scale);
-    const cropped = await cropImageDataUrl(cropData.dataUrl, {
-      x: Math.max(0, Math.min(cropData.width - cropW, x)),
-      y: Math.max(0, Math.min(cropData.height - cropH, y)),
-      width: cropW,
-      height: cropH,
-    }, "image/webp", 0.92, { width: CROP_BOX_WIDTH, height: CROP_BOX_HEIGHT });
+    const rotationDeg = cropRotationBase + cropRotationFine;
+    const scale =
+      computeCoverScale(rotationDeg, cropData.width, cropData.height, CROP_BOX_WIDTH, CROP_BOX_HEIGHT) *
+      cropZoom;
+    const cropped = await renderCroppedImage(
+      cropData.dataUrl,
+      {
+        offsetX: cropOffset.x,
+        offsetY: cropOffset.y,
+        rotationDeg,
+        scale,
+        outWidth: CROP_BOX_WIDTH,
+        outHeight: CROP_BOX_HEIGHT,
+      },
+      "image/webp",
+      0.92
+    );
     setImageUrl(cropped);
     setImageOwnerConfirm(false);
     setImageShare(false);
@@ -128,28 +135,29 @@ export function useCardImageSlot(side: CardImageSlotSide) {
     await runImageCheck(cropped);
   }
 
-  async function applyCropRotation(nextBase: number, nextFine: number) {
-    if (!cropSource) return;
-    try {
-      const totalRotation = nextBase + nextFine;
-      const rotated = await rotateImageDataUrl(cropSource.dataUrl, totalRotation);
-      const img = new Image();
-      img.onload = () => {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        setCropData({ dataUrl: rotated, width, height });
-        setCropOffset({ x: 0, y: 0 });
-        setCropZoom(1);
-        setCropRotationBase(nextBase);
-        setCropRotationFine(nextFine);
-      };
-      img.onerror = () => {
-        setImageError("Failed to rotate image.");
-      };
-      img.src = rotated;
-    } catch {
-      setImageError("Failed to rotate image.");
-    }
+  // Rotation is live state, not a rebaked bitmap: changing it just re-clamps
+  // the existing pan/zoom against the new angle's cover-fit geometry (see
+  // clampCropOffset), so the user's position/zoom is preserved across a
+  // rotation change instead of being reset every time.
+  function applyCropRotation(nextBase: number, nextFine: number) {
+    if (!cropData) return;
+    const rotationDeg = nextBase + nextFine;
+    const scale =
+      computeCoverScale(rotationDeg, cropData.width, cropData.height, CROP_BOX_WIDTH, CROP_BOX_HEIGHT) *
+      cropZoom;
+    setCropRotationBase(nextBase);
+    setCropRotationFine(nextFine);
+    setCropOffset((prev) =>
+      clampOffsetForRotation(
+        prev,
+        cropData.width,
+        cropData.height,
+        CROP_BOX_WIDTH,
+        CROP_BOX_HEIGHT,
+        rotationDeg,
+        scale
+      )
+    );
   }
 
   function handleImageFile(file: File | null) {
