@@ -177,7 +177,12 @@ export default function LocationsPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border bg-white">
-          <div className="grid grid-cols-12 gap-2 border-b bg-zinc-50 px-4 py-2 text-xs font-medium text-zinc-600">
+          {/* Vision Engine V3 responsive fix (Phase 2A): column header row is
+              desktop-only -- below sm: each row becomes a stacked mobile
+              card that carries its own inline labels instead (e.g. "Cards:"
+              -- see the count cell below), so a header row naming columns
+              that no longer exist would be meaningless there. */}
+          <div className="hidden border-b bg-zinc-50 px-4 py-2 text-xs font-medium text-zinc-600 sm:grid sm:grid-cols-12 sm:gap-2">
             <div className="col-span-4">Location</div>
             <div className="col-span-1 text-right">Cards</div>
             <div className="col-span-5">Rename to</div>
@@ -187,14 +192,21 @@ export default function LocationsPage() {
           <ul className="divide-y">
             {locations.map((loc) => (
               <li key={loc.key} className="px-4 py-3">
-                <div className="grid grid-cols-12 gap-2 items-center text-sm">
-                  <div className="col-span-4 font-medium text-zinc-900">{loc.label}</div>
-
-                  <div className="col-span-1 text-right tabular-nums text-zinc-700">
-                    {loc.count}
+                {/* Mobile: stacked card (name, count, rename input, actions).
+                    sm: and up: reverts to the original 12-column grid row,
+                    byte-identical to before this phase -- same col-spans,
+                    same gap, same items-center. */}
+                <div className="flex flex-col gap-3 text-sm sm:grid sm:grid-cols-12 sm:items-center sm:gap-2">
+                  <div className="min-w-0 break-words font-medium text-zinc-900 sm:col-span-4">
+                    {loc.label}
                   </div>
 
-                  <div className="col-span-5">
+                  <div className="text-zinc-700 sm:col-span-1 sm:text-right">
+                    <span className="sm:hidden">Cards: </span>
+                    <span className="tabular-nums">{loc.count}</span>
+                  </div>
+
+                  <div className="sm:col-span-5">
                     <input
                       value={edits[loc.key] ?? ""}
                       onChange={(e) => setEdit(loc.key, e.target.value)}
@@ -203,18 +215,18 @@ export default function LocationsPage() {
                     />
                   </div>
 
-                  <div className="col-span-2 flex justify-end gap-2">
+                  <div className="flex gap-2 sm:col-span-2 sm:justify-end">
                     <button
                       type="button"
                       onClick={() => renameLocation(loc.key)}
-                      className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--brand-primary-strong)]"
+                      className="flex-1 rounded-md bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--brand-primary-strong)] sm:flex-none"
                     >
                       Rename
                     </button>
                     <button
                       type="button"
                       onClick={() => clearLocation(loc.key)}
-                      className="rounded-md border bg-white px-3 py-2 text-xs hover:bg-zinc-50"
+                      className="flex-1 rounded-md border bg-white px-3 py-2 text-xs hover:bg-zinc-50 sm:flex-none"
                     >
                       Clear
                     </button>
