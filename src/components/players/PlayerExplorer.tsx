@@ -112,7 +112,7 @@ export function PlayerExplorer() {
       <input
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+        className="w-full rounded-md border bg-background px-3 py-2 text-base sm:text-sm"
         placeholder="Search by player name..."
       />
 
@@ -120,7 +120,7 @@ export function PlayerExplorer() {
         <select
           value={sportId ?? ""}
           onChange={(event) => handleSportChange(event.target.value)}
-          className="rounded-md border bg-background px-3 py-2 text-sm"
+          className="rounded-md border bg-background px-3 py-2 text-base sm:text-sm"
         >
           <option value="">All sports</option>
           {sports.map((sport) => (
@@ -134,7 +134,7 @@ export function PlayerExplorer() {
           value={leagueId ?? ""}
           onChange={(event) => handleLeagueChange(event.target.value)}
           disabled={!sportId}
-          className="rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50"
+          className="rounded-md border bg-background px-3 py-2 text-base sm:text-sm disabled:opacity-50"
         >
           <option value="">All leagues</option>
           {leagues.map((league) => (
@@ -148,7 +148,7 @@ export function PlayerExplorer() {
           value={teamId ?? ""}
           onChange={(event) => handleTeamChange(event.target.value)}
           disabled={!leagueId}
-          className="rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50"
+          className="rounded-md border bg-background px-3 py-2 text-base sm:text-sm disabled:opacity-50"
         >
           <option value="">All teams</option>
           {teams.map((team) => (

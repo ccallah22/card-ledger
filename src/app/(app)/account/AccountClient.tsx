@@ -538,7 +538,7 @@ export default function AccountClient() {
                     onChange={(e) => setTotpCode(e.target.value)}
                     placeholder="Enter 6-digit code"
                     inputMode="numeric"
-                    className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                    className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900"
                   />
                   <button
                     type="button"
@@ -618,7 +618,7 @@ export default function AccountClient() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="New password"
-                className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900"
               />
               <button
                 type="button"
@@ -674,7 +674,7 @@ export default function AccountClient() {
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
               placeholder="Type DELETE to confirm"
-              className="flex-1 rounded-md border border-rose-300 bg-white px-3 py-2 text-sm text-zinc-900"
+              className="flex-1 rounded-md border border-rose-300 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900"
             />
             <button
               type="button"

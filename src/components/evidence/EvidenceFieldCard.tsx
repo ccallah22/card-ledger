@@ -34,7 +34,7 @@ function ManualOverrideEditor({
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder="Enter value"
-        className="rounded border border-zinc-300 px-1.5 py-0.5 text-zinc-800"
+        className="rounded border border-zinc-300 px-1.5 py-0.5 text-base sm:text-sm text-zinc-800"
       />
       <button
         type="button"

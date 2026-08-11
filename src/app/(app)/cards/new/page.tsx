@@ -1780,7 +1780,7 @@ function NewCardPageInner() {
                 window.setTimeout(() => setShowSetResults(false), 120);
               }}
               placeholder="Search sets (e.g., 2018 Prizm, Topps Chrome)"
-              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
             />
             {showSetResults && setResults.length ? (
               <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
@@ -1834,7 +1834,7 @@ function NewCardPageInner() {
                 window.setTimeout(() => setShowCatalogResults(false), 120);
               }}
               placeholder="Search player, set, year, card #..."
-              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
             />
             {showCatalogResults && debouncedCatalogQuery.trim() ? (
               <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
@@ -1898,7 +1898,7 @@ function NewCardPageInner() {
                   window.setTimeout(() => setShowChecklistResults(false), 120);
                 }}
                 placeholder="Search name, number, team..."
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
               />
               {showChecklistResults && checklistResults.length ? (
                 <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
@@ -2030,7 +2030,7 @@ function NewCardPageInner() {
                   window.setTimeout(() => setShowCatalogCardResults(false), 120);
                 }}
                 placeholder="Search card number or title..."
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
               />
               {showCatalogCardResults && catalogCardOptions.length ? (
                 <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
@@ -2081,7 +2081,7 @@ function NewCardPageInner() {
                   window.setTimeout(() => setShowCatalogVariantResults(false), 120);
                 }}
                 placeholder="Search parallel, print run, or descriptor..."
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
               />
               {showCatalogVariantResults && catalogVariantOptions.length ? (
                 <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
@@ -2371,7 +2371,7 @@ function NewCardPageInner() {
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Binder A / Box 1 / Safe"
               list="location-options"
-              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
             />
             <datalist id="location-options">
               {locationOptions.map((opt) => (
@@ -2457,7 +2457,7 @@ function NewCardPageInner() {
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
+            className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
             rows={3}
             placeholder="Any extra details…"
           />

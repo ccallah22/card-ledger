@@ -102,7 +102,7 @@ export function BinderToolbar({
           <select
             value={sportFilter}
             onChange={(e) => setSportAndReset(e.target.value)}
-            className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900"
+            className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900"
           >
             <option value="ALL">All</option>
             {sportOptions.map((o) => (
@@ -148,13 +148,13 @@ export function BinderToolbar({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search player, set, year, grade..."
-            className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-zinc-300 focus:ring-2 sm:w-80"
+            className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 outline-none ring-zinc-300 focus:ring-2 sm:w-80"
           />
 
           <select
             value={sortMode}
             onChange={(e) => setSortMode(e.target.value as SortMode)}
-            className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-56"
+            className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 sm:w-56"
           >
             <option value="PLAYER_ASC">Sort: Player (A→Z)</option>
             <option value="YEAR_DESC">Sort: Year (newest)</option>

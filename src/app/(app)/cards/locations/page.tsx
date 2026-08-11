@@ -199,7 +199,7 @@ export default function LocationsPage() {
                       value={edits[loc.key] ?? ""}
                       onChange={(e) => setEdit(loc.key, e.target.value)}
                       placeholder={`Rename "${loc.label}" to...`}
-                      className="w-full rounded-md border bg-white px-3 py-2 text-sm"
+                      className="w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm"
                     />
                   </div>
 

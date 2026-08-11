@@ -17,7 +17,7 @@ export function Field({
 }) {
   const isDate = type === "date";
   const inputClass =
-    "mt-1 w-full min-w-0 max-w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400";
+    "mt-1 w-full min-w-0 max-w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400";
 
   const [dateDisplay, setDateDisplay] = useState("");
 
@@ -119,7 +119,7 @@ export function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900"
+        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900"
       >
         {options.map(([v, t]) => (
           <option key={v} value={v}>

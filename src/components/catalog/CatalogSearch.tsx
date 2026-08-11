@@ -57,7 +57,7 @@ export function CatalogSearch() {
       <input
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+        className="w-full rounded-md border bg-background px-3 py-2 text-base sm:text-sm"
         placeholder="Search catalog cards..."
       />
 

@@ -1486,7 +1486,7 @@ function CardsPageInner() {
                 <select
                   value={bulkLocationValue}
                   onChange={(e) => setBulkLocationValue(e.target.value)}
-                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-auto"
+                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 sm:w-auto"
                 >
                   <option value="">No location</option>
                   {locationOptions.map((opt) => (
@@ -1512,7 +1512,7 @@ function CardsPageInner() {
                   value={bulkPurchasePriceValue}
                   onChange={(e) => setBulkPurchasePriceValue(e.target.value)}
                   placeholder="Purchase price"
-                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-32"
+                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 sm:w-32"
                 />
                 <button
                   type="button"
@@ -1531,7 +1531,7 @@ function CardsPageInner() {
                   value={bulkAskingPriceValue}
                   onChange={(e) => setBulkAskingPriceValue(e.target.value)}
                   placeholder="Asking price"
-                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-32"
+                  className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 sm:w-32"
                 />
                 <button
                   type="button"

@@ -902,7 +902,7 @@ export default function EditCardPage({
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm"
             rows={3}
             placeholder="Any extra details…"
           />
@@ -1225,7 +1225,7 @@ function Field({
               }}
               placeholder="mm/dd/yyyy"
               inputMode="numeric"
-              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm pr-10"
+              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm pr-10"
             />
             <input
               value={value}
@@ -1246,7 +1246,7 @@ function Field({
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             type={type}
-            className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm"
           />
         )}
         {isDate ? (
@@ -1285,7 +1285,7 @@ function MoneyField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         inputMode="decimal"
-        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm"
       />
       <div className="mt-1 text-xs text-zinc-500">{preview ? `Preview: ${preview}` : "Preview: —"}</div>
     </div>
@@ -1309,7 +1309,7 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm"
       >
         {options.map(([v, t]) => (
           <option key={v} value={v}>
