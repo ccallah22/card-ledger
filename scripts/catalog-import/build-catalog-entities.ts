@@ -8,6 +8,9 @@ import {
   type NormalizedBeckettRow,
 } from "./import-beckett-checklist.ts";
 import { analyzeCardSet, normalizeParallelName } from "./analyze-card-set-patterns.ts";
+// Plain relative import (not the "@/..." alias) so this still resolves
+// under plain Node -- see parsePlayerNames.ts's own header comment for why.
+import { parsePlayerNames } from "../../src/lib/catalog/parsePlayerNames.ts";
 
 /**
  * Offline transformer: turns normalized Beckett/Sheets checklist rows into
@@ -263,6 +266,28 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
       });
     }
 
+    // Bug-fix-phase audit note (requirement #4, not changed by this fix):
+    // row.team_name and row.position use the exact same "/"-combined
+    // convention as row.player_name for a Multiverse-Jerseys-style row
+    // (e.g. TEAM "Philadelphia Eagles/Tennessee Titans", POSITION
+    // "WR/WR" alongside ATHLETE "A.J. Brown/A.J. Brown"), but this
+    // codebase has no player-team relationship at all today -- `players`
+    // has a `team_id` column, but nothing in this pipeline ever sets it
+    // (Player here is `{ id, name }` only), and `teams` is built as a
+    // standalone, unlinked-to-player entity purely to derive sport/league.
+    // Splitting team_name/position and zipping them positionally against
+    // parsePlayerNames()'s output would be guessing at a source
+    // convention I haven't verified holds for every row (e.g. it isn't
+    // guaranteed team[i] always corresponds to playerName[i] for every
+    // checklist format/subset), and inventing a player-team link here
+    // would mean designing schema this phase is explicitly scoped not to
+    // touch. Left as-is: a combined team_name still becomes one team
+    // entity with the raw combined string (e.g. "Philadelphia Eagles/
+    // Tennessee Titans") -- functionally the same pre-existing behavior
+    // as before this fix, and no worse than it already was, since no
+    // player row is ever linked to it either way. Player identity (the
+    // actual reported bug) is fully fixed above; this is a known,
+    // reported limitation, not a regression introduced by this phase.
     if (row.team_name) {
       // SPORT is a real column on Beckett's XLSX "Master Checklist" format
       // -- prefer it over the team-name heuristic when present.
@@ -283,15 +308,28 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
       }
     }
 
+    // Bug fix: row.player_name is the raw ATHLETE cell, which Beckett's
+    // checklist legitimately combines with "/" for two different reasons
+    // (see parsePlayerNames.ts's header comment) -- it is never one
+    // player's own canonical name. Parsing it into distinct names before
+    // building entities means a self-duplicate cell like
+    // "A.J. Brown/A.J. Brown" collapses to the ONE real "A.J. Brown"
+    // player (the same player:a-j-brown id a plain "A.J. Brown" row
+    // produces -- see requirement #3), and a genuine multi-player cell
+    // like "Ashton Jeanty/Omarion Hampton" produces two separate players
+    // each linked to this same card, instead of one bogus combined-name
+    // player entity.
     if (row.player_name) {
-      const playerId = `player:${slugify(row.player_name)}`;
-      if (!c.players.has(playerId)) {
-        c.players.set(playerId, { id: playerId, name: row.player_name });
-      }
+      for (const playerName of parsePlayerNames(row.player_name)) {
+        const playerId = `player:${slugify(playerName)}`;
+        if (!c.players.has(playerId)) {
+          c.players.set(playerId, { id: playerId, name: playerName });
+        }
 
-      const cardPlayerId = `cardplayer:${cardId}-${slugify(row.player_name)}`;
-      if (!c.cardPlayers.has(cardPlayerId)) {
-        c.cardPlayers.set(cardPlayerId, { id: cardPlayerId, cardId, playerId });
+        const cardPlayerId = `cardplayer:${cardId}-${slugify(playerName)}`;
+        if (!c.cardPlayers.has(cardPlayerId)) {
+          c.cardPlayers.set(cardPlayerId, { id: cardPlayerId, cardId, playerId });
+        }
       }
     }
   }

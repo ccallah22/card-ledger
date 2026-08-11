@@ -18,6 +18,7 @@ import { findOrCreateGradingCompany } from "@/lib/repositories/gradingCompanies"
 import { findOrCreateLocation } from "@/lib/repositories/locations";
 import type { MyCardInput } from "@/lib/repositories/myCards";
 import { createServiceRoleClient } from "@/lib/supabase/serviceRole";
+import { parsePlayerNames } from "./parsePlayerNames";
 import type { CatalogResolutionInput, CatalogResolutionResult } from "./resolveCatalogTypes";
 
 /**
@@ -104,9 +105,22 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
     client,
   );
 
-  const trimmedPlayerName = input.playerName.trim();
-  const player = trimmedPlayerName
-    ? await findOrCreatePlayer({ full_name: trimmedPlayerName }, client)
+  // Bug fix: this is the trusted server-side boundary (service-role
+  // client, the only live-app path that writes to `players`) -- input
+  // is defensively parsed here, before any findOrCreatePlayer call,
+  // rather than trusting the client to have already split it. This
+  // matters concretely because /cards/new's catalog-candidate autofill
+  // can set the Player field to `result.playerNames.join(" / ")`; if a
+  // user accepts that suggestion and saves without editing it, this is
+  // the only place standing between that string and a bogus combined-name
+  // `players` row. A plain single-player name (the overwhelmingly common
+  // case, with no "/") parses to a one-element array, so this changes
+  // nothing about existing single-player behavior -- see
+  // parsePlayerNames.ts.
+  const playerNames = parsePlayerNames(input.playerName.trim());
+  const primaryPlayerName = playerNames[0] ?? null;
+  const player = primaryPlayerName
+    ? await findOrCreatePlayer({ full_name: primaryPlayerName }, client)
     : null;
 
   // Catalog v2: when a checklist section is given, resolve the card through
@@ -138,6 +152,23 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
 
   if (player) {
     await findOrCreateCardPlayer(card.id, player.id, "primary", client);
+
+    // For a genuine multi-player "/"-combined name (e.g.
+    // "Ashton Jeanty/Omarion Hampton"), link every additional distinct
+    // parsed name to this same card too, using the existing
+    // findOrCreateCardPlayer/findOrCreatePlayer functions as-is --
+    // card_players' primary key is (card_id, player_id), not scoped to
+    // one row per card, so this needs no schema change. This does NOT
+    // change resolveCardForPlayer's card-number disambiguation contract:
+    // that still keys only off `player` (the first/primary parsed name),
+    // exactly as before this fix -- additional players are linked only
+    // AFTER the card itself is already resolved. No redesign of the
+    // resolver's single-primary-player card-matching logic was needed to
+    // do this safely.
+    for (const additionalName of playerNames.slice(1)) {
+      const additionalPlayer = await findOrCreatePlayer({ full_name: additionalName }, client);
+      await findOrCreateCardPlayer(card.id, additionalPlayer.id, "primary", client);
+    }
   }
 
   let parallelTypeId: number | null = null;
