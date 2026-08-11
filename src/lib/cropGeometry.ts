@@ -66,3 +66,51 @@ export function clampOffsetForRotation(
     y: uc * sin + vc * cos,
   };
 }
+
+// Phase 1D2: pure helpers for two-finger pinch/twist gestures, built on the
+// same rotation conventions as the functions above (positive degrees =
+// clockwise, matching CSS `rotate()` / canvas `ctx.rotate()`).
+
+// Normalizes a raw angle difference (e.g. atan2 output minus a baseline
+// angle, both in degrees) into (-180, 180] so a twist crossing the +/-180
+// boundary doesn't register as a sudden 360deg jump.
+export function normalizeAngleDeg(deg: number): number {
+  let d = deg % 360;
+  if (d > 180) d -= 360;
+  if (d <= -180) d += 360;
+  return d;
+}
+
+export function rotateVector(v: Offset, deg: number): Offset {
+  const rad = toRadians(deg);
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return { x: v.x * cos - v.y * sin, y: v.x * sin + v.y * cos };
+}
+
+// Given a two-finger gesture's baseline (anchor frame-point p0 -- the pinch
+// midpoint at gesture start, in the same frame-centered coordinate space as
+// cropOffset -- plus the image offset at that moment) and its current state
+// (current anchor frame-point p1, plus how much rotation/scale changed since
+// baseline), returns the image offset that keeps the same underlying image
+// content anchored under the fingers: focal-point-preserving pinch-zoom and
+// twist, derived from requiring the image-local point under p0 to still be
+// under p1 after applying the rotation/scale delta. Rotation-delta and
+// scale-ratio are relative to the gesture's own baseline (not accumulated
+// frame-to-frame), matching the stable-baseline approach used for twist
+// generally. The result still needs to pass through clampOffsetForRotation
+// before being committed -- this function only aims for a natural feel, the
+// clamp is what guarantees no blank space is ever exposed.
+export function computeAnchoredOffset(
+  p0: Offset,
+  offset0: Offset,
+  p1: Offset,
+  rotationDeltaDeg: number,
+  scaleRatio: number
+): Offset {
+  const local = rotateVector({ x: p0.x - offset0.x, y: p0.y - offset0.y }, rotationDeltaDeg);
+  return {
+    x: p1.x - local.x * scaleRatio,
+    y: p1.y - local.y * scaleRatio,
+  };
+}

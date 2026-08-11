@@ -1,11 +1,42 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
-import { computeCoverScale } from "@/lib/cropGeometry";
+import {
+  computeCoverScale,
+  clampOffsetForRotation,
+  normalizeAngleDeg,
+  computeAnchoredOffset,
+} from "@/lib/cropGeometry";
 
 type CropData = { dataUrl: string; width: number; height: number };
 type CropOffset = { x: number; y: number };
 type ImageCheckStatus = "idle" | "checking" | "accept" | "review" | "block";
+
+// Phase 1D2 gesture tuning. Tap/double-tap thresholds are in raw screen
+// pixels/ms (measured at the pointer, before any display-scale conversion)
+// since they're about human tap timing/precision, not crop geometry.
+const TAP_MAX_MOVEMENT_PX = 12;
+const TAP_MAX_DURATION_MS = 350;
+const DOUBLE_TAP_MAX_INTERVAL_MS = 350;
+const DOUBLE_TAP_MAX_DISTANCE_PX = 40;
+
+type PinchBaseline = {
+  pointerIds: [number, number];
+  dist: number;
+  angle: number;
+  zoom: number;
+  rotation: number;
+  offset: CropOffset;
+  midpoint: CropOffset; // frame-space (same coordinate system as cropOffset)
+  center: { x: number; y: number }; // viewport's screen-space center, cached for the gesture's duration
+};
+
+type TapCandidate = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startTime: number;
+};
 
 // Vision Engine V3 responsive fix (Phase 1B): the crop box's actual pixel
 // dimensions are fixed constants shared with useCardImageSlot.ts's
@@ -85,7 +116,22 @@ export function CardImageCropModal({
   // hooks must run unconditionally; the effect itself is a no-op while the
   // wrapper isn't mounted (ref.current is null).
   const cropBoxWrapperRef = useRef<HTMLDivElement | null>(null);
+  // Phase 1D2: measures the inner 304x432 viewport's live on-screen center,
+  // used to convert a pinch midpoint from screen pixels into the same
+  // frame-centered coordinate space cropOffset already lives in.
+  const cropViewportRef = useRef<HTMLDivElement | null>(null);
   const [cropDisplayScale, setCropDisplayScale] = useState(1);
+
+  // Phase 1D2 gesture state. These are plain refs (not React state) because
+  // gesture math must read/write against the *current* frame's values
+  // synchronously, not whatever committed on the last render -- exactly the
+  // same reasoning Phase 1D1's applyCropRotation already relies on for
+  // rotation. None of this needs to trigger a re-render itself; the
+  // setCropOffset/setCropZoom/applyCropRotation calls it makes do that.
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<PinchBaseline | null>(null);
+  const tapCandidateRef = useRef<TapCandidate | null>(null);
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
     const el = cropBoxWrapperRef.current;
@@ -106,6 +152,180 @@ export function CardImageCropModal({
   }, [show]);
 
   if (!show || !cropData) return null;
+
+  // Restores centered image, rotation 0deg, and the default minimum zoom
+  // that fills the crop frame (zoom=1 is exactly that scale -- see
+  // computeCoverScale). Used by double-tap.
+  function resetCrop() {
+    setCropOffset({ x: 0, y: 0 });
+    applyCropRotation(0, 0);
+    setCropZoom(1);
+  }
+
+  // Recomputes offset/rotation/zoom from the active pinch gesture's fixed
+  // baseline (captured once when the 2nd finger touched down) against the
+  // two tracked pointers' current positions. Baseline-relative rather than
+  // frame-to-frame incremental, so it can't accumulate drift over a long
+  // gesture -- same approach as Phase 1D1's rotation-aware clamp math.
+  function runPinchUpdate() {
+    const baseline = pinchRef.current;
+    if (!baseline || !cropData) return;
+    const [id1, id2] = baseline.pointerIds;
+    const pt1 = activePointersRef.current.get(id1);
+    const pt2 = activePointersRef.current.get(id2);
+    if (!pt1 || !pt2) return;
+
+    const dist1 = Math.max(1, Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y));
+    const angle1 = Math.atan2(pt2.y - pt1.y, pt2.x - pt1.x) * (180 / Math.PI);
+    const midScreen = { x: (pt1.x + pt2.x) / 2, y: (pt1.y + pt2.y) / 2 };
+    const p1Frame = {
+      x: (midScreen.x - baseline.center.x) / cropDisplayScale,
+      y: (midScreen.y - baseline.center.y) / cropDisplayScale,
+    };
+
+    const rotationDelta = normalizeAngleDeg(angle1 - baseline.angle);
+    const newRotation = baseline.rotation + rotationDelta;
+    const newZoom = Math.max(cropZoomMin, Math.min(cropZoomMax, baseline.zoom * (dist1 / baseline.dist)));
+
+    const s0 =
+      computeCoverScale(baseline.rotation, cropData.width, cropData.height, cropBoxWidth, cropBoxHeight) *
+      baseline.zoom;
+    const s1 =
+      computeCoverScale(newRotation, cropData.width, cropData.height, cropBoxWidth, cropBoxHeight) * newZoom;
+
+    const anchored = computeAnchoredOffset(baseline.midpoint, baseline.offset, p1Frame, rotationDelta, s1 / s0);
+    const clamped = clampOffsetForRotation(
+      anchored,
+      cropData.width,
+      cropData.height,
+      cropBoxWidth,
+      cropBoxHeight,
+      newRotation,
+      s1
+    );
+
+    setCropOffset(clamped);
+    applyCropRotation(newRotation, 0);
+    setCropZoom(newZoom);
+  }
+
+  function handleCropPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!cropData) return;
+    const target = e.target as HTMLElement;
+    if (!target.closest("[data-crop-viewport]")) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 1) {
+      cropDragRef.current = { x: e.clientX, y: e.clientY, ox: cropOffset.x, oy: cropOffset.y };
+      tapCandidateRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startTime: Date.now(),
+      };
+    } else if (activePointersRef.current.size === 2) {
+      // A 2nd finger joining always (re)starts the gesture baseline from
+      // scratch -- simpler and safer than trying to carry over a 1-finger
+      // drag baseline into a pinch/twist baseline.
+      tapCandidateRef.current = null;
+      cropDragRef.current = null;
+      const rect = cropViewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const ids = Array.from(activePointersRef.current.keys());
+      const p1 = activePointersRef.current.get(ids[0])!;
+      const p2 = activePointersRef.current.get(ids[1])!;
+      const dist = Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+      const midScreen = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+      pinchRef.current = {
+        pointerIds: [ids[0], ids[1]],
+        dist,
+        angle,
+        zoom: cropZoom,
+        rotation: cropRotationBase + cropRotationFine,
+        offset: cropOffset,
+        midpoint: {
+          x: (midScreen.x - center.x) / cropDisplayScale,
+          y: (midScreen.y - center.y) / cropDisplayScale,
+        },
+        center,
+      };
+    }
+    // A 3rd+ simultaneous pointer is tracked (for bookkeeping on release)
+    // but doesn't change gesture math -- only the original two fingers that
+    // started the pinch drive it.
+  }
+
+  function handleCropPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!cropData || !activePointersRef.current.has(e.pointerId)) return;
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pinchRef.current) {
+      runPinchUpdate();
+      return;
+    }
+    if (cropDragRef.current && activePointersRef.current.size === 1) {
+      // Raw PointerEvent coordinates are always real screen pixels,
+      // unaffected by this element's own CSS transform -- divide by the
+      // same scale factor so a drag maps 1:1 to the crop box's internal
+      // (unscaled) coordinate space at any display size.
+      const dx = (e.clientX - cropDragRef.current.x) / cropDisplayScale;
+      const dy = (e.clientY - cropDragRef.current.y) / cropDisplayScale;
+      const next = clampCropOffset(
+        { x: cropDragRef.current.ox + dx, y: cropDragRef.current.oy + dy },
+        cropData
+      );
+      setCropOffset(next);
+    }
+  }
+
+  function handleCropPointerRelease(e: React.PointerEvent<HTMLDivElement>) {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // Already released (e.g. pointercancel) -- nothing to clean up here.
+    }
+    const wasPinching = pinchRef.current?.pointerIds.includes(e.pointerId);
+    activePointersRef.current.delete(e.pointerId);
+
+    if (wasPinching) {
+      // 2 -> 1 finger: end the interaction cleanly rather than re-basing a
+      // new pan from whichever finger remains. The user can just start a
+      // fresh drag with a new pointerdown.
+      pinchRef.current = null;
+      cropDragRef.current = null;
+    }
+
+    if (activePointersRef.current.size === 0) {
+      cropDragRef.current = null;
+      pinchRef.current = null;
+
+      const candidate = tapCandidateRef.current;
+      tapCandidateRef.current = null;
+      if (candidate && candidate.pointerId === e.pointerId) {
+        const movement = Math.hypot(e.clientX - candidate.startX, e.clientY - candidate.startY);
+        const duration = Date.now() - candidate.startTime;
+        if (movement < TAP_MAX_MOVEMENT_PX && duration < TAP_MAX_DURATION_MS) {
+          const last = lastTapRef.current;
+          const now = Date.now();
+          if (
+            last &&
+            now - last.time < DOUBLE_TAP_MAX_INTERVAL_MS &&
+            Math.hypot(e.clientX - last.x, e.clientY - last.y) < DOUBLE_TAP_MAX_DISTANCE_PX
+          ) {
+            resetCrop();
+            lastTapRef.current = null;
+          } else {
+            lastTapRef.current = { time: now, x: e.clientX, y: e.clientY };
+          }
+        } else {
+          lastTapRef.current = null;
+        }
+      }
+    }
+  }
 
   return (
     <div
@@ -138,44 +358,21 @@ export function CardImageCropModal({
           >
             <div
               className="absolute left-0 top-0 h-[448px] w-[320px] origin-top-left rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2"
-              style={{ transform: `scale(${cropDisplayScale})` }}
-              onPointerDown={(e) => {
-                if (!cropData) return;
-                const target = e.target as HTMLElement;
-                if (!target.closest("[data-crop-viewport]")) return;
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                cropDragRef.current = {
-                  x: e.clientX,
-                  y: e.clientY,
-                  ox: cropOffset.x,
-                  oy: cropOffset.y,
-                };
-              }}
-              onPointerMove={(e) => {
-                if (!cropData || !cropDragRef.current) return;
-                // Raw PointerEvent coordinates are always real screen
-                // pixels, unaffected by this element's own CSS transform --
-                // divide by the same scale factor so a drag maps 1:1 to the
-                // crop box's internal (unscaled) coordinate space at any
-                // display size, exactly matching full-scale behavior.
-                const dx = (e.clientX - cropDragRef.current.x) / cropDisplayScale;
-                const dy = (e.clientY - cropDragRef.current.y) / cropDisplayScale;
-                const next = clampCropOffset(
-                  { x: cropDragRef.current.ox + dx, y: cropDragRef.current.oy + dy },
-                  cropData
-                );
-                setCropOffset(next);
-              }}
-              onPointerUp={(e) => {
-                (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                cropDragRef.current = null;
-              }}
-              onPointerCancel={(e) => {
-                (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                cropDragRef.current = null;
-              }}
+              // touch-action is scoped to just this interactive surface (not
+              // the modal or the page) so the browser never steals a pan/
+              // pinch/twist gesture that starts here -- no scroll, no
+              // pinch-to-page-zoom, no pull-to-refresh -- while everything
+              // outside this element (including the modal's own scroll
+              // area) keeps its normal default touch behavior.
+              style={{ transform: `scale(${cropDisplayScale})`, touchAction: "none" }}
+              onPointerDown={handleCropPointerDown}
+              onPointerMove={handleCropPointerMove}
+              onPointerUp={handleCropPointerRelease}
+              onPointerCancel={handleCropPointerRelease}
+              onLostPointerCapture={handleCropPointerRelease}
             >
               <div
+                ref={cropViewportRef}
                 data-crop-viewport
                 className="relative h-[432px] w-[304px] overflow-hidden rounded-md border border-zinc-200 bg-white/70"
               >
@@ -205,7 +402,12 @@ export function CardImageCropModal({
             </div>
           </div>
 
-          <div className="text-xs text-zinc-500">
+          {/* Desktop-only fallback controls (Phase 1D2): mobile relies on
+              touch gestures instead -- see the gesture hint paragraph below
+              the crop box, shown only below the sm breakpoint. Hiding this
+              column on mobile rather than just its sliders means there's no
+              leftover empty grid cell. */}
+          <div className="hidden text-xs text-zinc-500 sm:block">
             <div className="mb-3 flex items-center gap-2">
               <button
                 type="button"
@@ -262,6 +464,10 @@ export function CardImageCropModal({
             <div className="mt-3">Tip: drag the image to align it in the frame.</div>
           </div>
         </div>
+
+        <p className="mt-3 text-center text-xs text-zinc-500 sm:hidden">
+          Drag to move &middot; Pinch to zoom &middot; Twist to rotate &middot; Double-tap to reset
+        </p>
 
         <div className="mt-4 flex justify-end gap-2">
           <button
