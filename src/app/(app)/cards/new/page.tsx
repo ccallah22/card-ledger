@@ -2463,17 +2463,25 @@ function NewCardPageInner() {
           />
         </div>
 
-        <div className="sm:col-span-2 flex justify-end gap-2">
+        {/* Vision Engine V3 responsive fix (Phase 1C): stacked full-width
+            below sm: (three buttons in one non-wrapping row overflowed at
+            phone widths -- the longest simultaneous combination is actually
+            both "Retry Processing" labels during a pending retry, not the
+            default "Save + Add Another"/"Save Card" pair), back to the
+            original compact right-aligned row at sm: and up. DOM order,
+            handlers, disabled logic, and label text are all unchanged --
+            only how the row wraps/sizes changed. */}
+        <div className="sm:col-span-2 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Link
             href={isWishlist ? "/cards/wishlist" : "/cards"}
-            className="btn-secondary"
+            className="btn-secondary w-full sm:w-auto"
           >
             Cancel
           </Link>
           <button
             onClick={onSaveAndAddAnother}
             disabled={!canSave || isSaving}
-            className="btn-secondary"
+            className="btn-secondary w-full sm:w-auto"
           >
             {isSaving
               ? "Saving…"
@@ -2486,7 +2494,7 @@ function NewCardPageInner() {
           <button
             onClick={onSave}
             disabled={!canSave || isSaving}
-            className="btn-primary"
+            className="btn-primary w-full sm:w-auto"
           >
             {isSaving
               ? "Saving…"
