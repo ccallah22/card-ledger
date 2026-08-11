@@ -1,10 +1,28 @@
 "use client";
 
-import type { MutableRefObject } from "react";
+import { useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 
 type CropData = { dataUrl: string; width: number; height: number };
 type CropOffset = { x: number; y: number };
 type ImageCheckStatus = "idle" | "checking" | "accept" | "review" | "block";
+
+// Vision Engine V3 responsive fix (Phase 1B): the crop box's actual pixel
+// dimensions are fixed constants shared with useCardImageSlot.ts's
+// CROP_FRAME_W/CROP_FRAME_H -- every crop calculation (clampCropOffset,
+// confirmCrop, and this component's own fill-to-frame scale for the <img>)
+// is anchored to that fixed coordinate system, and none of it is touched by
+// this fix. On a viewport too narrow to fit a 320px-wide box (see
+// cropBoxWrapperRef's ResizeObserver below), the box is visually shrunk via
+// a pure CSS `transform: scale()` applied to the whole subtree -- this
+// scales everything inside it (including the <img>'s own pixel-based
+// transform) uniformly, so the displayed crop box and the exported crop
+// stay in perfect correspondence at any display size. The one thing a
+// visual-only scale does NOT do automatically is pointer-drag distances
+// (PointerEvent.clientX/Y are always real screen pixels, unaffected by an
+// ancestor's CSS transform) -- see onPointerMove below, which divides the
+// raw screen-pixel delta by the same scale factor before handing it to the
+// existing, unmodified clampCropOffset.
+const CROP_FRAME_DISPLAY_WIDTH = 320;
 
 export type CardImageCropModalProps = {
   show: boolean;
@@ -57,6 +75,35 @@ export function CardImageCropModal({
   cropRotationFineMin,
   cropRotationFineMax,
 }: CardImageCropModalProps) {
+  // Measures the wrapper's actual rendered width (available layout space,
+  // which shrinks below 320px only on the narrowest phone viewports -- see
+  // CROP_FRAME_DISPLAY_WIDTH's comment above) and derives a display-only
+  // scale factor, capped at 1 so desktop/tablet (where the grid column is
+  // already exactly 320px wide) renders byte-identically to before this
+  // fix. Declared before the `show`/`cropData` early return below since
+  // hooks must run unconditionally; the effect itself is a no-op while the
+  // wrapper isn't mounted (ref.current is null).
+  const cropBoxWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [cropDisplayScale, setCropDisplayScale] = useState(1);
+
+  useLayoutEffect(() => {
+    const el = cropBoxWrapperRef.current;
+    if (!el) return;
+
+    const updateScale = () => {
+      const width = el.getBoundingClientRect().width;
+      if (width > 0) {
+        setCropDisplayScale(Math.min(1, width / CROP_FRAME_DISPLAY_WIDTH));
+      }
+    };
+
+    updateScale();
+
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [show]);
+
   if (!show || !cropData) return null;
 
   return (
@@ -69,7 +116,7 @@ export function CardImageCropModal({
       }}
     >
       <div
-        className="w-full max-w-xl rounded-2xl border bg-white p-4 shadow-xl"
+        className="w-full max-w-xl max-h-[90dvh] overflow-y-auto rounded-2xl border bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-lg font-semibold">Crop your card photo</div>
@@ -78,57 +125,74 @@ export function CardImageCropModal({
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-[320px_1fr]">
+          {/* Reserves the correctly-scaled layout footprint (up to the
+              canonical 320x448 size, never larger) so the grid/modal never
+              has to accommodate a wider box than actually fits -- this is
+              what actually fixes the overflow. The inner box below keeps
+              its full 320x448 canonical size and is visually scaled down
+              to exactly fill this wrapper. */}
           <div
-            className="relative h-[448px] w-[320px] rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2"
-            onPointerDown={(e) => {
-              if (!cropData) return;
-              const target = e.target as HTMLElement;
-              if (!target.closest("[data-crop-viewport]")) return;
-              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-              cropDragRef.current = {
-                x: e.clientX,
-                y: e.clientY,
-                ox: cropOffset.x,
-                oy: cropOffset.y,
-              };
-            }}
-            onPointerMove={(e) => {
-              if (!cropData || !cropDragRef.current) return;
-              const dx = e.clientX - cropDragRef.current.x;
-              const dy = e.clientY - cropDragRef.current.y;
-              const next = clampCropOffset(
-                { x: cropDragRef.current.ox + dx, y: cropDragRef.current.oy + dy },
-                cropData
-              );
-              setCropOffset(next);
-            }}
-            onPointerUp={(e) => {
-              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-              cropDragRef.current = null;
-            }}
-            onPointerCancel={(e) => {
-              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-              cropDragRef.current = null;
-            }}
+            ref={cropBoxWrapperRef}
+            className="relative w-full max-w-[320px] aspect-[320/448]"
           >
             <div
-              data-crop-viewport
-              className="relative h-[432px] w-[304px] overflow-hidden rounded-md border border-zinc-200 bg-white/70"
+              className="absolute left-0 top-0 h-[448px] w-[320px] origin-top-left rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2"
+              style={{ transform: `scale(${cropDisplayScale})` }}
+              onPointerDown={(e) => {
+                if (!cropData) return;
+                const target = e.target as HTMLElement;
+                if (!target.closest("[data-crop-viewport]")) return;
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                cropDragRef.current = {
+                  x: e.clientX,
+                  y: e.clientY,
+                  ox: cropOffset.x,
+                  oy: cropOffset.y,
+                };
+              }}
+              onPointerMove={(e) => {
+                if (!cropData || !cropDragRef.current) return;
+                // Raw PointerEvent coordinates are always real screen
+                // pixels, unaffected by this element's own CSS transform --
+                // divide by the same scale factor so a drag maps 1:1 to the
+                // crop box's internal (unscaled) coordinate space at any
+                // display size, exactly matching full-scale behavior.
+                const dx = (e.clientX - cropDragRef.current.x) / cropDisplayScale;
+                const dy = (e.clientY - cropDragRef.current.y) / cropDisplayScale;
+                const next = clampCropOffset(
+                  { x: cropDragRef.current.ox + dx, y: cropDragRef.current.oy + dy },
+                  cropData
+                );
+                setCropOffset(next);
+              }}
+              onPointerUp={(e) => {
+                (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                cropDragRef.current = null;
+              }}
+              onPointerCancel={(e) => {
+                (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                cropDragRef.current = null;
+              }}
             >
-              <img
-                src={cropData.dataUrl}
-                alt="Crop preview"
-                draggable={false}
-                className="absolute left-1/2 top-1/2 select-none max-w-none max-h-none"
-                style={{
-                  width: cropData.width,
-                  height: cropData.height,
-                  transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) translate(-50%, -50%) scale(${
-                    Math.max(cropBoxWidth / cropData.width, cropBoxHeight / cropData.height) * cropZoom
-                  })`,
-                }}
-              />
-              <div className="pointer-events-none absolute inset-1 rounded-sm border border-white/40" />
+              <div
+                data-crop-viewport
+                className="relative h-[432px] w-[304px] overflow-hidden rounded-md border border-zinc-200 bg-white/70"
+              >
+                <img
+                  src={cropData.dataUrl}
+                  alt="Crop preview"
+                  draggable={false}
+                  className="absolute left-1/2 top-1/2 select-none max-w-none max-h-none"
+                  style={{
+                    width: cropData.width,
+                    height: cropData.height,
+                    transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) translate(-50%, -50%) scale(${
+                      Math.max(cropBoxWidth / cropData.width, cropBoxHeight / cropData.height) * cropZoom
+                    })`,
+                  }}
+                />
+                <div className="pointer-events-none absolute inset-1 rounded-sm border border-white/40" />
+              </div>
             </div>
           </div>
 
