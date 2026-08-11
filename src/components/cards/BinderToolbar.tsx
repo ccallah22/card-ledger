@@ -136,7 +136,7 @@ export function BinderToolbar({
         <button
           type="button"
           onClick={() => setShowFilters((v) => !v)}
-          className="hidden sm:inline-flex w-18 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
+          className="hidden shrink-0 sm:inline-flex rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
         >
           Filters{activeFiltersCount ? ` • ${activeFiltersCount}` : ""}
         </button>
@@ -164,17 +164,17 @@ export function BinderToolbar({
           </select>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
-            className="sm:hidden w-18 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
+            className="sm:hidden rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
           >
             Filters{activeFiltersCount ? ` • ${activeFiltersCount}` : ""}
           </button>
           <button
             onClick={clearAllFilters}
-            className="w-18 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
+            className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
           >
             Clear filters
           </button>
