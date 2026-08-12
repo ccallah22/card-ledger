@@ -46,6 +46,7 @@ import {
   qualitySummaryLabel,
   summarizeImageQuality,
 } from "@/lib/vision/formatObservations";
+import { takePendingScanImage, PENDING_SCAN_IMAGE_EVENT } from "@/lib/pendingScanImage";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
 import { applyManualOverrides, type ManualOverridesByField } from "@/lib/evidence/manualOverrides";
@@ -529,6 +530,49 @@ function NewCardPageInner() {
   // anywhere yet.
   const frontImage = useCardImageSlot("front");
   const backImage = useCardImageSlot("back");
+
+  // Mobile Add UX: the one shared consumer for any File captured by the
+  // center mobile Add button's hidden input (AppShell.tsx) and stashed via
+  // setPendingScanImage -- feeds it into the exact same handleImageFile
+  // path the page's own uploader control uses, no separate image-
+  // processing logic. Only reads (never opens) the picker itself, so it
+  // cannot violate the user-gesture requirement handleMobileAddTap
+  // preserves. takePendingScanImage() clears its slot on read, so calling
+  // this with nothing pending -- a direct /cards/new(?mode=scan) visit, a
+  // React Strict Mode double-invoke, or a stray event -- is always a safe
+  // no-op; the File can never be processed twice. setEntryMode("form")
+  // ensures a capture taken from the choice screen, or after the user
+  // switched to manual entry, lands them on the form with the image
+  // applied instead of leaving the crop result underneath an incompatible
+  // mode -- the explicit Add tap is treated as an explicit request to scan.
+  function consumePendingScanImage() {
+    const file = takePendingScanImage();
+    if (!file) return;
+    setEntryMode("form");
+    frontImage.handleImageFile(file);
+  }
+
+  // Covers arriving via navigation (Add tapped from elsewhere): runs once
+  // at mount. If nothing is pending (direct visit), this is a no-op.
+  useEffect(() => {
+    consumePendingScanImage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Covers tapping Add again while already mounted on /cards/new, where a
+  // router.push to the same route wouldn't remount the page (see
+  // AppShell's handleMobileAddFileSelected) -- the mount effect above
+  // would never see the new File without this. The event carries no File
+  // payload; pendingScanImage.ts remains the single source of truth, this
+  // listener only knows to re-check it, via the same shared consumer.
+  useEffect(() => {
+    function onPendingScanImage() {
+      consumePendingScanImage();
+    }
+    window.addEventListener(PENDING_SCAN_IMAGE_EVENT, onPendingScanImage);
+    return () => window.removeEventListener(PENDING_SCAN_IMAGE_EVENT, onPendingScanImage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleScanCard() {
     setEntryMode("form");

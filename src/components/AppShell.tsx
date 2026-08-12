@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { heartbeatDeviceSession } from "@/lib/db/deviceSessions";
+import { setPendingScanImage, PENDING_SCAN_IMAGE_EVENT } from "@/lib/pendingScanImage";
 
 type NavItem = {
   href: string;
@@ -398,6 +399,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // matching desktop's existing Actions-dropdown pattern below, renders
   // correctly without one.
   const headerMenuRef = useRef<HTMLDivElement | null>(null);
+  // Mobile Add UX: hidden file input owned by the shell itself so the
+  // center Add tap's onClick can call .click() on it synchronously, inside
+  // the same user-gesture call stack as the tap -- a useEffect firing after
+  // navigation to /cards/new isn't reliably inside that activation window
+  // (see handleMobileAddTap below and pendingScanImage.ts).
+  const mobileAddInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     try {
@@ -518,7 +525,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
-  
+  // Mobile Add UX: the center Add button's tap handler. Opens the native
+  // picker synchronously (no navigation first) -- the ref's .click() call
+  // happens directly inside this real click handler, preserving the
+  // genuine user gesture the browser's activation rules require. Only this
+  // one handler ever calls mobileAddInputRef.current?.click(), so one tap
+  // produces at most one picker invocation.
+  function handleMobileAddTap() {
+    mobileAddInputRef.current?.click();
+  }
+
+  // Fires when the native picker resolves. Cancelling (no file) leaves the
+  // user on the current page with no navigation, no signal, and nothing
+  // pending -- the input's value is still reset so the next Add tap fires
+  // onChange again even for the same file. Only on an actual selection is
+  // the File handed off (see pendingScanImage.ts). If already on
+  // /cards/new (pathname strips the query string, so ?mode=scan or plain
+  // /cards/new both match), a router.push to that same route wouldn't
+  // remount the page, so its mount-time consumer would never see this
+  // File -- instead, a same-page CustomEvent notifies the already-mounted
+  // page that a new pending scan is ready. Otherwise, this navigates there
+  // and the page's own mount-time effect consumes it. Either way, the page
+  // consumes and clears the handoff exactly once, so it is never processed
+  // twice.
+  function handleMobileAddFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) return;
+    setPendingScanImage(file);
+    if (pathname === "/cards/new") {
+      window.dispatchEvent(new CustomEvent(PENDING_SCAN_IMAGE_EVENT));
+      return;
+    }
+    router.push("/cards/new?mode=scan");
+  }
+
   const activeMap = useMemo(() => {
     const map = new Map<string, boolean>();
     for (const item of NAV) map.set(item.href, isActivePath(pathname, item.href));
@@ -1036,17 +1077,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             its own top edge is the same reference point the row's top edge
             always was; moving this Link doesn't change its rendered
             position. */}
-        <Link
-          // ?mode=scan (read by /cards/new -- see that page's entryMode
-          // initialization) sends this specific entry point straight into
-          // the existing scan/photo workflow instead of the scan-or-manual
-          // choice screen. Only this center mobile nav button changed --
-          // the other in-page "Add Card" links (Binder, Sold History, the
-          // empty-state grid) still point at plain /cards/new and keep
-          // their current choice-screen behavior; the pathname is still
-          // /cards/new either way, so isActivePath/activeMap below don't
-          // need to change (query strings aren't part of usePathname()).
-          href="/cards/new?mode=scan"
+        <button
+          type="button"
+          // Mobile Add UX: this used to be a Link straight to
+          // /cards/new?mode=scan. It's now a real tap handler
+          // (handleMobileAddTap) that opens the native camera/file picker
+          // immediately, synchronously, from the tap itself -- navigation
+          // to /cards/new?mode=scan only happens afterward, from
+          // handleMobileAddFileSelected, and only once an image was
+          // actually captured/selected (see pendingScanImage.ts). The
+          // other in-page "Add Card" links (Binder, Sold History, the
+          // empty-state grid) are untouched: they still point at plain
+          // /cards/new and keep the existing scan-or-manual choice screen.
+          onClick={handleMobileAddTap}
           aria-label="Add card"
           className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/4 flex-col items-center justify-center touch-manipulation"
         >
@@ -1060,7 +1103,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             <IconPlus />
           </span>
-        </Link>
+        </button>
+        {/* Mobile Add UX: hidden input the button above opens synchronously.
+            accept/capture intentionally match /cards/new's own front-image
+            inputs (scanInputRef and CardImageUploader's upload control)
+            exactly, so this entry point's picker behaves identically to
+            the page's normal front-image capture -- no independently
+            invented attributes. */}
+        <input
+          ref={mobileAddInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          capture="environment"
+          className="hidden"
+          onChange={handleMobileAddFileSelected}
+        />
       </nav>
       ) : null}
     </div>
