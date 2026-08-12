@@ -1008,12 +1008,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 confirmed +0.7px correct for the LEFT divider (Dashboard/
                 Binder), so it stays fixed at that value going forward.
                 Search/Players still read as slightly off (Search too far,
-                Players too close) at -0.7px, so Phase 2A.12 nudges the
+                Players too close) at -0.7px, so Phase 2A.12 nudged the
                 RIGHT divider only, a further small empirical step toward
-                Players, to -0.2px. */}
+                Players, to -0.2px -- still not enough (same direction, same
+                complaint). An investigation pass then confirmed both
+                dividers already use identical `-translate-x-1/2` centering
+                and MobileNavLink is identical for all four tabs, ruling out
+                a structural/centering bug -- this remains real-device
+                calibration only. Phase 2A.13 continues that calibration in
+                the same direction, RIGHT divider only, to +0.2px. LEFT
+                divider (+0.7px) is confirmed correct and frozen. */}
             <div className="pointer-events-none absolute inset-0" aria-hidden="true">
               <span className="absolute left-[calc(20%+0.7px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
-              <span className="absolute left-[calc(80%-0.2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(80%+0.2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
             </div>
           </div>
         </div>
