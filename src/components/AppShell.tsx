@@ -939,30 +939,48 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               comment below), so its horizontal center is always exactly
               50% of <nav>'s width regardless of anything in this row. */}
           <div className="relative flex h-14 w-full max-w-full items-center gap-0.5">
-            <MobileNavLink
-              href={MOBILE_DASHBOARD_ITEM.href}
-              label={MOBILE_DASHBOARD_ITEM.label}
-              icon={MOBILE_DASHBOARD_ITEM.icon}
-              active={!!activeMap.get(MOBILE_DASHBOARD_ITEM.href)}
-            />
-            <MobileNavLink
-              href={MOBILE_BINDER_ITEM.href}
-              label={MOBILE_BINDER_ITEM.label}
-              icon={MOBILE_BINDER_ITEM.icon}
-              active={!!activeMap.get(MOBILE_BINDER_ITEM.href)}
-            />
+            {/* Phase 2A.14: Phases 2A.5-2A.13 positioned each divider as an
+                absolutely-positioned line at a percentage of the ROW's
+                total width, tuned by hand across many real-device rounds
+                and never quite landing on true visual center. Replaced here
+                with a layout-driven approach: Dashboard+Binder (and
+                Search+Players) are now wrapped in their own small flex
+                container, and the divider sits at THAT wrapper's own 50%
+                mark. Since the wrapper holds exactly two equal-width
+                flex-1 children, its horizontal midpoint IS the boundary
+                between them by construction -- not a value derived from
+                (and liable to drift with) the row's total width, nav
+                padding, or gap sizing. flex-[2_1_0%] gives each wrapper
+                exactly twice the share of the single flex-1 Add spacer,
+                reproducing the combined width the two tabs occupied as
+                separate row siblings before; the wrapper's own gap-0.5
+                reproduces the gap that used to sit directly between them
+                as row siblings. Net result: the same five-slot proportions
+                as before, but the divider's position is now a structural
+                fact of the layout instead of a tuned coordinate. */}
+            <div className="relative flex min-w-0 flex-[2_1_0%] items-center gap-0.5">
+              <MobileNavLink
+                href={MOBILE_DASHBOARD_ITEM.href}
+                label={MOBILE_DASHBOARD_ITEM.label}
+                icon={MOBILE_DASHBOARD_ITEM.icon}
+                active={!!activeMap.get(MOBILE_DASHBOARD_ITEM.href)}
+              />
+              <MobileNavLink
+                href={MOBILE_BINDER_ITEM.href}
+                label={MOBILE_BINDER_ITEM.label}
+                icon={MOBILE_BINDER_ITEM.icon}
+                active={!!activeMap.get(MOBILE_BINDER_ITEM.href)}
+              />
+              <span
+                className="pointer-events-none absolute left-1/2 top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300"
+                aria-hidden="true"
+              />
+            </div>
 
             {/* Invisible spacer keeping the five destinations evenly spaced
                 -- the actual Add Card button is rendered as a sibling of
                 this whole wrapper, below. */}
             <div className="flex-1 basis-0" aria-hidden="true" />
-
-            <MobileNavLink
-              href={MOBILE_SEARCH_ITEM.href}
-              label={MOBILE_SEARCH_ITEM.label}
-              icon={MOBILE_SEARCH_ITEM.icon}
-              active={!!activeMap.get(MOBILE_SEARCH_ITEM.href)}
-            />
 
             {/* Phase 2A.4: Players replaces the old bottom-nav More button
                 (moved to the top-right header menu -- see above). Uses the
@@ -971,56 +989,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 that previously gave Dashboard/More their edge-safety margin
                 -- this fifth slot's right-edge safety is preserved by
                 construction, not re-implemented. */}
-            <MobileNavLink
-              href={MOBILE_PLAYERS_ITEM.href}
-              label={MOBILE_PLAYERS_ITEM.label}
-              icon={MOBILE_PLAYERS_ITEM.icon}
-              active={!!activeMap.get(MOBILE_PLAYERS_ITEM.href)}
-            />
-
-            {/* Phase 2A.5: purely decorative slot separators. Absolutely
-                positioned (not real flex siblings) so they can never affect
-                the five-slot flex distribution, touch targets, row height,
-                or introduce overflow -- confirmed safe under the row's own
-                overflow-x-hidden ancestor since inset-0 keeps every line
-                strictly within the row's own box. Phase 2A.6: the two marks
-                that used to sit at 2/5 and 3/5 (straddling Add Card) were
-                removed entirely per real-device feedback -- the center area
-                should read as open, not framed by lines on both sides --
-                rather than replaced with any other Add-area decoration.
-                Phase 2A.9 attempted a theoretical fix (`20% - 0.6px` /
-                `80% + 0.6px`, derived from the exact midpoint between each
-                pair of adjacent pill edges per the row's flexbox math) --
-                real-device testing (Phase 2A.10) showed that mathematically
-                exact midpoint does NOT match perceived visual symmetry:
-                Dashboard read as too close to the left divider and Binder
-                too far, mirrored on the right (Search too far, Players too
-                close). That's the opposite direction from what 2A.9 moved
-                the lines toward, so Phase 2A.10 moved both lines inward
-                instead (`20% + 2px` / `80% - 2px`), purely from that
-                real-device observation, not a redone derivation. That
-                overshot the other way (Dashboard/Players now too far,
-                Binder/Search now too close) -- so real-device testing has
-                now bounded the correct position between the 2A.9 and 2A.10
-                offsets on each side (-0.6px..+2px left, +0.6px..-2px
-                right). Phase 2A.11 was the bisection midpoint of those two
-                observed bounds (+0.7px / -0.7px) -- real-device testing
-                confirmed +0.7px correct for the LEFT divider (Dashboard/
-                Binder), so it stays fixed at that value going forward.
-                Search/Players still read as slightly off (Search too far,
-                Players too close) at -0.7px, so Phase 2A.12 nudged the
-                RIGHT divider only, a further small empirical step toward
-                Players, to -0.2px -- still not enough (same direction, same
-                complaint). An investigation pass then confirmed both
-                dividers already use identical `-translate-x-1/2` centering
-                and MobileNavLink is identical for all four tabs, ruling out
-                a structural/centering bug -- this remains real-device
-                calibration only. Phase 2A.13 continues that calibration in
-                the same direction, RIGHT divider only, to +0.2px. LEFT
-                divider (+0.7px) is confirmed correct and frozen. */}
-            <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-              <span className="absolute left-[calc(20%+0.7px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
-              <span className="absolute left-[calc(80%+0.2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+            <div className="relative flex min-w-0 flex-[2_1_0%] items-center gap-0.5">
+              <MobileNavLink
+                href={MOBILE_SEARCH_ITEM.href}
+                label={MOBILE_SEARCH_ITEM.label}
+                icon={MOBILE_SEARCH_ITEM.icon}
+                active={!!activeMap.get(MOBILE_SEARCH_ITEM.href)}
+              />
+              <MobileNavLink
+                href={MOBILE_PLAYERS_ITEM.href}
+                label={MOBILE_PLAYERS_ITEM.label}
+                icon={MOBILE_PLAYERS_ITEM.icon}
+                active={!!activeMap.get(MOBILE_PLAYERS_ITEM.href)}
+              />
+              <span
+                className="pointer-events-none absolute left-1/2 top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300"
+                aria-hidden="true"
+              />
             </div>
           </div>
         </div>
