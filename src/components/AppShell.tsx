@@ -696,24 +696,48 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* Content container */}
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-6">
+        {/* Content container. Mobile bottom padding is base clearance (6rem
+            -- enough to clear the nav row + the Add Card circle's overlap
+            above it on a zero-safe-area device) PLUS env(safe-area-inset-
+            bottom) on top, so content never sits behind the nav, the
+            elevated button, or the safe-area/gesture region on any device
+            -- additive, not reliant on the safe-area alone. */}
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:pb-6">
           {children}
         </div>
       </main>
 
       {/* Mobile bottom nav -- Phase 2A: exactly 5 slots (Dashboard, Binder,
-          elevated Add Card, Catalog, More). The nav bar itself pads for
-          env(safe-area-inset-bottom) so its content never sits under the
-          iPhone home-indicator area; overflow-visible lets the elevated Add
-          Card button pop up above the bar's own top edge. */}
+          elevated Add Card, Catalog, More). Phase 2A.1: rounded top corners
+          + a robust elevated Add Card treatment.
+
+          Root cause of the old rectangular/clipped look (see Phase 2A.1
+          audit): the inner wrapper below sets overflow-x-hidden but never
+          declares overflow-y, so the browser silently computes overflow-y
+          as `auto` (CSS Overflow spec: one axis non-visible + the other left
+          visible => the other becomes auto) -- clipping anything that tried
+          to rise above the row via negative margin. Declaring overflow-y
+          explicitly here (instead of leaving it to that implicit fallback)
+          fixes it directly. The Add Card button itself is intentionally
+          `position: absolute` and out of flex flow (not negative-margined)
+          so its own 56px size can never feed back into the row's auto
+          height and unbalance the other four items -- the row's height is
+          now fixed (h-14) independent of any item's content. */}
       {!isAuthScreen && !isMarketing ? (
         <nav
           ref={mobileNavRef}
-          className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
+          // rounded-t-3xl (not a bespoke px value) matches the same
+          // "generously rounded panel" token already used elsewhere in the
+          // app (e.g. the marketing CTA panel) -- softens the bar without
+          // trying to mimic any specific handset's hardware curvature.
+          // Bottom padding is base clearance (0.5rem) PLUS
+          // env(safe-area-inset-bottom) -- additive, so Android/no-notch
+          // devices (inset resolves to 0) still get normal spacing, and
+          // notched/gesture-inset devices get more on top automatically.
+          className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full rounded-t-3xl border-t bg-white/95 backdrop-blur overflow-visible pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
         >
-        <div className="w-full max-w-full px-2 overflow-x-hidden">
-          <div className="flex w-full max-w-full items-center gap-1 py-2">
+        <div className="w-full max-w-full px-2 overflow-x-hidden overflow-y-visible">
+          <div className="relative flex h-14 w-full max-w-full items-center gap-1">
             <MobileNavLink
               href={MOBILE_DASHBOARD_ITEM.href}
               label={MOBILE_DASHBOARD_ITEM.label}
@@ -727,15 +751,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               active={!!activeMap.get(MOBILE_BINDER_ITEM.href)}
             />
 
-            <Link
-              href="/cards/new"
-              aria-label="Add card"
-              className="flex flex-1 basis-0 min-w-0 flex-col items-center justify-center px-1 py-1 text-[9px] text-zinc-600 touch-manipulation"
-            >
-              <span className="-mt-7 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white shadow-lg ring-4 ring-white [&>svg]:h-6 [&>svg]:w-6">
-                <IconPlus />
-              </span>
-            </Link>
+            {/* Invisible spacer keeping the five destinations evenly spaced
+                -- the actual Add Card button is the absolutely-positioned
+                Link below, rendered outside normal flow so it can rise
+                above the bar without affecting this row's height. */}
+            <div className="flex-1 basis-0" aria-hidden="true" />
 
             <MobileNavLink
               href={MOBILE_CATALOG_ITEM.href}
@@ -767,6 +787,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </span>
               <span className="w-full truncate text-center font-medium leading-none">More</span>
             </button>
+
+            {/* Elevated center action. top-0 -translate-y-1/2 centers the
+                circle exactly on the row's top edge -- half rises above the
+                bar, half sits within it -- independent of the row's own
+                height or any sibling's content size. */}
+            <Link
+              href="/cards/new"
+              aria-label="Add card"
+              className="absolute left-1/2 top-0 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center touch-manipulation"
+            >
+              <span
+                className={
+                  "flex h-14 w-14 items-center justify-center rounded-full shadow-lg ring-4 ring-white [&>svg]:h-6 [&>svg]:w-6 " +
+                  (pathname.startsWith("/cards/new")
+                    ? "bg-white text-[var(--brand-primary)]"
+                    : "bg-[var(--brand-primary)] text-white")
+                }
+              >
+                <IconPlus />
+              </span>
+            </Link>
           </div>
         </div>
       </nav>
