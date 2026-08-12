@@ -988,26 +988,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 removed entirely per real-device feedback -- the center area
                 should read as open, not framed by lines on both sides --
                 rather than replaced with any other Add-area decoration.
-                Phase 2A.9 (real-device correction): a flat left-[20%]/
-                left-[80%] (the row's raw 1/5 and 4/5 marks) is NOT the true
-                midpoint between each pair of adjacent pills, and the gap
-                was visibly asymmetric as a result. Derived symbolically
-                (row width R, 5 equal flex-1 slots of width S=(R-4*gap)/5,
-                gap-0.5=2px between them): the true midpoint between slot1's
-                pill-right-edge and slot2's pill-left-edge is S + gap/2,
-                which -- because each pill's own Link-p-1 + pill-mx-1.5
-                inset is identical and symmetric on both sides of the gap --
-                simplifies to exactly `20% - 0.3*gap` regardless of R. With
-                gap=2px that's `20% - 0.6px` (mirrored: `80% + 0.6px` for
-                the Search/Players side). Verified this produces IDENTICAL
-                gaps (not just closer) on both sides of each divider at
-                every target width 320-480px, where the previous flat
-                percentages had a constant 1.2px asymmetry at every width
-                (not just at 320px) -- confirmed with an explicit arithmetic
-                check across the full width range, not assumed. */}
+                Phase 2A.9 attempted a theoretical fix (`20% - 0.6px` /
+                `80% + 0.6px`, derived from the exact midpoint between each
+                pair of adjacent pill edges per the row's flexbox math) --
+                real-device testing (Phase 2A.10) showed that mathematically
+                exact midpoint does NOT match perceived visual symmetry:
+                Dashboard read as too close to the left divider and Binder
+                too far, mirrored on the right (Search too far, Players too
+                close). That's the opposite direction from what 2A.9 moved
+                the lines toward, so real-device observation, not a redone
+                derivation, is what set the new values below -- both lines
+                moved inward (left divider right, right divider left) by a
+                small, deliberately modest amount past the raw 20%/80% marks
+                rather than by re-deriving/defending the prior formula. If
+                real-device feedback still shows asymmetry after this, the
+                next step should stay empirical (adjust the px offset
+                further) rather than returning to pure box-model math, which
+                has now twice not matched what the eye perceives here. */}
             <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-              <span className="absolute left-[calc(20%-0.6px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
-              <span className="absolute left-[calc(80%+0.6px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(20%+2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(80%-2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
             </div>
           </div>
         </div>
