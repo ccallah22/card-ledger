@@ -1003,14 +1003,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 Binder/Search now too close) -- so real-device testing has
                 now bounded the correct position between the 2A.9 and 2A.10
                 offsets on each side (-0.6px..+2px left, +0.6px..-2px
-                right). Phase 2A.11 below is the bisection midpoint of those
-                two observed bounds (+0.7px / -0.7px), the next real-device
-                test point -- still purely empirical, not a return to the
-                box-model derivation, which has not matched perception
-                either time it was tried here. */}
+                right). Phase 2A.11 was the bisection midpoint of those two
+                observed bounds (+0.7px / -0.7px) -- real-device testing
+                confirmed +0.7px correct for the LEFT divider (Dashboard/
+                Binder), so it stays fixed at that value going forward.
+                Search/Players still read as slightly off (Search too far,
+                Players too close) at -0.7px, so Phase 2A.12 nudges the
+                RIGHT divider only, a further small empirical step toward
+                Players, to -0.2px. */}
             <div className="pointer-events-none absolute inset-0" aria-hidden="true">
               <span className="absolute left-[calc(20%+0.7px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
-              <span className="absolute left-[calc(80%-0.7px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(80%-0.2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
             </div>
           </div>
         </div>
