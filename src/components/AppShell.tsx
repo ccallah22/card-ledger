@@ -283,7 +283,7 @@ function NavLink({
 
 // Phase 2A.3 (real-device correction): the touch target (this Link, full
 // flex-1 slot width) and the VISUAL active/hover pill (the inner span) are
-// now separate elements. Previously the colored background was painted
+// separate elements. Previously the colored background was painted
 // directly on the full-width Link, so its only clearance from the screen
 // edge was whatever padding existed on <nav>/its wrapper -- a single,
 // global safety margin. Giving the pill its own `p-1`-driven inset here
@@ -291,6 +291,18 @@ function NavLink({
 // 2A.4) get a second, LOCAL margin that doesn't depend on getting one outer
 // padding value exactly right, without shrinking the tappable area (the
 // outer Link is still the full slot).
+//
+// Phase 2A.5 (real-device correction): that local margin was still only
+// the Link's own `p-1` (4px), and real-device testing showed Dashboard's
+// and Players' active pills still visibly touching the screen edge. The
+// pill itself now gets an ADDITIONAL local inset via `self-stretch` +
+// `mx-1.5` instead of `w-full` -- `self-stretch` (unlike `w-full`) lets the
+// flex algorithm correctly subtract the span's own margin from its
+// available cross-size, so it doesn't overflow the Link's padded box. This
+// only widens the LOCAL margin every tab already had; it doesn't touch
+// <nav>'s or the wrapper's outer padding, and applies identically to every
+// tab (Dashboard/Binder/Search/Players) since they all render through this
+// one component -- no special-casing either edge tab.
 function MobileNavLink({
   href,
   label,
@@ -309,7 +321,7 @@ function MobileNavLink({
     >
       <span
         className={
-          "flex w-full min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 py-1 transition " +
+          "flex min-w-0 flex-col items-center justify-center gap-0.5 self-stretch overflow-hidden rounded-md mx-1.5 px-1 py-1 transition " +
           (active
             ? "text-white bg-[var(--brand-primary)]"
             : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
@@ -894,7 +906,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             escape vertically, so there's nothing left for the overflow-y
             quirk to clip. */}
         <div className="w-full max-w-full overflow-x-hidden">
-          <div className="flex h-14 w-full max-w-full items-center gap-1">
+          <div className="relative flex h-14 w-full max-w-full items-center gap-1">
             <MobileNavLink
               href={MOBILE_DASHBOARD_ITEM.href}
               label={MOBILE_DASHBOARD_ITEM.label}
@@ -933,6 +945,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               icon={MOBILE_PLAYERS_ITEM.icon}
               active={!!activeMap.get(MOBILE_PLAYERS_ITEM.href)}
             />
+
+            {/* Phase 2A.5: purely decorative slot separators. Absolutely
+                positioned (not real flex siblings) so they can never affect
+                the five-slot flex distribution, touch targets, row height,
+                or introduce overflow -- confirmed safe under the row's own
+                overflow-x-hidden ancestor since inset-0 keeps every line
+                strictly within the row's own box. Positioned at the row's
+                1/5, 2/5, 3/5, 4/5 marks, matching the five roughly-equal
+                flex-1 slots (Dashboard | Binder | Add | Search | Players)
+                without depending on any specific viewport width. The two
+                marks nearest Add (2/5, 3/5) are short and bottom-anchored
+                rather than vertically centered: the Add Card circle
+                occupies this row's own y=[-14,42] band (see its comment
+                below) regardless of viewport width, so a centered line
+                there could visually cross it at narrow widths -- anchoring
+                to the row's bottom 8px (y=[44,52], a 2px clear margin
+                under the circle) avoids that everywhere. The outer two
+                marks (1/5, 4/5) aren't near the circle, so they use the
+                originally-intended vertically-centered treatment. */}
+            <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+              <span className="absolute left-[20%] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[40%] bottom-1 h-2 w-px -translate-x-1/2 bg-zinc-300" />
+              <span className="absolute left-[60%] bottom-1 h-2 w-px -translate-x-1/2 bg-zinc-300" />
+              <span className="absolute left-[80%] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+            </div>
           </div>
         </div>
 
