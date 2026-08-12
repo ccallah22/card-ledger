@@ -34,12 +34,13 @@ export type PlayerOwnedCardSummary = {
   grade: string | null;
   gradingStatus: GradingStatus;
   estimatedValue: number | null;
-  // Reuses user_cards' existing image_path/thumb_path fields as-is -- the
-  // same ones MyCard.imagePath/thumbPath already expose. Deliberately not
-  // the newer per-side card_media table: that would need an extra query per
-  // card, and Phase 3A explicitly doesn't redesign image fetching.
-  imagePath: string | null;
-  thumbPath: string | null;
+  // Phase 3A originally exposed user_cards.image_path/thumb_path here, but
+  // Phase 3C's media audit confirmed those columns are never populated by
+  // the current Add/Edit Card flow (they're always null in practice) --
+  // genuinely dead, misleadingly-named fields, not a real image source.
+  // userCardId above is what actually resolves a display image now, via
+  // useUserCardDisplayImages (persisted card_media, falling back to the
+  // legacy localStorage image) -- see hooks/cards/useUserCardDisplayImages.ts.
 };
 
 // ---- Catalog (not-yet-owned) card summary (missingCards) ----
@@ -139,8 +140,6 @@ type OwnedForPlayerRow = {
   estimated_value: number | null;
   serial_number: number | null;
   quantity: number;
-  image_path: string | null;
-  thumb_path: string | null;
   cards: {
     id: number;
     card_number: string;
@@ -175,8 +174,6 @@ const OWNED_FOR_PLAYER_SELECT = `
   estimated_value,
   serial_number,
   quantity,
-  image_path,
-  thumb_path,
   cards!inner(
     id,
     card_number,
@@ -235,8 +232,6 @@ function toOwnedCardSummary(row: OwnedForPlayerRow): PlayerOwnedCardSummary {
     grade: row.grade,
     gradingStatus: (row.grading_status as GradingStatus) ?? "RAW",
     estimatedValue: row.estimated_value,
-    imagePath: row.image_path,
-    thumbPath: row.thumb_path,
   };
 }
 

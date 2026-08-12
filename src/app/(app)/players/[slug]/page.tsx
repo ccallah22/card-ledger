@@ -12,6 +12,7 @@ import {
 } from "@/lib/repositories/playerOverview";
 import { StatCard } from "@/components/ui/StatCard";
 import { PlayerOwnedCardTile } from "@/components/players/PlayerOwnedCardTile";
+import { useUserCardDisplayImages } from "@/hooks/cards/useUserCardDisplayImages";
 
 function currency(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -130,6 +131,14 @@ export default function PlayerDetailPage({
       active = false;
     };
   }, [player]);
+
+  // Called unconditionally (Rules of Hooks) with whatever topCards ids are
+  // currently known -- an empty array before the overview has loaded, or
+  // once it's loaded with zero top cards. One batched resolution for the
+  // whole Top Cards grid, never one request per tile.
+  const topCardUserCardIds = overview?.topCards.map((c) => c.userCardId) ?? [];
+  const { imagesByUserCardId, loading: imagesLoading } =
+    useUserCardDisplayImages(topCardUserCardIds);
 
   if (missing) {
     notFound();
@@ -252,7 +261,12 @@ export default function PlayerDetailPage({
               <h2 className="text-lg font-semibold tracking-tight">Top Cards</h2>
               <div className="mt-2 grid grid-cols-2 gap-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {overview.topCards.map((card) => (
-                  <PlayerOwnedCardTile key={card.userCardId} card={card} />
+                  <PlayerOwnedCardTile
+                    key={card.userCardId}
+                    card={card}
+                    imageUrl={imagesByUserCardId.get(card.userCardId) ?? null}
+                    imageLoading={imagesLoading && !imagesByUserCardId.has(card.userCardId)}
+                  />
                 ))}
               </div>
             </div>

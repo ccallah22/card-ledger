@@ -263,6 +263,32 @@ export async function getCardMediaBySide(
   return data ? mapCardMediaRow(data as CardMediaRow) : null;
 }
 
+/**
+ * Batch counterpart to getCardMediaBySide -- one query for however many
+ * user cards are given, instead of one query per card. Exists for grid/list
+ * surfaces (Player Hub's Top Cards today, Binder/For Sale/Sold/Dashboard
+ * potentially later) that need one side's media for many owned cards at
+ * once, so displaying a grid never issues one card_media request per tile.
+ */
+export async function listCardMediaForUserCardsBySide(
+  userCardIds: string[],
+  side: SidedCardMediaSide,
+): Promise<CardMedia[]> {
+  assertSidedSide(side);
+  if (userCardIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("card_media")
+    .select("*")
+    .in("user_card_id", userCardIds)
+    .eq("media_type", "image")
+    .eq("side", side);
+
+  if (error) throw error;
+
+  return ((data ?? []) as CardMediaRow[]).map(mapCardMediaRow);
+}
+
 export async function createCardMedia(input: CreateCardMediaInput): Promise<CardMedia> {
   const { data, error } = await supabase
     .from("card_media")

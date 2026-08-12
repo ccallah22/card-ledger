@@ -149,3 +149,30 @@ export async function getCardMediaImageUrl(path: string): Promise<string | null>
   if (error || !data?.signedUrl) return null;
   return data.signedUrl;
 }
+
+/**
+ * Batch counterpart to getCardMediaImageUrl -- one createSignedUrls() call
+ * for however many object paths are given, instead of one createSignedUrl()
+ * request per card. Exists so a grid of owned-card tiles (Player Hub's Top
+ * Cards today, Binder/For Sale/Sold/Dashboard potentially later) never
+ * issues a per-card signed-URL request. Same never-throw contract as the
+ * single-path version: any path that fails to resolve is simply absent from
+ * the returned map, so callers fall through to their own fallback exactly
+ * as they already do for a single missing/failed signed URL.
+ */
+export async function getCardMediaImageUrls(paths: string[]): Promise<Map<string, string>> {
+  const uniquePaths = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
+  if (uniquePaths.length === 0) return new Map();
+
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrls(uniquePaths, SIGNED_URL_EXPIRES_IN_SECONDS);
+
+  if (error || !data) return new Map();
+
+  const result = new Map<string, string>();
+  for (const item of data) {
+    if (item.path && item.signedUrl && !item.error) result.set(item.path, item.signedUrl);
+  }
+  return result;
+}
