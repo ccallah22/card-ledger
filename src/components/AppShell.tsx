@@ -156,6 +156,30 @@ const NAV: NavItem[] = [
   { href: "/catalog", label: "Catalog", icon: <IconSearch /> },
 ];
 
+// Phase 2A: mobile's bottom nav shows a reduced 5-slot subset of the same
+// destinations (Dashboard, Binder, Add Card, Catalog, More) instead of the
+// full NAV list above -- desktop's sidebar keeps rendering all of NAV,
+// unchanged. Pulled from NAV by href (not redefined) so there's still a
+// single source of truth for each route's label/icon.
+const MOBILE_DASHBOARD_ITEM = NAV.find((item) => item.href === "/dashboard")!;
+const MOBILE_BINDER_ITEM = NAV.find((item) => item.href === "/cards")!;
+const MOBILE_CATALOG_ITEM = NAV.find((item) => item.href === "/catalog")!;
+
+// Phase 2A: destinations that no longer have a permanent mobile nav slot
+// move into the mobile "More" sheet, grouped by section. (Desktop's own
+// inline "Actions" dropdown in the sidebar below is unrelated and
+// unchanged -- it still only shows Account/Help/Backup/Export CSV.)
+type MoreLink = { href: string; label: string; icon: React.ReactNode };
+const MORE_COLLECTION_LINKS: MoreLink[] = [
+  { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
+  { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
+  { href: "/cards/sold", label: "Sold History", icon: <IconReceipt /> },
+  { href: "/cards/locations", label: "Locations", icon: <IconMapPin /> },
+];
+const MORE_DISCOVER_LINKS: MoreLink[] = [
+  { href: "/players", label: "Players", icon: <IconUser /> },
+];
+
 function isActivePath(pathname: string, href: string) {
   if (href === "/cards") {
     if (pathname === "/cards") return true;
@@ -236,6 +260,43 @@ function NavLink({
 
   if (!collapsed) return link;
   return <Tooltip text={label}>{link}</Tooltip>;
+}
+
+function MobileNavLink({
+  href,
+  label,
+  icon,
+  active,
+}: {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={
+        "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
+        (active
+          ? "text-white bg-[var(--brand-primary)]"
+          : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
+      }
+    >
+      <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">{icon}</span>
+      <span className="w-full truncate text-center font-medium leading-none">
+        {label.replace(" ", " ")}
+      </span>
+    </Link>
+  );
+}
+
+function MoreSectionHeader({ title }: { title: string }) {
+  return (
+    <div className="px-1 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 first:pt-0">
+      {title}
+    </div>
+  );
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -641,34 +702,48 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      {/* Mobile bottom nav */}
+      {/* Mobile bottom nav -- Phase 2A: exactly 5 slots (Dashboard, Binder,
+          elevated Add Card, Catalog, More). The nav bar itself pads for
+          env(safe-area-inset-bottom) so its content never sits under the
+          iPhone home-indicator area; overflow-visible lets the elevated Add
+          Card button pop up above the bar's own top edge. */}
       {!isAuthScreen && !isMarketing ? (
         <nav
           ref={mobileNavRef}
-          className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
+          className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-auto"
         >
         <div className="w-full max-w-full px-2 overflow-x-hidden">
           <div className="flex w-full max-w-full items-center gap-1 py-2">
-            {NAV.map((item) => {
-              const active = !!activeMap.get(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={
-                    "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
-                    (active
-                      ? "text-white bg-[var(--brand-primary)]"
-                      : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
-                  }
-                >
-                  <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">{item.icon}</span>
-                  <span className="w-full truncate text-center font-medium leading-none">
-                    {item.label.replace(" ", "\u00a0")}
-                  </span>
-                </Link>
-              );
-            })}
+            <MobileNavLink
+              href={MOBILE_DASHBOARD_ITEM.href}
+              label={MOBILE_DASHBOARD_ITEM.label}
+              icon={MOBILE_DASHBOARD_ITEM.icon}
+              active={!!activeMap.get(MOBILE_DASHBOARD_ITEM.href)}
+            />
+            <MobileNavLink
+              href={MOBILE_BINDER_ITEM.href}
+              label={MOBILE_BINDER_ITEM.label}
+              icon={MOBILE_BINDER_ITEM.icon}
+              active={!!activeMap.get(MOBILE_BINDER_ITEM.href)}
+            />
+
+            <Link
+              href="/cards/new"
+              aria-label="Add card"
+              className="flex flex-1 basis-0 min-w-0 flex-col items-center justify-center px-1 py-1 text-[9px] text-zinc-600 touch-manipulation"
+            >
+              <span className="-mt-7 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white shadow-lg ring-4 ring-white [&>svg]:h-6 [&>svg]:w-6">
+                <IconPlus />
+              </span>
+            </Link>
+
+            <MobileNavLink
+              href={MOBILE_CATALOG_ITEM.href}
+              label={MOBILE_CATALOG_ITEM.label}
+              icon={MOBILE_CATALOG_ITEM.icon}
+              active={!!activeMap.get(MOBILE_CATALOG_ITEM.href)}
+            />
+
             <button
               type="button"
               onClick={(e) => {
@@ -696,71 +771,97 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
       ) : null}
-      {!isAuthScreen && !isMarketing && !pathname.startsWith("/cards/new") ? (
-        <Link
-          href="/cards/new"
-          aria-label="Add card"
-          className="sm:hidden fixed z-[999] flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white shadow-lg"
-          style={{
-            bottom: `calc(${Math.max(mobileNavHeight, 56)}px + env(safe-area-inset-bottom) + 16px)`,
-            right: "calc(env(safe-area-inset-right) + 16px)",
-          }}
-        >
-          <IconPlus />
-        </Link>
-      ) : null}
       {moreOpen && !isMarketing && typeof document !== "undefined"
         ? createPortal(
             <div
               ref={mobileMoreRef}
-              className="sm:hidden fixed left-0 right-0 z-[1001] border-t bg-white shadow-lg"
+              className="sm:hidden fixed left-0 right-0 z-[1001] max-h-[70dvh] overflow-y-auto border-t bg-white shadow-lg"
               style={{
-                bottom: `calc(${Math.max(mobileNavHeight, 56)}px + env(safe-area-inset-bottom))`,
+                // mobileNavHeight is measured from the nav bar's actual
+                // rendered offsetHeight, which now already includes the nav
+                // bar's own env(safe-area-inset-bottom) padding -- adding
+                // the inset again here would double-count it and float the
+                // sheet too high above the bar.
+                bottom: `${Math.max(mobileNavHeight, 56)}px`,
               }}
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <div className="mx-auto max-w-6xl px-4 py-3 space-y-2">
+              <div className="mx-auto max-w-6xl px-4 py-3">
                 {userEmail ? (
-                  <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+                  <div className="mb-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
                     You’re signed in as <span className="font-medium text-zinc-800">{userEmail}</span>
                   </div>
                 ) : null}
-                <Link
-                  href="/account"
-                  onClick={() => setMoreOpen(false)}
-                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                >
-                  <span className="text-xs">👤</span>
-                  Account
-                </Link>
-                <Link
-                  href="/help"
-                  onClick={() => setMoreOpen(false)}
-                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                >
-                  <span className="text-xs">❓</span>
-                  Help
-                </Link>
-                <Link
-                  href="/cards/backup"
-                  onClick={() => setMoreOpen(false)}
-                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                >
-                  <IconDatabase />
-                  Backup
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMoreOpen(false);
-                    window.dispatchEvent(new CustomEvent("cards:export"));
-                  }}
-                  className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
-                >
-                  <IconDownload />
-                  Export CSV
-                </button>
+
+                <MoreSectionHeader title="Collection" />
+                <div className="space-y-1">
+                  {MORE_COLLECTION_LINKS.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMoreOpen(false)}
+                      className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+
+                <MoreSectionHeader title="Discover" />
+                <div className="space-y-1">
+                  {MORE_DISCOVER_LINKS.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMoreOpen(false)}
+                      className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+
+                <MoreSectionHeader title="Account" />
+                <div className="space-y-1">
+                  <Link
+                    href="/account"
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                  >
+                    <span className="text-xs">👤</span>
+                    Account
+                  </Link>
+                  <Link
+                    href="/cards/backup"
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                  >
+                    <IconDatabase />
+                    Backup
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      window.dispatchEvent(new CustomEvent("cards:export"));
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                  >
+                    <IconDownload />
+                    Export CSV
+                  </button>
+                  <Link
+                    href="/help"
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                  >
+                    <span className="text-xs">❓</span>
+                    Help
+                  </Link>
+                </div>
               </div>
             </div>,
             document.body
