@@ -996,18 +996,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 Dashboard read as too close to the left divider and Binder
                 too far, mirrored on the right (Search too far, Players too
                 close). That's the opposite direction from what 2A.9 moved
-                the lines toward, so real-device observation, not a redone
-                derivation, is what set the new values below -- both lines
-                moved inward (left divider right, right divider left) by a
-                small, deliberately modest amount past the raw 20%/80% marks
-                rather than by re-deriving/defending the prior formula. If
-                real-device feedback still shows asymmetry after this, the
-                next step should stay empirical (adjust the px offset
-                further) rather than returning to pure box-model math, which
-                has now twice not matched what the eye perceives here. */}
+                the lines toward, so Phase 2A.10 moved both lines inward
+                instead (`20% + 2px` / `80% - 2px`), purely from that
+                real-device observation, not a redone derivation. That
+                overshot the other way (Dashboard/Players now too far,
+                Binder/Search now too close) -- so real-device testing has
+                now bounded the correct position between the 2A.9 and 2A.10
+                offsets on each side (-0.6px..+2px left, +0.6px..-2px
+                right). Phase 2A.11 below is the bisection midpoint of those
+                two observed bounds (+0.7px / -0.7px), the next real-device
+                test point -- still purely empirical, not a return to the
+                box-model derivation, which has not matched perception
+                either time it was tried here. */}
             <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-              <span className="absolute left-[calc(20%+2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
-              <span className="absolute left-[calc(80%-2px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(20%+0.7px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(80%-0.7px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
             </div>
           </div>
         </div>
