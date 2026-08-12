@@ -279,7 +279,23 @@ function NewCardPageInner() {
   // Mobile-only "Scan Card" / "Enter Manually" entry choice. Desktop always
   // shows the form regardless of this state (see the className toggles
   // below), so the default here only matters for the mobile-width case.
-  const [entryMode, setEntryMode] = useState<"choice" | "form">("choice");
+  //
+  // The center mobile bottom-nav Add Card button (AppShell.tsx) links here
+  // with ?mode=scan so that entry point skips this choice screen and lands
+  // straight on the scan/photo form -- initialModeIsScan seeds entryMode
+  // directly on first render (not via a useState-resetting effect), so it
+  // only ever affects the INITIAL value and can never override a later,
+  // intentional switch to manual entry in the same visit. This intentionally
+  // does NOT also auto-click the camera input: browsers can require file/
+  // camera input activation to happen synchronously from a genuine user
+  // gesture, which a useEffect firing after navigation isn't guaranteed to
+  // count as. The user still taps the existing scan/photo control themselves
+  // once they land here -- only the "which screen do they land on" choice is
+  // skipped, not the tap-to-open-camera interaction itself.
+  const initialModeIsScan = searchParams.get("mode") === "scan";
+  const [entryMode, setEntryMode] = useState<"choice" | "form">(
+    initialModeIsScan ? "form" : "choice"
+  );
   const scanInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {

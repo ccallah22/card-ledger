@@ -857,7 +857,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             always was; moving this Link doesn't change its rendered
             position. */}
         <Link
-          href="/cards/new"
+          // ?mode=scan (read by /cards/new -- see that page's entryMode
+          // initialization) sends this specific entry point straight into
+          // the existing scan/photo workflow instead of the scan-or-manual
+          // choice screen. Only this center mobile nav button changed --
+          // the other in-page "Add Card" links (Binder, Sold History, the
+          // empty-state grid) still point at plain /cards/new and keep
+          // their current choice-screen behavior; the pathname is still
+          // /cards/new either way, so isActivePath/activeMap below don't
+          // need to change (query strings aren't part of usePathname()).
+          href="/cards/new?mode=scan"
           aria-label="Add card"
           className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/4 flex-col items-center justify-center touch-manipulation"
         >
