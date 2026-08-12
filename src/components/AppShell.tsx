@@ -262,6 +262,16 @@ function NavLink({
   return <Tooltip text={label}>{link}</Tooltip>;
 }
 
+// Phase 2A.3 (real-device correction): the touch target (this Link, full
+// flex-1 slot width) and the VISUAL active/hover pill (the inner span) are
+// now separate elements. Previously the colored background was painted
+// directly on the full-width Link, so its only clearance from the screen
+// edge was whatever padding existed on <nav>/its wrapper -- a single,
+// global safety margin. Giving the pill its own `p-1`-driven inset here
+// means Dashboard (first slot) and More (last slot) get a second, LOCAL
+// margin that doesn't depend on getting one outer padding value exactly
+// right, without shrinking the tappable area (the outer Link is still the
+// full slot).
 function MobileNavLink({
   href,
   label,
@@ -276,16 +286,20 @@ function MobileNavLink({
   return (
     <Link
       href={href}
-      className={
-        "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
-        (active
-          ? "text-white bg-[var(--brand-primary)]"
-          : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
-      }
+      className="flex flex-1 basis-0 min-w-0 flex-col items-center justify-center p-1 text-[9px] transition touch-manipulation"
     >
-      <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">{icon}</span>
-      <span className="w-full truncate text-center font-medium leading-none">
-        {label.replace(" ", " ")}
+      <span
+        className={
+          "flex w-full min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 py-1 transition " +
+          (active
+            ? "text-white bg-[var(--brand-primary)]"
+            : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
+        }
+      >
+        <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">{icon}</span>
+        <span className="w-full truncate text-center font-medium leading-none">
+          {label.replace(" ", " ")}
+        </span>
       </span>
     </Link>
   );
@@ -714,24 +728,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      {/* Mobile bottom nav -- Phase 2A: exactly 5 slots (Dashboard, Binder,
-          elevated Add Card, Catalog, More). Phase 2A.1: a robust elevated
-          Add Card treatment (later tuned by real-device testing in
-          Phase 2A.2 -- see the comments on the <nav> and Add Card Link
-          below; the bar's top edge is intentionally straight, not rounded).
-
-          Root cause of the original clipped-circle look (see Phase 2A.1
-          audit): the inner wrapper below sets overflow-x-hidden but never
-          declares overflow-y, so the browser silently computes overflow-y
-          as `auto` (CSS Overflow spec: one axis non-visible + the other left
-          visible => the other becomes auto) -- clipping anything that tried
-          to rise above the row via negative margin. Declaring overflow-y
-          explicitly here (instead of leaving it to that implicit fallback)
-          fixes it directly. The Add Card button itself is intentionally
-          `position: absolute` and out of flex flow (not negative-margined)
-          so its own 56px size can never feed back into the row's auto
-          height and unbalance the other four items -- the row's height is
-          now fixed (h-14) independent of any item's content. */}
+      {/* Mobile bottom nav -- exactly 5 slots (Dashboard, Binder, elevated
+          Add Card, Catalog, More), tuned across several real-device passes
+          (Phase 2A.1-2A.3 -- see comments below for the current, corrected
+          rationale on each piece; the bar's top edge is intentionally
+          straight, not rounded). The Add Card button is intentionally
+          `position: absolute` and out of flex flow (not negative-margined),
+          and as of Phase 2A.3 is a sibling of the tab row rather than
+          nested inside it -- see its own comment below for why. */}
       {!isAuthScreen && !isMarketing ? (
         <nav
           ref={mobileNavRef}
@@ -750,8 +754,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           // env(safe-area-inset-bottom).
           className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))] pointer-events-auto"
         >
-        <div className="w-full max-w-full overflow-x-hidden overflow-y-visible">
-          <div className="relative flex h-14 w-full max-w-full items-center gap-1">
+        {/* Tab-row wrapper: overflow-x-hidden only. Phase 2A.3 correction --
+            this previously ALSO carried overflow-y-visible, on the theory
+            that declaring it explicitly would keep vertical overflow
+            visible. It doesn't: per the CSS Overflow spec (and MDN's own
+            note on overflow-x), when one axis is non-visible and the other
+            resolves to visible, the browser computes the visible one as
+            `auto` regardless of whether it was left at its default or
+            explicitly authored as visible -- there's no way for an author
+            to opt out of that pairing rule while keeping overflow-x hidden
+            on the SAME element. So this wrapper's overflow-y was silently
+            `auto` (i.e. still clipping) the entire time, which is why the
+            Add Card circle kept getting cut off on a real device despite
+            that "fix". The actual fix: Add Card no longer lives inside this
+            wrapper at all (see below) -- overflow-x-hidden here now only
+            ever needs to contain the four normal-flow tabs, which never
+            escape vertically, so there's nothing left for the overflow-y
+            quirk to clip. */}
+        <div className="w-full max-w-full overflow-x-hidden">
+          <div className="flex h-14 w-full max-w-full items-center gap-1">
             <MobileNavLink
               href={MOBILE_DASHBOARD_ITEM.href}
               label={MOBILE_DASHBOARD_ITEM.label}
@@ -766,9 +787,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             />
 
             {/* Invisible spacer keeping the five destinations evenly spaced
-                -- the actual Add Card button is the absolutely-positioned
-                Link below, rendered outside normal flow so it can rise
-                above the bar without affecting this row's height. */}
+                -- the actual Add Card button is rendered as a sibling of
+                this whole wrapper, below. */}
             <div className="flex-1 basis-0" aria-hidden="true" />
 
             <MobileNavLink
@@ -778,6 +798,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               active={!!activeMap.get(MOBILE_CATALOG_ITEM.href)}
             />
 
+            {/* Same touch-target/visual-pill split as MobileNavLink, for
+                Dashboard/More symmetry (Phase 2A.3 -- see above). */}
             <button
               type="button"
               onClick={(e) => {
@@ -789,46 +811,67 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 setMoreOpen((v) => !v);
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              className={
-                "flex flex-1 basis-0 min-w-0 overflow-hidden flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[9px] transition touch-manipulation " +
-                (moreOpen
-                  ? "text-white bg-[var(--brand-primary)]"
-                  : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
-              }
-            >
-              <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">
-                <IconDots />
-              </span>
-              <span className="w-full truncate text-center font-medium leading-none">More</span>
-            </button>
-
-            {/* Elevated center action. Phase 2A.2 (real-device correction):
-                top-0 -translate-y-1/2 (50% -- half the circle above the
-                bar) read as too aggressive/too clipped on an actual phone.
-                -translate-y-1/4 shifts it up by only 25% of its own height
-                (14px of the 56px circle), so roughly three quarters of the
-                circle sits inside the panel and a modest cap pokes above
-                the top edge -- still absolute, still bar-relative (not tied
-                to viewport height), still independent of the row's own
-                height or any sibling's content size. */}
-            <Link
-              href="/cards/new"
-              aria-label="Add card"
-              className="absolute left-1/2 top-0 flex -translate-x-1/2 -translate-y-1/4 flex-col items-center justify-center touch-manipulation"
+              className="flex flex-1 basis-0 min-w-0 flex-col items-center justify-center p-1 text-[9px] transition touch-manipulation"
             >
               <span
                 className={
-                  "flex h-14 w-14 items-center justify-center rounded-full shadow-lg ring-4 ring-white [&>svg]:h-6 [&>svg]:w-6 " +
-                  (pathname.startsWith("/cards/new")
-                    ? "bg-white text-[var(--brand-primary)]"
-                    : "bg-[var(--brand-primary)] text-white")
+                  "flex w-full min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 py-1 transition " +
+                  (moreOpen
+                    ? "text-white bg-[var(--brand-primary)]"
+                    : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
                 }
               >
-                <IconPlus />
+                <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">
+                  <IconDots />
+                </span>
+                <span className="w-full truncate text-center font-medium leading-none">More</span>
               </span>
-            </Link>
+            </button>
           </div>
         </div>
+
+        {/* Elevated center action. Phase 2A.3 (real-device correction): this
+            Link is now a direct child of <nav> -- a SIBLING of the tab-row
+            wrapper above, not nested inside it. That wrapper's
+            overflow-x-hidden (see its comment above) was silently clipping
+            this button's vertical overflow no matter what overflow-y value
+            was declared alongside it, because that pairing is a browser
+            normalization rule, not something an explicit `visible` can
+            override on the same element. Moving Add Card out from under
+            that ancestor entirely removes the possibility of it ever being
+            clipped by the tab row's horizontal-safety overflow, regardless
+            of how that wrapper's overflow is configured in the future.
+            <nav> is `position: fixed`, which already establishes a valid
+            containing block for this `position: absolute` child, so no
+            extra `relative` wrapper is needed. z-10 gives it explicit
+            stacking precedence over the (position: static) tab-row wrapper
+            -- traced first: per the stacking-context rules, a positioned
+            element with z-index:auto already paints after a static sibling
+            regardless, so this isn't strictly load-bearing today, but makes
+            that guarantee explicit rather than incidental, and comfortably
+            below <nav>'s own z-[1000] since it only needs precedence over
+            its own siblings inside <nav>, not the rest of the page.
+            top-0 -translate-y-1/4 is unchanged from Phase 2A.2 (~25% of the
+            circle above the row's top edge) -- <nav> has no padding-top, so
+            its own top edge is the same reference point the row's top edge
+            always was; moving this Link doesn't change its rendered
+            position. */}
+        <Link
+          href="/cards/new"
+          aria-label="Add card"
+          className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/4 flex-col items-center justify-center touch-manipulation"
+        >
+          <span
+            className={
+              "flex h-14 w-14 items-center justify-center rounded-full shadow-lg ring-4 ring-white [&>svg]:h-6 [&>svg]:w-6 " +
+              (pathname.startsWith("/cards/new")
+                ? "bg-white text-[var(--brand-primary)]"
+                : "bg-[var(--brand-primary)] text-white")
+            }
+          >
+            <IconPlus />
+          </span>
+        </Link>
       </nav>
       ) : null}
       {moreOpen && !isMarketing && typeof document !== "undefined"
