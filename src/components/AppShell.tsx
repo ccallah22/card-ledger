@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { heartbeatDeviceSession } from "@/lib/db/deviceSessions";
 
@@ -146,6 +145,19 @@ function IconChevronRight() {
   );
 }
 
+// Phase 2A.4: top-right mobile menu trigger (hamburger), replacing the old
+// visible "Sign out" text button. Same viewBox/stroke style as the other
+// line icons above.
+function IconMenu() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </svg>
+  );
+}
+
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: <IconChart /> },
   { href: "/cards", label: "Binder", icon: <IconGrid /> },
@@ -157,27 +169,34 @@ const NAV: NavItem[] = [
 ];
 
 // Phase 2A: mobile's bottom nav shows a reduced 5-slot subset of the same
-// destinations (Dashboard, Binder, Add Card, Catalog, More) instead of the
-// full NAV list above -- desktop's sidebar keeps rendering all of NAV,
-// unchanged. Pulled from NAV by href (not redefined) so there's still a
-// single source of truth for each route's label/icon.
+// destinations instead of the full NAV list above -- desktop's sidebar
+// keeps rendering all of NAV, unchanged. Dashboard/Binder/Players are
+// pulled from NAV by href (not redefined) so there's still a single source
+// of truth for those routes' label/icon.
+//
+// Phase 2A.4: the mobile bottom nav is now Dashboard / Binder / Add /
+// Search / Players. Search intentionally does NOT reuse NAV's "Catalog"
+// entry verbatim -- it's the same route (/catalog, unrenamed per this
+// phase's scope) and the same icon (IconSearch, already exactly a
+// magnifying glass), but a mobile-only label override, since desktop's
+// sidebar keeps showing "Catalog" for that same link unchanged.
 const MOBILE_DASHBOARD_ITEM = NAV.find((item) => item.href === "/dashboard")!;
 const MOBILE_BINDER_ITEM = NAV.find((item) => item.href === "/cards")!;
-const MOBILE_CATALOG_ITEM = NAV.find((item) => item.href === "/catalog")!;
+const MOBILE_PLAYERS_ITEM = NAV.find((item) => item.href === "/players")!;
+const MOBILE_SEARCH_ITEM: NavItem = { href: "/catalog", label: "Search", icon: <IconSearch /> };
 
-// Phase 2A: destinations that no longer have a permanent mobile nav slot
-// move into the mobile "More" sheet, grouped by section. (Desktop's own
-// inline "Actions" dropdown in the sidebar below is unrelated and
-// unchanged -- it still only shows Account/Help/Backup/Export CSV.)
+// Phase 2A.4: destinations that no longer have a permanent mobile nav slot
+// (and aren't Players, now primary) live in the top-right header menu,
+// grouped by section -- moved from the old bottom-nav "More" sheet, same
+// content/hrefs/behaviors, just relocated. (Desktop's own inline "Actions"
+// dropdown in the sidebar below is unrelated and unchanged -- it still only
+// shows Account/Help/Backup/Export CSV.)
 type MoreLink = { href: string; label: string; icon: React.ReactNode };
 const MORE_COLLECTION_LINKS: MoreLink[] = [
   { href: "/cards/wishlist", label: "Wishlist", icon: <IconHeart /> },
   { href: "/cards/for-sale", label: "For Sale", icon: <IconTag /> },
   { href: "/cards/sold", label: "Sold History", icon: <IconReceipt /> },
   { href: "/cards/locations", label: "Locations", icon: <IconMapPin /> },
-];
-const MORE_DISCOVER_LINKS: MoreLink[] = [
-  { href: "/players", label: "Players", icon: <IconUser /> },
 ];
 
 function isActivePath(pathname: string, href: string) {
@@ -268,10 +287,10 @@ function NavLink({
 // directly on the full-width Link, so its only clearance from the screen
 // edge was whatever padding existed on <nav>/its wrapper -- a single,
 // global safety margin. Giving the pill its own `p-1`-driven inset here
-// means Dashboard (first slot) and More (last slot) get a second, LOCAL
-// margin that doesn't depend on getting one outer padding value exactly
-// right, without shrinking the tappable area (the outer Link is still the
-// full slot).
+// means Dashboard (first slot) and the last slot (Players, as of Phase
+// 2A.4) get a second, LOCAL margin that doesn't depend on getting one outer
+// padding value exactly right, without shrinking the tappable area (the
+// outer Link is still the full slot).
 function MobileNavLink({
   href,
   label,
@@ -336,9 +355,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [userEmail, setUserEmail] = useState<string>("");
   const sidebarRef = useRef<HTMLElement | null>(null);
   const moreRef = useRef<HTMLDivElement | null>(null);
-  const mobileMoreRef = useRef<HTMLDivElement | null>(null);
-  const mobileNavRef = useRef<HTMLElement | null>(null);
-  const [mobileNavHeight, setMobileNavHeight] = useState(56);
+  // Phase 2A.4: wraps the top-right hamburger button AND its dropdown (the
+  // relocated former mobile "More" sheet content) -- replaces the old
+  // mobileMoreRef, which wrapped only the portaled bottom sheet. No portal
+  // needed here (see the menu's own JSX below): nothing between the header
+  // and <body> sets overflow-hidden, so a plain relative/absolute dropdown,
+  // matching desktop's existing Actions-dropdown pattern below, renders
+  // correctly without one.
+  const headerMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
@@ -359,20 +383,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     } finally {
       setHasLoadedPref(true);
     }
-  }, []);
-
-  useEffect(() => {
-    const el = mobileNavRef.current;
-    if (!el) return;
-    const update = () => setMobileNavHeight(el.offsetHeight || 56);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    window.addEventListener("resize", update);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", update);
-    };
   }, []);
 
   useEffect(() => {
@@ -466,7 +476,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const target = event.target as Node | null;
       if (!target) return;
       if (moreRef.current?.contains(target)) return;
-      if (mobileMoreRef.current?.contains(target)) return;
+      if (headerMenuRef.current?.contains(target)) return;
       setMoreOpen(false);
     }
     document.addEventListener("click", onDocClick);
@@ -694,18 +704,121 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 <div className="text-sm font-semibold tracking-tight font-display">TheBinder</div>
               </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  const supabase = createClient();
-                  await supabase.auth.signOut();
-                  router.replace("/login?signed_out=1");
-                  router.refresh();
-                }}
-              className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-              >
-                Sign out
-              </button>
+
+              {/* Phase 2A.4: replaces the old visible "Sign out" text button.
+                  Same relative-wrapper + absolute-dropdown pattern as
+                  desktop's own Actions dropdown in the sidebar above (no
+                  portal/measured-height needed -- see headerMenuRef's
+                  comment). Menu contents are the same destinations that used
+                  to live in the bottom-nav More sheet (now removed, see the
+                  bottom nav below), plus Sign Out, which didn't have a home
+                  in that sheet before since it was already visible here. */}
+              <div ref={headerMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMoreOpen((v) => !v);
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    setMoreOpen((v) => !v);
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  aria-label="Open menu"
+                  className="rounded-md border border-white/20 bg-white/10 p-2 text-white"
+                >
+                  <IconMenu />
+                </button>
+
+                {moreOpen ? (
+                  <div
+                    className="absolute right-0 top-full z-[1001] mt-2 max-h-[80dvh] w-64 overflow-y-auto rounded-md border bg-white text-left text-zinc-900 shadow-lg"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="p-3">
+                      {userEmail ? (
+                        <div className="mb-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+                          You’re signed in as{" "}
+                          <span className="font-medium text-zinc-800">{userEmail}</span>
+                        </div>
+                      ) : null}
+
+                      <MoreSectionHeader title="Collection" />
+                      <div className="space-y-1">
+                        {MORE_COLLECTION_LINKS.map((item) => (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setMoreOpen(false)}
+                            className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                          >
+                            {item.icon}
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
+
+                      <MoreSectionHeader title="Account" />
+                      <div className="space-y-1">
+                        <Link
+                          href="/account"
+                          onClick={() => setMoreOpen(false)}
+                          className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                        >
+                          <span className="text-xs">👤</span>
+                          Account
+                        </Link>
+                        <Link
+                          href="/cards/backup"
+                          onClick={() => setMoreOpen(false)}
+                          className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                        >
+                          <IconDatabase />
+                          Backup
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            window.dispatchEvent(new CustomEvent("cards:export"));
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                        >
+                          <IconDownload />
+                          Export CSV
+                        </button>
+                        <Link
+                          href="/help"
+                          onClick={() => setMoreOpen(false)}
+                          className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                        >
+                          <span className="text-xs">❓</span>
+                          Help
+                        </Link>
+                      </div>
+
+                      {/* Visually separated final action -- easy to find,
+                          not made to dominate the menu. */}
+                      <div className="mt-3 border-t pt-3">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setMoreOpen(false);
+                            const supabase = createClient();
+                            await supabase.auth.signOut();
+                            router.replace("/login?signed_out=1");
+                            router.refresh();
+                          }}
+                          className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-left text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         )}
@@ -729,16 +842,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile bottom nav -- exactly 5 slots (Dashboard, Binder, elevated
-          Add Card, Catalog, More), tuned across several real-device passes
-          (Phase 2A.1-2A.3 -- see comments below for the current, corrected
-          rationale on each piece; the bar's top edge is intentionally
-          straight, not rounded). The Add Card button is intentionally
-          `position: absolute` and out of flex flow (not negative-margined),
-          and as of Phase 2A.3 is a sibling of the tab row rather than
-          nested inside it -- see its own comment below for why. */}
+          Add Card, Search, Players as of Phase 2A.4), tuned across several
+          real-device passes (Phase 2A.1-2A.3 -- see comments below for the
+          current, corrected rationale on each piece; the bar's top edge is
+          intentionally straight, not rounded). The Add Card button is
+          intentionally `position: absolute` and out of flex flow (not
+          negative-margined), and as of Phase 2A.3 is a sibling of the tab
+          row rather than nested inside it -- see its own comment below for
+          why. mobileNavRef/mobileNavHeight (the old bottom-sheet's
+          measured-height positioning) were removed in Phase 2A.4 along with
+          that sheet -- nothing else used that measurement. */}
       {!isAuthScreen && !isMarketing ? (
         <nav
-          ref={mobileNavRef}
           // Phase 2A.2 (real-device correction): straight top edge restored
           // -- no rounded-t-*. Horizontal padding is base clearance (0.75rem)
           // PLUS env(safe-area-inset-left/right) -- additive, same pattern
@@ -749,9 +864,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           // active background only 8px from the true screen edge, reading
           // as clipped. Moving both sides onto this single explicit calc()
           // (and dropping the wrapper's own px-2 below) makes the Dashboard
-          // and More slots symmetric by construction. Bottom padding is
-          // unchanged from the previous pass: base clearance (0.5rem) PLUS
-          // env(safe-area-inset-bottom).
+          // and Players slots symmetric by construction (Players is the
+          // new fifth/rightmost slot as of Phase 2A.4, replacing More).
+          // Bottom padding is unchanged from the previous pass: base
+          // clearance (0.5rem) PLUS env(safe-area-inset-bottom).
           className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] w-full border-t bg-white/95 backdrop-blur overflow-visible pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pl-[calc(0.75rem+env(safe-area-inset-left,0px))] pr-[calc(0.75rem+env(safe-area-inset-right,0px))] pointer-events-auto"
         >
         {/* Tab-row wrapper: overflow-x-hidden only. Phase 2A.3 correction --
@@ -792,41 +908,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex-1 basis-0" aria-hidden="true" />
 
             <MobileNavLink
-              href={MOBILE_CATALOG_ITEM.href}
-              label={MOBILE_CATALOG_ITEM.label}
-              icon={MOBILE_CATALOG_ITEM.icon}
-              active={!!activeMap.get(MOBILE_CATALOG_ITEM.href)}
+              href={MOBILE_SEARCH_ITEM.href}
+              label={MOBILE_SEARCH_ITEM.label}
+              icon={MOBILE_SEARCH_ITEM.icon}
+              active={!!activeMap.get(MOBILE_SEARCH_ITEM.href)}
             />
 
-            {/* Same touch-target/visual-pill split as MobileNavLink, for
-                Dashboard/More symmetry (Phase 2A.3 -- see above). */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMoreOpen((v) => !v);
-              }}
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                setMoreOpen((v) => !v);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="flex flex-1 basis-0 min-w-0 flex-col items-center justify-center p-1 text-[9px] transition touch-manipulation"
-            >
-              <span
-                className={
-                  "flex w-full min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 py-1 transition " +
-                  (moreOpen
-                    ? "text-white bg-[var(--brand-primary)]"
-                    : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
-                }
-              >
-                <span className="h-5 w-5 [&>svg]:h-5 [&>svg]:w-5">
-                  <IconDots />
-                </span>
-                <span className="w-full truncate text-center font-medium leading-none">More</span>
-              </span>
-            </button>
+            {/* Phase 2A.4: Players replaces the old bottom-nav More button
+                (moved to the top-right header menu -- see above). Uses the
+                same MobileNavLink as every other primary tab, so it
+                automatically gets the same touch-target/visual-pill inset
+                that previously gave Dashboard/More their edge-safety margin
+                -- this fifth slot's right-edge safety is preserved by
+                construction, not re-implemented. */}
+            <MobileNavLink
+              href={MOBILE_PLAYERS_ITEM.href}
+              label={MOBILE_PLAYERS_ITEM.label}
+              icon={MOBILE_PLAYERS_ITEM.icon}
+              active={!!activeMap.get(MOBILE_PLAYERS_ITEM.href)}
+            />
           </div>
         </div>
 
@@ -883,102 +983,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
       </nav>
       ) : null}
-      {moreOpen && !isMarketing && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              ref={mobileMoreRef}
-              className="sm:hidden fixed left-0 right-0 z-[1001] max-h-[70dvh] overflow-y-auto border-t bg-white shadow-lg"
-              style={{
-                // mobileNavHeight is measured from the nav bar's actual
-                // rendered offsetHeight, which now already includes the nav
-                // bar's own env(safe-area-inset-bottom) padding -- adding
-                // the inset again here would double-count it and float the
-                // sheet too high above the bar.
-                bottom: `${Math.max(mobileNavHeight, 56)}px`,
-              }}
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <div className="mx-auto max-w-6xl px-4 py-3">
-                {userEmail ? (
-                  <div className="mb-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
-                    You’re signed in as <span className="font-medium text-zinc-800">{userEmail}</span>
-                  </div>
-                ) : null}
-
-                <MoreSectionHeader title="Collection" />
-                <div className="space-y-1">
-                  {MORE_COLLECTION_LINKS.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMoreOpen(false)}
-                      className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                    >
-                      {item.icon}
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-
-                <MoreSectionHeader title="Discover" />
-                <div className="space-y-1">
-                  {MORE_DISCOVER_LINKS.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMoreOpen(false)}
-                      className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                    >
-                      {item.icon}
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-
-                <MoreSectionHeader title="Account" />
-                <div className="space-y-1">
-                  <Link
-                    href="/account"
-                    onClick={() => setMoreOpen(false)}
-                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    <span className="text-xs">👤</span>
-                    Account
-                  </Link>
-                  <Link
-                    href="/cards/backup"
-                    onClick={() => setMoreOpen(false)}
-                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    <IconDatabase />
-                    Backup
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      window.dispatchEvent(new CustomEvent("cards:export"));
-                    }}
-                    className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    <IconDownload />
-                    Export CSV
-                  </button>
-                  <Link
-                    href="/help"
-                    onClick={() => setMoreOpen(false)}
-                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    <span className="text-xs">❓</span>
-                    Help
-                  </Link>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        : null}
     </div>
   );
 }
