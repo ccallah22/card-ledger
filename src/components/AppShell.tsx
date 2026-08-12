@@ -720,10 +720,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     e.stopPropagation();
                     setMoreOpen((v) => !v);
                   }}
-                  onTouchStart={(e) => {
-                    e.stopPropagation();
-                    setMoreOpen((v) => !v);
-                  }}
+                  // touchstart/pointerdown only stop propagation (so the
+                  // outside-click listener can't fire for this same tap) --
+                  // they must NOT also toggle moreOpen here. A single tap on
+                  // a touch device fires both touchstart and a synthesized
+                  // click; toggling in both meant every tap flipped the
+                  // state twice, so taps 1/3/5... and 2/4/6... landed on
+                  // different net results instead of a clean open/close
+                  // alternation. onClick is now the single place that
+                  // toggles moreOpen.
+                  onTouchStart={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   aria-label="Open menu"
                   className="rounded-md border border-white/20 bg-white/10 p-2 text-white"
