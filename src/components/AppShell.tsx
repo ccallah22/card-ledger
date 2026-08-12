@@ -302,7 +302,30 @@ function NavLink({
 // only widens the LOCAL margin every tab already had; it doesn't touch
 // <nav>'s or the wrapper's outer padding, and applies identically to every
 // tab (Dashboard/Binder/Search/Players) since they all render through this
-// one component -- no special-casing either edge tab.
+// one component -- no special-casing either edge tab. Confirmed on a real
+// device to fix the edge-clipping.
+//
+// Phase 2A.6 (real-device correction): that same fix left too little width
+// for "Dashboard" at 320px, truncating to "Dashbo...". Traced the full
+// cascade at 320px: nav's 12px pad -> row's flex-1 split (~56px/tab) ->
+// this Link's p-1 (8px) -> the pill's mx-1.5 (12px) -> the pill's own px-1
+// (8px) left only ~28px for the label text, well under what "Dashboard"
+// needs at 9px.
+//
+// Phase 2A.7 (real-device correction): 2A.6's fix included trimming
+// mx-1.5 -> mx-1 on this pill, which was a mistake -- mx-1.5 is the exact
+// margin real-device testing confirmed fixes the Dashboard/Players corner
+// clipping, and it must not be weakened again just for label width. mx-1.5
+// is restored here. The width recovery for "Dashboard" instead comes from
+// two places that don't touch pill geometry at all: the pill's own
+// internal px-1 stays removed (pure internal breathing room, zero edge-
+// safety relevance, confirmed risk-free in 2A.6), and the tab row's gap-1
+// is reduced to gap-0.5 (see below) -- recovering width row-wide instead
+// of from the proven-correct pill inset. Net available label width at
+// 320px with this combination (~37.6px) is essentially the same as 2A.6's
+// mx-1/gap-1 combination (~38px) -- confirmed by explicit arithmetic, not
+// assumed -- so text-[8px] stays; there's no width basis to attempt
+// text-[9px] here, and guessing wasn't an option.
 function MobileNavLink({
   href,
   label,
@@ -317,11 +340,11 @@ function MobileNavLink({
   return (
     <Link
       href={href}
-      className="flex flex-1 basis-0 min-w-0 flex-col items-center justify-center p-1 text-[9px] transition touch-manipulation"
+      className="flex flex-1 basis-0 min-w-0 flex-col items-center justify-center p-1 text-[8px] transition touch-manipulation"
     >
       <span
         className={
-          "flex min-w-0 flex-col items-center justify-center gap-0.5 self-stretch overflow-hidden rounded-md mx-1.5 px-1 py-1 transition " +
+          "flex min-w-0 flex-col items-center justify-center gap-0.5 self-stretch overflow-hidden rounded-md mx-1.5 py-1 transition " +
           (active
             ? "text-white bg-[var(--brand-primary)]"
             : "text-zinc-600 hover:text-[var(--brand-primary)] hover:bg-zinc-100")
@@ -906,7 +929,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             escape vertically, so there's nothing left for the overflow-y
             quirk to clip. */}
         <div className="w-full max-w-full overflow-x-hidden">
-          <div className="relative flex h-14 w-full max-w-full items-center gap-1">
+          {/* Phase 2A.7: gap-1 (4px x 4 gaps = 16px total at any width)
+              reduced to gap-0.5 (2px x 4 = 8px) to recover row-wide width
+              for the Dashboard label without touching the pill's own
+              mx-1.5 edge-safety inset (see MobileNavLink's comment). Add
+              Card is unaffected: it's positioned `absolute left-1/2` on
+              <nav> itself (a sibling of this whole wrapper, not a
+              participant in this row's flex layout at all -- see its own
+              comment below), so its horizontal center is always exactly
+              50% of <nav>'s width regardless of anything in this row. */}
+          <div className="relative flex h-14 w-full max-w-full items-center gap-0.5">
             <MobileNavLink
               href={MOBILE_DASHBOARD_ITEM.href}
               label={MOBILE_DASHBOARD_ITEM.label}
@@ -952,22 +984,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 or introduce overflow -- confirmed safe under the row's own
                 overflow-x-hidden ancestor since inset-0 keeps every line
                 strictly within the row's own box. Positioned at the row's
-                1/5, 2/5, 3/5, 4/5 marks, matching the five roughly-equal
-                flex-1 slots (Dashboard | Binder | Add | Search | Players)
-                without depending on any specific viewport width. The two
-                marks nearest Add (2/5, 3/5) are short and bottom-anchored
-                rather than vertically centered: the Add Card circle
-                occupies this row's own y=[-14,42] band (see its comment
-                below) regardless of viewport width, so a centered line
-                there could visually cross it at narrow widths -- anchoring
-                to the row's bottom 8px (y=[44,52], a 2px clear margin
-                under the circle) avoids that everywhere. The outer two
-                marks (1/5, 4/5) aren't near the circle, so they use the
-                originally-intended vertically-centered treatment. */}
+                1/5 and 4/5 marks (Dashboard/Binder and Search/Players),
+                matching the five roughly-equal flex-1 slots without
+                depending on any specific viewport width. Phase 2A.6: the
+                two marks that used to sit at 2/5 and 3/5 (straddling Add
+                Card) were removed entirely per real-device feedback -- the
+                center area should read as open, not framed by lines on
+                both sides -- rather than replaced with any other Add-area
+                decoration. */}
             <div className="pointer-events-none absolute inset-0" aria-hidden="true">
               <span className="absolute left-[20%] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
-              <span className="absolute left-[40%] bottom-1 h-2 w-px -translate-x-1/2 bg-zinc-300" />
-              <span className="absolute left-[60%] bottom-1 h-2 w-px -translate-x-1/2 bg-zinc-300" />
               <span className="absolute left-[80%] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
             </div>
           </div>
