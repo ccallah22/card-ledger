@@ -130,6 +130,25 @@ export async function getPlayerBySlug(slug: string): Promise<PlayerWithContext |
   return row ? toPlayerWithContext(row) : null;
 }
 
+/**
+ * Same display-ready context as getPlayerBySlug (id/name/slug plus
+ * team/league/sport names), looked up by numeric id instead of slug --
+ * reuses CONTEXT_SELECT/toPlayerWithContext rather than duplicating the
+ * join. Player Overview (playerOverview.ts) uses this: it's handed a
+ * playerId, not a slug.
+ */
+export async function getPlayerWithContext(id: number): Promise<PlayerWithContext | null> {
+  const { data, error } = await supabase
+    .from("players")
+    .select(CONTEXT_SELECT)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data ? toPlayerWithContext(data as unknown as PlayerWithContextRow) : null;
+}
+
 export async function getPlayer(id: number): Promise<PlayerRow | null> {
   const { data, error } = await supabase
     .from("players")

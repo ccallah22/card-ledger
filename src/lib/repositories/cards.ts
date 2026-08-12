@@ -426,7 +426,7 @@ export type CardSummary = { id: number; card_number: string; title: string | nul
 // values like "RC-5"), so "ordered numerically where possible" is done
 // client-side after fetching rather than via a plain PostgREST .order(),
 // which would sort it lexicographically (e.g. "10" before "2").
-function compareCardNumbers(a: string, b: string): number {
+export function compareCardNumbers(a: string, b: string): number {
   const numA = Number(a);
   const numB = Number(b);
   const aIsNum = a.trim() !== "" && Number.isFinite(numA);
