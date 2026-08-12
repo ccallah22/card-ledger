@@ -983,18 +983,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 the five-slot flex distribution, touch targets, row height,
                 or introduce overflow -- confirmed safe under the row's own
                 overflow-x-hidden ancestor since inset-0 keeps every line
-                strictly within the row's own box. Positioned at the row's
-                1/5 and 4/5 marks (Dashboard/Binder and Search/Players),
-                matching the five roughly-equal flex-1 slots without
-                depending on any specific viewport width. Phase 2A.6: the
-                two marks that used to sit at 2/5 and 3/5 (straddling Add
-                Card) were removed entirely per real-device feedback -- the
-                center area should read as open, not framed by lines on
-                both sides -- rather than replaced with any other Add-area
-                decoration. */}
+                strictly within the row's own box. Phase 2A.6: the two marks
+                that used to sit at 2/5 and 3/5 (straddling Add Card) were
+                removed entirely per real-device feedback -- the center area
+                should read as open, not framed by lines on both sides --
+                rather than replaced with any other Add-area decoration.
+                Phase 2A.9 (real-device correction): a flat left-[20%]/
+                left-[80%] (the row's raw 1/5 and 4/5 marks) is NOT the true
+                midpoint between each pair of adjacent pills, and the gap
+                was visibly asymmetric as a result. Derived symbolically
+                (row width R, 5 equal flex-1 slots of width S=(R-4*gap)/5,
+                gap-0.5=2px between them): the true midpoint between slot1's
+                pill-right-edge and slot2's pill-left-edge is S + gap/2,
+                which -- because each pill's own Link-p-1 + pill-mx-1.5
+                inset is identical and symmetric on both sides of the gap --
+                simplifies to exactly `20% - 0.3*gap` regardless of R. With
+                gap=2px that's `20% - 0.6px` (mirrored: `80% + 0.6px` for
+                the Search/Players side). Verified this produces IDENTICAL
+                gaps (not just closer) on both sides of each divider at
+                every target width 320-480px, where the previous flat
+                percentages had a constant 1.2px asymmetry at every width
+                (not just at 320px) -- confirmed with an explicit arithmetic
+                check across the full width range, not assumed. */}
             <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-              <span className="absolute left-[20%] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
-              <span className="absolute left-[80%] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(20%-0.6px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
+              <span className="absolute left-[calc(80%+0.6px)] top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-zinc-300" />
             </div>
           </div>
         </div>
