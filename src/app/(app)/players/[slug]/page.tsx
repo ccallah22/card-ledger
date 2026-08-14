@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPlayerBySlug, type PlayerWithContext } from "@/lib/repositories/players";
 import { listMyCardsForPlayer, type MyCard } from "@/lib/repositories/myCards";
@@ -11,7 +10,10 @@ import {
   type PlayerOverview,
 } from "@/lib/repositories/playerOverview";
 import { StatCard } from "@/components/ui/StatCard";
-import { PlayerOwnedCardTile } from "@/components/players/PlayerOwnedCardTile";
+import {
+  PlayerOwnedCardTile,
+  type PlayerOwnedCardTileCard,
+} from "@/components/players/PlayerOwnedCardTile";
 import { useUserCardDisplayImages } from "@/hooks/cards/useUserCardDisplayImages";
 
 function currency(n: number) {
@@ -24,12 +26,58 @@ function currency(n: number) {
 // inside that repository function: listMyCardsForPlayer has no status
 // filter today and is also used by other current callers that may
 // intentionally want every status; changing its own behavior was out of
-// scope for this phase (see the Phase 3B report's discrepancy note), so
-// "Your Collection" filters the already-fetched result instead of asking
-// the repository to filter differently.
+// scope for Phase 3B/3C (see those reports' discrepancy note), so "Your
+// Collection" filters the already-fetched result instead of asking the
+// repository to filter differently.
 function isOwnedForCollectionGrid(card: MyCard): boolean {
   const status = card.status ?? "HAVE";
   return status !== "SOLD" && status !== "WANT";
+}
+
+// MyCard.insert is that same field (see myCards.ts's toMyCard: `insert:
+// card?.title ?? undefined`), MyCard.year is a string where
+// PlayerOwnedCardSummary.year is a number -- PlayerOwnedCardTileCard.year
+// accepts either so this mapping doesn't need to parse/reformat it. No
+// PlayerOverview data (value, grading, counts, ranking) is recomputed here
+// -- every field below is a direct passthrough of what MyCard/myCards.ts
+// already resolved.
+function mapMyCardToTileCard(card: MyCard): PlayerOwnedCardTileCard {
+  return {
+    userCardId: card.id,
+    title: card.insert ?? null,
+    cardNumber: card.cardNumber ?? "",
+    year: card.year || null,
+    setName: card.setName || null,
+    parallel: card.parallel ?? null,
+    grade: card.grade ?? null,
+    gradingStatus: card.gradingStatus,
+    estimatedValue: card.estimatedValue ?? null,
+  };
+}
+
+const SUMMARY_SKELETON_KEYS = ["s1", "s2", "s3"];
+
+function StatCardSkeleton() {
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <div className="h-3 w-20 animate-pulse rounded bg-zinc-100" />
+      <div className="mt-2 h-6 w-16 animate-pulse rounded bg-zinc-100" />
+    </div>
+  );
+}
+
+function TileGridSkeleton({ count }: { count: number }) {
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="rounded-xl border border-zinc-200 bg-white p-3">
+          <div className="aspect-[2.5/3.5] w-full animate-pulse rounded-lg bg-zinc-100" />
+          <div className="mt-2 h-3 w-3/4 animate-pulse rounded bg-zinc-100" />
+          <div className="mt-1 h-3 w-1/2 animate-pulse rounded bg-zinc-100" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function PlayerDetailPage({
@@ -132,13 +180,23 @@ export default function PlayerDetailPage({
     };
   }, [player]);
 
-  // Called unconditionally (Rules of Hooks) with whatever topCards ids are
-  // currently known -- an empty array before the overview has loaded, or
-  // once it's loaded with zero top cards. One batched resolution for the
-  // whole Top Cards grid, never one request per tile.
+  const ownedCollectionCards = myCards.filter(isOwnedForCollectionGrid);
+
+  // One combined batch resolution for every card image this page displays
+  // (Top Cards + Your Collection), called unconditionally (Rules of Hooks)
+  // -- an empty/partial array before either source has loaded is fine, the
+  // hook just resolves nothing yet. Top Cards' ids are a subset of Your
+  // Collection's, but useUserCardDisplayImages/its underlying batch queries
+  // already dedupe by id internally, so passing the union here still means
+  // exactly one card_media query + one signed-URL request for the whole
+  // page, never two separate grids each doing their own batch.
   const topCardUserCardIds = overview?.topCards.map((c) => c.userCardId) ?? [];
-  const { imagesByUserCardId, loading: imagesLoading } =
-    useUserCardDisplayImages(topCardUserCardIds);
+  const allDisplayedUserCardIds = [
+    ...new Set([...topCardUserCardIds, ...ownedCollectionCards.map((c) => c.id)]),
+  ];
+  const { imagesByUserCardId, loading: imagesLoading } = useUserCardDisplayImages(
+    allDisplayedUserCardIds,
+  );
 
   if (missing) {
     notFound();
@@ -156,30 +214,34 @@ export default function PlayerDetailPage({
     (part): part is string => !!part,
   );
 
-  const ownedCollectionCards = myCards.filter(isOwnedForCollectionGrid);
-
   return (
-    <div className="space-y-6">
-      {/* Player header -- identity fields only (name/team/league/sport),
+    <div className="space-y-8">
+      {/* 1. Player header -- identity fields only (name/team/league/sport),
           exactly what PlayerWithContext already carries. No biography,
           career stats, highlights, or photography -- the collection below
           is the hero, per this phase's explicit scope. */}
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{player.full_name}</h1>
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 break-words sm:text-3xl">
+          {player.full_name}
+        </h1>
         {contextParts.length > 0 ? (
           <p className="text-sm text-zinc-600">{contextParts.join(" • ")}</p>
         ) : null}
       </div>
 
       {overviewError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="error-state">
           We couldn&apos;t load this player&apos;s collection stats right now. Try again shortly.
         </div>
       ) : overviewLoading || !overview ? (
-        <div className="loading-state">Loading collection…</div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {SUMMARY_SKELETON_KEYS.map((key) => (
+            <StatCardSkeleton key={key} />
+          ))}
+        </div>
       ) : (
         <>
-          {/* Collection summary hero: totalCardsOwned (physical copies) is
+          {/* 2. Collection summary: totalCardsOwned (physical copies) is
               deliberately a separate number from uniqueCatalogCardsOwned
               (what completion is based on) -- shown as this stat's own
               subtitle so duplicate copies are never implied to move
@@ -212,23 +274,36 @@ export default function PlayerDetailPage({
               value={
                 overview.catalog.completionPercent != null
                   ? `${overview.catalog.completionPercent}%`
-                  : "Catalog progress unavailable"
+                  : "Unavailable"
               }
               subtitle={
                 overview.catalog.totalCatalogCards > 0
-                  ? `${overview.catalog.ownedCatalogCards} / ${overview.catalog.totalCatalogCards} unique cards`
+                  ? `${overview.catalog.ownedCatalogCards} / ${overview.catalog.totalCatalogCards} unique`
                   : undefined
               }
             />
           </div>
 
+          {/* 3. Catalog Completion, expanded into a collecting goal: percent,
+              the owned/total unique-card fraction it's built from, and how
+              many are left -- all read directly from overview.catalog, no
+              new math beyond simple subtraction/clamping for the bar. */}
           {overview.catalog.completionPercent != null ? (
             <div className="rounded-xl border bg-white p-4">
-              <div className="flex items-center justify-between text-sm text-zinc-700">
-                <span className="font-medium">Catalog Completion</span>
-                <span>{overview.catalog.completionPercent}%</span>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-900">Catalog Completion</h2>
+                <span className="text-2xl font-bold tabular-nums text-zinc-900">
+                  {overview.catalog.completionPercent}%
+                </span>
               </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+              <div
+                className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-zinc-100"
+                role="progressbar"
+                aria-valuenow={overview.catalog.completionPercent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Catalog completion"
+              >
                 <div
                   className="h-full rounded-full bg-blue-500"
                   style={{
@@ -236,17 +311,57 @@ export default function PlayerDetailPage({
                   }}
                 />
               </div>
-              <div className="mt-1 text-xs text-zinc-500">
-                {overview.catalog.ownedCatalogCards} / {overview.catalog.totalCatalogCards} unique
-                cards
+              <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
+                <span>
+                  {overview.catalog.ownedCatalogCards} of {overview.catalog.totalCatalogCards}{" "}
+                  unique cards
+                </span>
+                <span>
+                  {overview.catalog.missingCatalogCards === 0
+                    ? "Complete"
+                    : `${overview.catalog.missingCatalogCards} remaining`}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border bg-white p-4 text-sm text-zinc-600">
+              Catalog progress unavailable -- no catalog cards found for this player yet.
+            </div>
+          )}
+
+          {/* 4. Top Cards -- the collection's own visual centerpiece. Order
+              comes entirely from overview.topCards (value desc, already
+              decided by playerOverview.ts); this page only marks index 0 as
+              "featured" for a stronger visual treatment, it doesn't re-rank
+              anything. */}
+          {overview.topCards.length > 0 ? (
+            <div>
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900">Top Cards</h2>
+                <span className="text-xs text-zinc-500">
+                  {overview.topCards.length} of {overview.collection.uniqueCatalogCardsOwned}
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {overview.topCards.map((card, index) => (
+                  <PlayerOwnedCardTile
+                    key={card.userCardId}
+                    card={card}
+                    imageUrl={imagesByUserCardId.get(card.userCardId) ?? null}
+                    imageLoading={imagesLoading && !imagesByUserCardId.has(card.userCardId)}
+                    featured={index === 0}
+                  />
+                ))}
               </div>
             </div>
           ) : null}
 
-          {/* Collection breakdown: plain counts already computed by
+          {/* 5. Collection Breakdown: plain counts already computed by
               PlayerOverview -- this page classifies nothing itself. */}
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">Collection Breakdown</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+              Collection Breakdown
+            </h2>
             <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
               <StatCard title="Graded" value={overview.collection.gradedCount} />
               <StatCard title="Rookies" value={overview.collection.rookieCount} />
@@ -255,77 +370,70 @@ export default function PlayerDetailPage({
               <StatCard title="Serial Numbered" value={overview.collection.serialNumberedCount} />
             </div>
           </div>
-
-          {overview.topCards.length > 0 ? (
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight">Top Cards</h2>
-              <div className="mt-2 grid grid-cols-2 gap-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {overview.topCards.map((card) => (
-                  <PlayerOwnedCardTile
-                    key={card.userCardId}
-                    card={card}
-                    imageUrl={imagesByUserCardId.get(card.userCardId) ?? null}
-                    imageLoading={imagesLoading && !imagesByUserCardId.has(card.userCardId)}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
         </>
       )}
 
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold tracking-tight">Your Collection</h2>
+      {/* 6. Your Collection -- the working area: every owned copy (HAVE +
+          FOR_SALE, same semantics as PlayerOverview), image-first via the
+          same persisted-media resolver Top Cards uses. */}
+      <div>
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold tracking-tight text-zinc-900">Your Collection</h2>
+          {!myCardsLoading && ownedCollectionCards.length > 0 ? (
+            <span className="text-xs text-zinc-500">
+              {ownedCollectionCards.length} card{ownedCollectionCards.length === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </div>
 
         {myCardsLoading ? (
-          <div className="loading-state">Loading your cards…</div>
+          <TileGridSkeleton count={5} />
         ) : ownedCollectionCards.length === 0 ? (
-          <div className="empty-state">You haven&apos;t added any cards for this player yet.</div>
+          <div className="empty-state mt-2">
+            You haven&apos;t added any cards for this player yet.
+          </div>
         ) : (
-          <ul className="divide-y rounded-xl border bg-white">
-            {ownedCollectionCards.map((card) => {
-              const primaryParts = [
-                card.year,
-                card.setName,
-                card.cardNumber ? `#${card.cardNumber}` : null,
-                card.insert,
-              ].filter(Boolean);
-              const secondaryParts = [card.status, card.condition, card.location].filter(Boolean);
-
-              return (
-                <li key={card.id}>
-                  <Link
-                    href={`/cards/${card.id}`}
-                    className="block px-4 py-3 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    <div>{primaryParts.join(" • ")}</div>
-                    {secondaryParts.length > 0 ? (
-                      <div className="text-xs text-zinc-500">{secondaryParts.join(" • ")}</div>
-                    ) : null}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="mt-2 grid grid-cols-2 gap-4 auto-rows-fr sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {ownedCollectionCards.map((card) => (
+              <PlayerOwnedCardTile
+                key={card.id}
+                card={mapMyCardToTileCard(card)}
+                imageUrl={imagesByUserCardId.get(card.id) ?? null}
+                imageLoading={imagesLoading && !imagesByUserCardId.has(card.id)}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      {/* Missing cards: catalog cards this profile doesn't own -- explicitly
-          not a wishlist. Read-only in this phase (no Add to Wishlist wiring
-          -- see the Phase 3B report). */}
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold tracking-tight">Missing Cards</h2>
-        <p className="text-xs text-zinc-500">Cards you don&apos;t own yet.</p>
+      {/* 7. Missing from Your Collection: catalog cards this profile doesn't
+          own -- explicitly not a wishlist. Deliberately a lighter/subdued
+          list (not an image tile grid) so it visually reads as "aspirational
+          catalog data," not a second owned-cards surface. Read-only in this
+          phase (no Add to Wishlist wiring -- see the Phase 3B report).
+          Catalog identity (year/set/#/title) is shown; a rookie marker was
+          requested "if available" but PlayerCatalogCardSummary doesn't
+          currently carry rookie_card, so it's omitted here rather than
+          invented -- see the Phase 3D report. */}
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+          Missing from Your Collection
+        </h2>
+        <p className="mt-1 text-xs text-zinc-500">Catalog cards you don&apos;t own yet.</p>
 
-        {overviewLoading || !overview ? null : overview.catalog.totalCatalogCards === 0 ? (
-          <div className="empty-state">No catalog cards found for this player yet.</div>
+        {overviewLoading || !overview ? (
+          <div className="mt-2 loading-state">Loading catalog…</div>
+        ) : overview.catalog.totalCatalogCards === 0 ? (
+          <div className="empty-state mt-2">No catalog cards found for this player yet.</div>
         ) : overview.missingCards.length === 0 ? (
-          <div className="empty-state">You own every catalog card for this player. Nice.</div>
+          <div className="empty-state mt-2">
+            You own every catalog card for this player. Nice.
+          </div>
         ) : (
           <>
-            <ul className="divide-y rounded-xl border bg-white">
+            <ul className="mt-2 divide-y divide-dashed divide-zinc-200 rounded-xl border border-dashed border-zinc-200 bg-zinc-50">
               {overview.missingCards.map((card) => (
-                <li key={card.cardId} className="px-4 py-3 text-sm text-zinc-700">
+                <li key={card.cardId} className="px-4 py-3 text-sm text-zinc-600">
                   {[
                     card.year,
                     card.setName,
@@ -338,7 +446,7 @@ export default function PlayerDetailPage({
               ))}
             </ul>
             {overview.catalog.missingCatalogCards > overview.missingCards.length ? (
-              <p className="text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-zinc-500">
                 Showing {overview.missingCards.length} of {overview.catalog.missingCatalogCards}{" "}
                 missing cards.
               </p>
