@@ -15,6 +15,7 @@ import {
   type PlayerOwnedCardTileCard,
 } from "@/components/players/PlayerOwnedCardTile";
 import { PlayerJourneyMilestones } from "@/components/players/PlayerJourneyMilestones";
+import { PlayerCollectionWall } from "@/components/players/PlayerCollectionWall";
 import { useUserCardDisplayImages } from "@/hooks/cards/useUserCardDisplayImages";
 import { formatCollectionAge } from "@/lib/format";
 
@@ -420,7 +421,23 @@ export default function PlayerDetailPage({
             </div>
           ) : null}
 
-          {/* 6. Collection Breakdown: plain counts already computed by
+          {/* 6. Collection Wall -- image-first gallery of the user's own
+              scans. Reuses ownedCollectionCards (already fetched for Your
+              Collection below, already ordered newest-first by
+              listMyCardsForPlayer's own `.order("created_at", {ascending:
+              false})`) and the same imagesByUserCardId map -- no new query,
+              no new media resolution. Waits for myCards to finish loading
+              (independent of overview) before deciding whether to render;
+              hidden entirely once loaded with zero owned cards. */}
+          {!myCardsLoading && ownedCollectionCards.length > 0 ? (
+            <PlayerCollectionWall
+              cards={ownedCollectionCards.map(mapMyCardToTileCard)}
+              imagesByUserCardId={imagesByUserCardId}
+              imagesLoading={imagesLoading}
+            />
+          ) : null}
+
+          {/* 7. Collection Breakdown: plain counts already computed by
               PlayerOverview -- this page classifies nothing itself. */}
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
@@ -437,7 +454,7 @@ export default function PlayerDetailPage({
         </>
       )}
 
-      {/* 7. Your Collection -- the working area: every owned copy (HAVE +
+      {/* 8. Your Collection -- the working area: every owned copy (HAVE +
           FOR_SALE, same semantics as PlayerOverview), image-first via the
           same persisted-media resolver Top Cards uses. */}
       <div>
@@ -470,7 +487,7 @@ export default function PlayerDetailPage({
         )}
       </div>
 
-      {/* 8. Missing from Your Collection: catalog cards this profile doesn't
+      {/* 9. Missing from Your Collection: catalog cards this profile doesn't
           own -- explicitly not a wishlist. Deliberately a lighter/subdued
           list (not an image tile grid) so it visually reads as "aspirational
           catalog data," not a second owned-cards surface. Read-only in this
