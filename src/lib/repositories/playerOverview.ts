@@ -53,6 +53,35 @@ export type PlayerCatalogCardSummary = {
   setName: string | null;
 };
 
+// ---- Collection Journey (Phase 4A) ----
+
+export type PlayerJourneyMilestone = {
+  key: string;
+  label: string;
+  achieved: boolean;
+  // The real user_cards.created_at of the owned row that satisfied this
+  // milestone -- never a fabricated/estimated date. null when not yet
+  // achieved. Milestones are recomputed fresh from CURRENT owned rows on
+  // every call (nothing here is persisted -- see the module doc comment),
+  // so a milestone can become "not achieved" again if the qualifying
+  // card(s) are later removed; that's an inherent property of deriving
+  // everything live rather than a bug.
+  achievedDate: string | null;
+};
+
+export type PlayerJourney = {
+  firstCardAddedDate: string;
+  latestCardAddedDate: string;
+  // Sum of quantity (physical copies, same convention as
+  // collection.totalCardsOwned) among owned rows added in the last 30 days.
+  cardsAddedLast30Days: number;
+  // Newest 3 owned cards by created_at descending -- chronological, NOT the
+  // same ordering as topCards (which is value-ranked). Reuses
+  // PlayerOwnedCardSummary as-is; no new card shape.
+  recentlyAdded: PlayerOwnedCardSummary[];
+  milestones: PlayerJourneyMilestone[];
+};
+
 export type PlayerOverview = {
   player: PlayerWithContext;
 
@@ -116,10 +145,19 @@ export type PlayerOverview = {
   // count of ALL missing cards (not just this slice) is
   // catalog.missingCatalogCards above.
   missingCards: PlayerCatalogCardSummary[];
+
+  // null when the profile owns zero cards for this player -- the Player
+  // page hides the whole Collection Journey section in that case rather
+  // than rendering empty/meaningless placeholders (there is nothing honest
+  // to derive a journey from yet).
+  journey: PlayerJourney | null;
 };
 
 const MISSING_CARDS_LIMIT = 20;
 const TOP_CARDS_LIMIT = 5;
+const RECENTLY_ADDED_LIMIT = 3;
+const CARD_COUNT_MILESTONES = [10, 25, 50, 100] as const;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 // "Owned" mirrors the app's one existing collection-membership convention
 // (collectionSummary.ts's `inventory` filter, also used by
@@ -140,6 +178,7 @@ type OwnedForPlayerRow = {
   estimated_value: number | null;
   serial_number: number | null;
   quantity: number;
+  created_at: string;
   cards: {
     id: number;
     card_number: string;
@@ -174,6 +213,7 @@ const OWNED_FOR_PLAYER_SELECT = `
   estimated_value,
   serial_number,
   quantity,
+  created_at,
   cards!inner(
     id,
     card_number,
@@ -278,6 +318,108 @@ function buildCatalogSummary(totalCatalogCards: number, ownedCatalogCards: numbe
   return { totalCatalogCards, ownedCatalogCards, missingCatalogCards, completionPercent };
 }
 
+// Every date used below is user_cards.created_at -- when the row was
+// actually added to this profile's collection. Preferred over
+// purchase_date (optional, user-entered, may be blank or reflect when the
+// card was physically bought rather than logged here) per this phase's
+// instruction to prefer created_at unless another field is clearly more
+// appropriate; nothing here is invented or estimated.
+function buildJourney(ownedRows: OwnedForPlayerRow[]): PlayerJourney | null {
+  if (ownedRows.length === 0) return null;
+
+  const chronological = [...ownedRows].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+
+  const firstCardAddedDate = chronological[0].created_at;
+  const latestCardAddedDate = chronological[chronological.length - 1].created_at;
+
+  const cutoff = Date.now() - THIRTY_DAYS_MS;
+  let cardsAddedLast30Days = 0;
+  for (const row of ownedRows) {
+    if (new Date(row.created_at).getTime() >= cutoff) cardsAddedLast30Days += row.quantity ?? 1;
+  }
+
+  const recentlyAdded = [...chronological]
+    .reverse()
+    .slice(0, RECENTLY_ADDED_LIMIT)
+    .map(toOwnedCardSummary);
+
+  function firstDateWhere(predicate: (row: OwnedForPlayerRow) => boolean): string | null {
+    return chronological.find(predicate)?.created_at ?? null;
+  }
+
+  const milestones: PlayerJourneyMilestone[] = [
+    {
+      key: "first_card",
+      label: "First Card",
+      achieved: true,
+      achievedDate: firstCardAddedDate,
+    },
+    {
+      key: "first_rookie",
+      label: "First Rookie",
+      achieved: chronological.some((r) => !!r.cards?.rookie_card),
+      achievedDate: firstDateWhere((r) => !!r.cards?.rookie_card),
+    },
+    {
+      key: "first_autograph",
+      label: "First Autograph",
+      achieved: chronological.some((r) => !!r.card_variants?.has_autograph),
+      achievedDate: firstDateWhere((r) => !!r.card_variants?.has_autograph),
+    },
+    {
+      key: "first_memorabilia",
+      label: "First Memorabilia",
+      achieved: chronological.some((r) => !!r.card_variants?.has_memorabilia),
+      achievedDate: firstDateWhere((r) => !!r.card_variants?.has_memorabilia),
+    },
+    {
+      key: "first_serial_numbered",
+      label: "First Serial Numbered",
+      achieved: chronological.some(
+        (r) => !!r.card_variants?.serial_numbered || r.serial_number != null,
+      ),
+      achievedDate: firstDateWhere(
+        (r) => !!r.card_variants?.serial_numbered || r.serial_number != null,
+      ),
+    },
+  ];
+
+  // Walks chronological order accumulating physical-copy count (same
+  // quantity-weighted convention as collection.totalCardsOwned), recording
+  // the exact created_at of the row that pushed the running total past each
+  // threshold -- an honest "this is the card that made it N" date, not an
+  // estimate.
+  let cumulative = 0;
+  const dateByThreshold = new Map<number, string>();
+  for (const row of chronological) {
+    cumulative += row.quantity ?? 1;
+    for (const threshold of CARD_COUNT_MILESTONES) {
+      if (cumulative >= threshold && !dateByThreshold.has(threshold)) {
+        dateByThreshold.set(threshold, row.created_at);
+      }
+    }
+  }
+  for (const threshold of CARD_COUNT_MILESTONES) {
+    const achievedDate = dateByThreshold.get(threshold) ?? null;
+    milestones.push({
+      key: `${threshold}_cards`,
+      label: `${threshold} Cards`,
+      achieved: achievedDate !== null,
+      achievedDate,
+    });
+  }
+
+  return {
+    firstCardAddedDate,
+    latestCardAddedDate,
+    cardsAddedLast30Days,
+    recentlyAdded,
+    milestones,
+  };
+}
+
 function emptyCollection(): PlayerOverview["collection"] {
   return {
     totalCardsOwned: 0,
@@ -328,6 +470,7 @@ export async function getPlayerOverview(
       catalog: buildCatalogSummary(catalogCards.length, 0),
       topCards: [],
       missingCards: buildMissingCards(catalogCards, new Set()),
+      journey: null,
     };
   }
 
@@ -399,5 +542,6 @@ export async function getPlayerOverview(
     catalog: buildCatalogSummary(catalogCards.length, ownedCatalogCards),
     topCards,
     missingCards: buildMissingCards(catalogCards, ownedCardIds),
+    journey: buildJourney(ownedRows),
   };
 }

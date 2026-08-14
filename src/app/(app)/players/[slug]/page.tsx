@@ -14,7 +14,17 @@ import {
   PlayerOwnedCardTile,
   type PlayerOwnedCardTileCard,
 } from "@/components/players/PlayerOwnedCardTile";
+import { PlayerJourneyMilestones } from "@/components/players/PlayerJourneyMilestones";
 import { useUserCardDisplayImages } from "@/hooks/cards/useUserCardDisplayImages";
+import { formatCollectionAge } from "@/lib/format";
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 function currency(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -183,16 +193,23 @@ export default function PlayerDetailPage({
   const ownedCollectionCards = myCards.filter(isOwnedForCollectionGrid);
 
   // One combined batch resolution for every card image this page displays
-  // (Top Cards + Your Collection), called unconditionally (Rules of Hooks)
-  // -- an empty/partial array before either source has loaded is fine, the
-  // hook just resolves nothing yet. Top Cards' ids are a subset of Your
-  // Collection's, but useUserCardDisplayImages/its underlying batch queries
+  // (Top Cards + Recently Added + Your Collection), called unconditionally
+  // (Rules of Hooks) -- an empty/partial array before every source has
+  // loaded is fine, the hook just resolves nothing yet. These three sets
+  // overlap heavily (all drawn from the same owned-cards-for-this-player
+  // pool), but useUserCardDisplayImages/its underlying batch queries
   // already dedupe by id internally, so passing the union here still means
   // exactly one card_media query + one signed-URL request for the whole
-  // page, never two separate grids each doing their own batch.
+  // page, never one per section.
   const topCardUserCardIds = overview?.topCards.map((c) => c.userCardId) ?? [];
+  const recentlyAddedUserCardIds =
+    overview?.journey?.recentlyAdded.map((c) => c.userCardId) ?? [];
   const allDisplayedUserCardIds = [
-    ...new Set([...topCardUserCardIds, ...ownedCollectionCards.map((c) => c.id)]),
+    ...new Set([
+      ...topCardUserCardIds,
+      ...recentlyAddedUserCardIds,
+      ...ownedCollectionCards.map((c) => c.id),
+    ]),
   ];
   const { imagesByUserCardId, loading: imagesLoading } = useUserCardDisplayImages(
     allDisplayedUserCardIds,
@@ -329,7 +346,54 @@ export default function PlayerDetailPage({
             </div>
           )}
 
-          {/* 4. Top Cards -- the collection's own visual centerpiece. Order
+          {/* 4. Your Collection Journey -- entirely derived from
+              overview.journey (owned rows' created_at + existing
+              rookie/autograph/memorabilia/serial/grading fields), nothing
+              recomputed here, nothing persisted. Hidden entirely when the
+              profile owns zero cards for this player (journey is null in
+              that case) rather than showing empty placeholders. */}
+          {overview.journey ? (
+            <div className="space-y-3">
+              <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+                Your Collection Journey
+              </h2>
+
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+                <StatCard title="First Card Added" value={formatDate(overview.journey.firstCardAddedDate)} />
+                <StatCard title="Latest Card Added" value={formatDate(overview.journey.latestCardAddedDate)} />
+                <StatCard title="Added (30 Days)" value={overview.journey.cardsAddedLast30Days} />
+                <StatCard
+                  title="Collection Age"
+                  value={formatCollectionAge(overview.journey.firstCardAddedDate)}
+                />
+              </div>
+
+              <div className="rounded-xl border bg-white p-4">
+                <h3 className="text-sm font-semibold text-zinc-900">Milestones</h3>
+                <div className="mt-2">
+                  <PlayerJourneyMilestones milestones={overview.journey.milestones} />
+                </div>
+              </div>
+
+              {overview.journey.recentlyAdded.length > 0 ? (
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-900">Recently Added</h3>
+                  <div className="mt-2 grid grid-cols-2 gap-4 auto-rows-fr sm:grid-cols-3">
+                    {overview.journey.recentlyAdded.map((card) => (
+                      <PlayerOwnedCardTile
+                        key={card.userCardId}
+                        card={card}
+                        imageUrl={imagesByUserCardId.get(card.userCardId) ?? null}
+                        imageLoading={imagesLoading && !imagesByUserCardId.has(card.userCardId)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* 5. Top Cards -- the collection's own visual centerpiece. Order
               comes entirely from overview.topCards (value desc, already
               decided by playerOverview.ts); this page only marks index 0 as
               "featured" for a stronger visual treatment, it doesn't re-rank
@@ -356,7 +420,7 @@ export default function PlayerDetailPage({
             </div>
           ) : null}
 
-          {/* 5. Collection Breakdown: plain counts already computed by
+          {/* 6. Collection Breakdown: plain counts already computed by
               PlayerOverview -- this page classifies nothing itself. */}
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
@@ -373,7 +437,7 @@ export default function PlayerDetailPage({
         </>
       )}
 
-      {/* 6. Your Collection -- the working area: every owned copy (HAVE +
+      {/* 7. Your Collection -- the working area: every owned copy (HAVE +
           FOR_SALE, same semantics as PlayerOverview), image-first via the
           same persisted-media resolver Top Cards uses. */}
       <div>
@@ -406,7 +470,7 @@ export default function PlayerDetailPage({
         )}
       </div>
 
-      {/* 7. Missing from Your Collection: catalog cards this profile doesn't
+      {/* 8. Missing from Your Collection: catalog cards this profile doesn't
           own -- explicitly not a wishlist. Deliberately a lighter/subdued
           list (not an image tile grid) so it visually reads as "aspirational
           catalog data," not a second owned-cards surface. Read-only in this

@@ -79,3 +79,29 @@ function currencyForLocale(locale: string): string {
   // Safe default
   return "USD";
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Humanizes the time elapsed since an ISO date string into a single
+ * "N years" / "N months" / "N days" label -- used for Player Hub's
+ * Collection Age (time since the first owned card was added). This is a
+ * pure presentation-time formatter, not a derived fact: the underlying
+ * date (e.g. PlayerOverview.journey.firstCardAddedDate) is the real,
+ * stored value; this only humanizes it relative to "now" at render time,
+ * so it's deliberately never precomputed/cached anywhere.
+ */
+export function formatCollectionAge(sinceIso: string): string {
+  const since = new Date(sinceIso).getTime();
+  if (!Number.isFinite(since)) return "";
+
+  const days = Math.max(0, Math.floor((Date.now() - since) / DAY_MS));
+
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"}`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"}`;
+
+  const years = Math.floor(months / 12);
+  return `${years} year${years === 1 ? "" : "s"}`;
+}
