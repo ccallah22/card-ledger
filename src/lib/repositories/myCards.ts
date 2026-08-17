@@ -31,6 +31,12 @@ export type MyCard = {
   playerName: string;
   players?: { id: number; name: string; slug: string }[];
   year: string;
+  // The shared catalog card's own id (cards.id) -- distinct from `id` above
+  // (this row's user_cards.id). Only exposed for linking to the read-only
+  // /catalog/cards/[id] page (see Card Detail's Phase 2A polish); nothing
+  // else should key off it, since this type otherwise deliberately treats
+  // the catalog card as an implementation detail of the join.
+  catalogCardId?: number;
   setId?: number;
   setName: string;
   setSlug?: string;
@@ -174,6 +180,7 @@ function toMyCard(row: UserCardJoined): MyCard {
     playerName: playerNames.join(" / "),
     players,
     year: set?.release_year != null ? String(set.release_year) : "",
+    catalogCardId: card?.id ?? undefined,
     setId: set?.id ?? undefined,
     setName: set?.name ?? "",
     setSlug: set?.slug ?? undefined,

@@ -15,25 +15,32 @@ export type UserCardDisplayImages = {
 };
 
 /**
- * Batch-resolves the FRONT display image for a set of owned user_cards:
+ * Batch-resolves one side's display image for a set of owned user_cards:
  * persisted card_media (processed_path, falling back to original_path)
  * outranks the legacy localStorage image (thumbnail, then full) -- the same
  * priority /cards/[id]/edit's existing load effect already established for
  * a single card, just batched here for a grid. Never mutates anything.
  *
  * Not player-specific: takes plain user_card ids, so any owned-card grid
- * (Player Hub's Top Cards today; Binder/For Sale/Sold/Dashboard recent
- * cards later) can reuse it as-is. Always batches, even for a single id --
- * one card_media query plus one signed-URL request for however many ids are
- * passed, never one request per card (see listCardMediaForUserCardsBySide /
- * getCardMediaImageUrls).
+ * (Player Hub's Top Cards/Collection Wall today; Binder/For Sale/Sold/
+ * Dashboard/Card Detail's back image later or now) can reuse it as-is.
+ * Always batches, even for a single id -- one card_media query plus one
+ * signed-URL request for however many ids are passed, never one request per
+ * card (see listCardMediaForUserCardsBySide / getCardMediaImageUrls).
  *
- * Legacy/localStorage values are synchronous and available immediately (set
- * before the network calls below even start), so a grid never waits on the
- * network just to show what it already has locally; a persisted signed URL,
- * once resolved, overwrites that entry in place.
+ * side defaults to "front" (every existing caller before Card Detail's
+ * Phase 2A polish relied on this default and needs no change). Legacy
+ * localStorage only ever stored a single, front-only image per card (see
+ * imageStore.ts) -- there is no legacy back-image source -- so the
+ * synchronous local fallback below only applies when side is "front"; for
+ * "back", every id still gets an explicit `null` entry up front so the
+ * map's "settled" contract (a present key means resolution has been
+ * attempted) holds the same way for both sides.
  */
-export function useUserCardDisplayImages(userCardIds: string[]): UserCardDisplayImages {
+export function useUserCardDisplayImages(
+  userCardIds: string[],
+  side: "front" | "back" = "front",
+): UserCardDisplayImages {
   const [imagesByUserCardId, setImagesByUserCardId] = useState<Map<string, string | null>>(
     new Map(),
   );
@@ -55,15 +62,15 @@ export function useUserCardDisplayImages(userCardIds: string[]): UserCardDisplay
 
     setLoading(true);
 
-    const fallback = new Map<string, string | null>();
+    const initial = new Map<string, string | null>();
     for (const id of ids) {
-      fallback.set(id, loadThumbnailForCard(id) ?? loadImageForCard(id) ?? null);
+      initial.set(id, side === "front" ? loadThumbnailForCard(id) ?? loadImageForCard(id) ?? null : null);
     }
-    setImagesByUserCardId(fallback);
+    setImagesByUserCardId(initial);
 
     (async () => {
       try {
-        const media = await listCardMediaForUserCardsBySide(ids, "front");
+        const media = await listCardMediaForUserCardsBySide(ids, side);
         if (!active) return;
 
         const pathByUserCardId = new Map<string, string>();
@@ -99,7 +106,7 @@ export function useUserCardDisplayImages(userCardIds: string[]): UserCardDisplay
     return () => {
       active = false;
     };
-  }, [key]);
+  }, [key, side]);
 
   return { imagesByUserCardId, loading };
 }

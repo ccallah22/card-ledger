@@ -10,8 +10,9 @@ import { formatCurrency } from "@/lib/format";
 import { buildCardFingerprint } from "@/lib/fingerprint";
 import { fetchSharedImage } from "@/lib/db/sharedImages";
 import { REPORT_HIDE_THRESHOLD, REPORT_REASONS } from "@/lib/reporting";
-import { loadImageForCard } from "@/lib/imageStore";
 import { startTrace, captureError } from "@/lib/sentry";
+import { useUserCardDisplayImages } from "@/hooks/cards/useUserCardDisplayImages";
+import { MiniBadge, Chip, Stat } from "@/components/cards/BinderUi";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -76,6 +77,18 @@ function buildEbaySoldUrl(card: MyCard) {
   return `https://www.ebay.com/sch/i.html?_nkw=${query}&LH_Sold=1&LH_Complete=1`;
 }
 
+// A plain label/value row -- the one shared rendering primitive for both
+// the Catalog Identity and Collection Information sections below, so their
+// visual rhythm stays identical while the two sections stay data-separate.
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="text-sm text-zinc-700">{label}</div>
+      <div className="text-right text-sm font-medium text-zinc-900">{value}</div>
+    </div>
+  );
+}
+
 export default function CardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { id } = use(params);
@@ -90,6 +103,16 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
   const [reportInfo, setReportInfo] = useState<{ reports: number; status?: string } | null>(
     null
   );
+  // showReportForm/reportReason/reportStatusMsg/handleReportImage below are
+  // pre-existing state/logic that was already present (and already
+  // functional end-to-end -- see handleReportImage) before this pass, but
+  // had no reachable UI trigger anywhere in the previous render output, so
+  // reporting a community image was silently impossible. That's a real,
+  // pre-existing completeness gap discovered during this audit, not
+  // something introduced here. Fixing the missing trigger is in scope for
+  // this same "Card image" section this phase already redesigns, so it's
+  // wired up below rather than deferred -- no new report logic was written,
+  // this only adds the missing entry point to logic that already existed.
   const [showReportForm, setShowReportForm] = useState(false);
   const [reportReason, setReportReason] = useState<string>(REPORT_REASONS[0]);
   const [reportStatusMsg, setReportStatusMsg] = useState<string>("");
@@ -179,8 +202,34 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     !!reportInfo &&
     (reportInfo.status === "blocked" || reportInfo.reports >= REPORT_HIDE_THRESHOLD);
 
-  const storedImage = card ? loadImageForCard(card.id) : null;
-  const displayImage = hideImage ? "" : storedImage ?? sharedImage?.dataUrl ?? "";
+  // Account-level persisted media (Player Hub's exact resolver, reused
+  // as-is -- see useUserCardDisplayImages.ts) is now the authoritative
+  // front-image source, ahead of the legacy localStorage image, which is
+  // itself ahead of the community shared image. This page previously only
+  // ever read the legacy image directly (loadImageForCard), so a card
+  // added on one device/browser rendered "No image" here on another device
+  // even though the same card's persisted scan already displayed correctly
+  // on Player Hub and on this card's own Edit page. That was a real
+  // cross-device inconsistency within this app, not a hypothetical one --
+  // fixed by switching to the same resolver, not by inventing a new one.
+  const cardIds = card ? [card.id] : [];
+  const frontImages = useUserCardDisplayImages(cardIds, "front");
+  const backImages = useUserCardDisplayImages(cardIds, "back");
+  const [activeSide, setActiveSide] = useState<"front" | "back">("front");
+
+  const frontPersistedUrl = card ? frontImages.imagesByUserCardId.get(card.id) ?? null : null;
+  const backPersistedUrl = card ? backImages.imagesByUserCardId.get(card.id) ?? null : null;
+  const hasBackImage = !backImages.loading && !!backPersistedUrl;
+
+  const frontDisplayImage = hideImage ? "" : frontPersistedUrl ?? sharedImage?.dataUrl ?? "";
+  const displayImage = activeSide === "back" ? backPersistedUrl ?? "" : frontDisplayImage;
+  // The community-shared-image/report feature only ever applied to the
+  // front side historically (fingerprint matching has no back-image
+  // concept), so reporting is only offered while viewing the front tab and
+  // only when what's showing is genuinely the community fallback, not this
+  // profile's own scan.
+  const showingCommunityImage =
+    activeSide === "front" && !frontPersistedUrl && !!sharedImage?.dataUrl && !hideImage;
 
   async function handleReportImage() {
     if (!fingerprint || !displayImage) return;
@@ -218,14 +267,20 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     const unrealized =
       status !== "SOLD" && typeof market === "number" ? market - paid : null;
 
-    const serial =
+    // Two genuinely different facts, kept separate rather than combined into
+    // one string: serialTotal (card_variants.print_run) is catalog-level --
+    // shared by every copy of this exact parallel -- while serialNumber
+    // (user_cards.serial_number) is this one physical copy's own number.
+    // serialCombined is only for the compact hero badge; Catalog Identity
+    // and Collection Information below each show their own half only.
+    const serialCombined =
       typeof card.serialNumber === "number" && typeof card.serialTotal === "number"
         ? `${card.serialNumber}/${card.serialTotal}`
         : typeof card.serialTotal === "number"
         ? `/${card.serialTotal}`
         : "";
 
-    return { status, paid, market, asking, sold, held, net, unrealized, serial };
+    return { status, paid, market, asking, sold, held, net, unrealized, serialCombined };
   }, [card]);
 
   async function handleDelete() {
@@ -298,42 +353,60 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const location = card.location;
   const comps = card.comps ?? [];
 
-  const primaryRows: Array<{ label: string; value: any; format?: "currency" | "text" }> = [
-    { label: "Player", value: card.playerName, format: "text" },
-    { label: "Year", value: card.year, format: "text" },
-    { label: "Set", value: card.setName, format: "text" },
-    { label: "Card #", value: card.cardNumber ?? "", format: "text" },
-    { label: "Team", value: card.team ?? "", format: "text" },
+  // ---- Catalog Identity: facts shared by every owner of this exact
+  // catalog card/parallel. Rookie/Autograph/Patch are deliberately not
+  // repeated here as rows -- the hero badges above already state them, and
+  // this task's own instruction is not to duplicate identity across
+  // sections.
+  const catalogRows: Array<{ label: string; value: string }> = [
+    { label: "Player", value: card.playerName },
+    { label: "Year", value: card.year },
+    { label: "Set", value: card.setName },
+    { label: "Card #", value: card.cardNumber ?? "" },
+    { label: "Variation", value: card.variation ?? "" },
+    { label: "Insert", value: card.insert ?? "" },
+    { label: "Parallel", value: card.parallel ?? "" },
+    { label: "Print Run", value: typeof card.serialTotal === "number" ? `/${card.serialTotal}` : "" },
+  ].filter((r) => r.value.trim() !== "");
 
-    { label: "Location", value: location ?? "", format: "text" },
+  // ---- Collection Information: facts about THIS physical copy only.
+  // team_name lives on user_cards (free-text per copy, not the shared
+  // catalog teams table -- see myCards.ts), so it belongs here, not in
+  // Catalog Identity, even though it reads like catalog trivia.
+  const gradingValue =
+    card.gradingStatus === "GRADED"
+      ? [card.grader, card.grade].filter(Boolean).join(" ") || "Graded"
+      : "Raw";
 
-    { label: "Variation", value: card.variation ?? "", format: "text" },
-    { label: "Insert", value: card.insert ?? "", format: "text" },
-    { label: "Parallel", value: card.parallel ?? "", format: "text" },
-    { label: "Serial", value: computed.serial, format: "text" },
-
-    { label: "Condition", value: card.condition ?? "", format: "text" },
-    { label: "Grader", value: card.grader ?? "", format: "text" },
-    { label: "Grade", value: card.grade ?? "", format: "text" },
-
-    { label: "Status", value: statusLabel(computed.status), format: "text" },
-    { label: "Purchase date", value: card.purchaseDate ?? "", format: "text" },
-
-    { label: "Paid", value: card.purchasePrice, format: "currency" },
-    { label: "Market value", value: card.estimatedValue, format: "currency" },
-    { label: "Asking", value: card.askingPrice, format: "currency" },
-    { label: "Sold", value: card.soldPrice, format: "currency" },
-  ];
+  const collectionRows: Array<{ label: string; value: string }> = [
+    { label: "Status", value: statusLabel(computed.status) },
+    { label: "Grading", value: gradingValue },
+    { label: "Condition", value: card.condition ?? "" },
+    { label: "Location", value: card.location ?? "" },
+    { label: "Team", value: card.team ?? "" },
+    {
+      label: "Serial Number",
+      value: typeof card.serialNumber === "number" ? String(card.serialNumber) : "",
+    },
+    { label: "Purchase Date", value: card.purchaseDate ?? "" },
+    {
+      label: "Purchase Price",
+      value: typeof card.purchasePrice === "number" ? formatCurrency(card.purchasePrice) : "",
+    },
+  ].filter((r) => r.value.trim() !== "");
 
   const primaryKeys = new Set(
     [
       "id",
       "playerName",
+      "players",
+      "catalogCardId",
       "year",
+      "setId",
       "setName",
+      "setSlug",
       "cardNumber",
       "team",
       "location",
@@ -376,180 +449,217 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="p-4 space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold leading-tight">
-            {card.playerName}
-            {card.cardNumber ? (
-              <span className="ml-2 text-sm text-zinc-500">#{card.cardNumber}</span>
-            ) : null}
-          </h1>
-
-          <div className="text-gray-600">
-            {card.year ? `${card.year} ` : ""}
-            {card.setName}
-          </div>
-
-          {location ? <div className="mt-1 text-sm text-zinc-500">{location}</div> : null}
-
-          <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
-            {card.variation ? <MiniBadge>{card.variation}</MiniBadge> : null}
-            {card.insert ? <MiniBadge>{card.insert}</MiniBadge> : null}
-            {card.parallel ? <MiniBadge>{card.parallel}</MiniBadge> : null}
-            {computed.serial ? <MiniBadge>#{computed.serial}</MiniBadge> : null}
-            {card.isRookie ? <MiniBadge tone="blue">Rookie</MiniBadge> : null}
-            {card.isAutograph ? <MiniBadge tone="purple">Auto</MiniBadge> : null}
-            {card.isPatch ? <MiniBadge tone="amber">Patch</MiniBadge> : null}
-          </div>
-
-          {card.team ? <div className="mt-1 text-sm text-zinc-500">{card.team}</div> : null}
-        </div>
-
-        {/* ✅ Horizontal actions (no URL style, no Sold History button, Delete stays) */}
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <Link href="/cards" className="btn-secondary">
-            Back
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => router.push(`/cards/${String(id)}/edit`)}
-            className="btn-secondary"
-          >
-            Edit
-          </button>
-
-          {computed.status !== "SOLD" ? (
-            <button
-              type="button"
-              onClick={() => router.push(`/cards/${String(id)}/sold`)}
-              className="btn-primary"
-            >
-              Mark as Sold
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="btn-destructive"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-
+      {/* Hero: image (front/back) + identity + badges + actions, all in one
+          card surface so the page opens with a single, unambiguous "this is
+          the card" moment instead of a plain title line. */}
       <div className="rounded-xl border bg-white p-4">
-        <div className="font-semibold text-zinc-900">Card image</div>
-        <div className="mt-3 grid gap-4 sm:grid-cols-[180px_1fr]">
-          <div className="relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden">
-            {displayImage ? (
-              <img
-                src={displayImage}
-                alt={`${card.playerName} ${card.cardNumber ?? ""}`.trim()}
-                className="h-full w-full object-contain"
-              />
-            ) : hideImage ? (
-              <div className="text-xs text-zinc-500 text-center px-2">
-                Image hidden (reported)
-              </div>
-            ) : (
-              <div className="text-xs text-zinc-500 text-center px-2">No image</div>
-            )}
-            <div className="pointer-events-none absolute inset-2 rounded-sm border border-dashed border-zinc-300/70" />
-          </div>
-
-          <div className="space-y-2 text-sm text-zinc-600">
-            <div>
-              Image editing is available only on the edit screen.
-            </div>
-            <Link
-              href={`/cards/${String(id)}/edit`}
-              className="inline-flex items-center rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              Edit card
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border p-4 space-y-2 bg-white">
-        <div className="font-semibold text-zinc-900">Card summary</div>
-
-        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+        <div className="grid gap-4 sm:grid-cols-[260px_1fr]">
           <div>
-            <span className="text-gray-600">Paid:</span>{" "}
-            <span className="font-semibold">{formatCurrency(computed.paid)}</span>
+            <div className="relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden">
+              {displayImage ? (
+                // eslint-disable-next-line @next/next/no-img-element -- imageUrl
+                // is either a private, expiring signed Supabase Storage URL
+                // (see useUserCardDisplayImages/getCardMediaImageUrls) or a
+                // localStorage/community data URL, never a static asset --
+                // next/image would need remote-domain config for a URL that
+                // changes per session/user, out of scope for this phase.
+                <img
+                  src={displayImage}
+                  alt={`${card.playerName} ${card.cardNumber ?? ""} (${activeSide})`.trim()}
+                  className="h-full w-full object-contain"
+                />
+              ) : hideImage ? (
+                <div className="text-xs text-zinc-500 text-center px-2">
+                  Image hidden (reported)
+                </div>
+              ) : (
+                <div className="text-xs text-zinc-500 text-center px-2">No image</div>
+              )}
+              <div className="pointer-events-none absolute inset-2 rounded-sm border border-dashed border-zinc-300/70" />
+            </div>
+
+            {hasBackImage ? (
+              <div className="mt-2 flex gap-2">
+                <Chip active={activeSide === "front"} onClick={() => setActiveSide("front")}>
+                  Front
+                </Chip>
+                <Chip active={activeSide === "back"} onClick={() => setActiveSide("back")}>
+                  Back
+                </Chip>
+              </div>
+            ) : null}
+
+            {showingCommunityImage ? (
+              <div className="mt-2 space-y-1">
+                <div className="text-[11px] text-zinc-500">Community reference image</div>
+                {showReportForm ? (
+                  <div className="space-y-1.5 rounded-md border bg-zinc-50 p-2">
+                    <select
+                      value={reportReason}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      className="w-full rounded-md border px-2 py-1 text-xs text-zinc-900"
+                    >
+                      {REPORT_REASONS.map((reason) => (
+                        <option key={reason} value={reason}>
+                          {reason}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleReportImage}
+                        className="rounded-md border bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100"
+                      >
+                        Submit report
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowReportForm(false)}
+                        className="rounded-md border bg-white px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {reportStatusMsg ? (
+                      <div className="text-[11px] text-zinc-600">{reportStatusMsg}</div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowReportForm(true)}
+                    className="text-[11px] text-zinc-500 underline hover:text-zinc-700"
+                  >
+                    Report image
+                  </button>
+                )}
+              </div>
+            ) : null}
           </div>
 
-          {typeof computed.asking === "number" ? (
-            <div>
-              <span className="text-gray-600">Asking:</span>{" "}
-              <span className="font-semibold">{formatCurrency(computed.asking)}</span>
-            </div>
-          ) : null}
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold leading-tight break-words">
+              {card.playerName}
+              {card.cardNumber ? (
+                <span className="ml-2 text-sm font-normal text-zinc-500">#{card.cardNumber}</span>
+              ) : null}
+            </h1>
 
-          {typeof computed.market === "number" ? (
-            <div>
-              <span className="text-gray-600">Market value:</span>{" "}
-              <span className="font-semibold">{formatCurrency(computed.market)}</span>
+            <div className="mt-0.5 text-gray-600 break-words">
+              {card.year ? `${card.year} ` : ""}
+              {card.setName}
             </div>
-          ) : null}
 
-          {computed.status === "SOLD" && typeof computed.sold === "number" ? (
-            <div>
-              <span className="text-gray-600">Sold for:</span>{" "}
-              <span className="font-semibold">{formatCurrency(computed.sold)}</span>
-            </div>
-          ) : null}
+            {card.parallel || card.variation ? (
+              <div className="text-sm text-zinc-500 break-words">
+                {[card.variation, card.parallel].filter(Boolean).join(" • ")}
+              </div>
+            ) : null}
 
-          {computed.status === "SOLD" && typeof computed.net === "number" ? (
-            <div>
-              <span className="text-gray-600">Net (sold - paid):</span>{" "}
-              <span className="font-semibold">
-                {formatCurrency(computed.net, { accounting: true })}
-              </span>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+              {card.variation ? <MiniBadge>{card.variation}</MiniBadge> : null}
+              {card.insert ? <MiniBadge>{card.insert}</MiniBadge> : null}
+              {card.parallel ? <MiniBadge>{card.parallel}</MiniBadge> : null}
+              {computed.serialCombined ? <MiniBadge>#{computed.serialCombined}</MiniBadge> : null}
+              {card.isRookie ? <MiniBadge>Rookie</MiniBadge> : null}
+              {card.isAutograph ? <MiniBadge tone="purple">Auto</MiniBadge> : null}
+              {card.isPatch ? <MiniBadge tone="amber">Patch</MiniBadge> : null}
+              {card.gradingStatus === "GRADED" ? (
+                <MiniBadge tone="green">{card.grade ? `Graded ${card.grade}` : "Graded"}</MiniBadge>
+              ) : null}
             </div>
-          ) : null}
 
-          {computed.status !== "SOLD" && typeof computed.unrealized === "number" ? (
-            <div>
-              <span className="text-gray-600">Unrealized gain:</span>{" "}
-              <span className="font-semibold">
-                {formatCurrency(computed.unrealized, { accounting: true })}
-              </span>
-            </div>
-          ) : null}
+            {card.catalogCardId ? (
+              <Link
+                href={`/catalog/cards/${card.catalogCardId}`}
+                className="mt-2 inline-flex items-center text-xs text-[var(--brand-accent)] hover:underline"
+              >
+                View catalog card
+              </Link>
+            ) : null}
 
-          {computed.held !== null ? (
-            <div>
-              <span className="text-gray-600">Held:</span>{" "}
-              <span className="font-semibold">{computed.held} days</span>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Link href="/cards" className="btn-secondary">
+                Back
+              </Link>
+              <button
+                type="button"
+                onClick={() => router.push(`/cards/${String(id)}/edit`)}
+                className="btn-secondary"
+              >
+                Edit
+              </button>
+              {computed.status !== "SOLD" ? (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/cards/${String(id)}/sold`)}
+                  className="btn-primary"
+                >
+                  Mark as Sold
+                </button>
+              ) : null}
+              <button type="button" onClick={handleDelete} className="btn-destructive ml-auto">
+                Delete
+              </button>
             </div>
-          ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white">
-        <div className="border-b px-4 py-3 font-semibold text-zinc-900">Details</div>
-        <div className="p-4 grid gap-3">
-          {primaryRows
-            .filter((r) => r.value !== undefined && r.value !== null && String(r.value).trim() !== "")
-            .map((row) => {
-              const display =
-                row.format === "currency"
-                  ? typeof row.value === "number"
-                    ? formatCurrency(row.value)
-                    : String(row.value ?? "")
-                  : String(row.value);
+      {/* Value: visible but compact -- never dominates the page, and never
+          silently renders $0 in place of "we don't know yet". */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <Stat label="Paid" value={formatCurrency(computed.paid)} />
+        <Stat
+          label="Estimated Value"
+          value={typeof computed.market === "number" ? formatCurrency(computed.market) : "No estimated value yet"}
+        />
+        {computed.status === "FOR_SALE" && typeof computed.asking === "number" ? (
+          <Stat label="Asking" value={formatCurrency(computed.asking)} />
+        ) : null}
+        {computed.status === "SOLD" && typeof computed.sold === "number" ? (
+          <Stat label="Sold For" value={formatCurrency(computed.sold)} />
+        ) : null}
+        {computed.status === "SOLD" && typeof computed.net === "number" ? (
+          <Stat
+            label="Net (sold - paid)"
+            value={formatCurrency(computed.net, { accounting: true })}
+            tone={computed.net > 0 ? "positive" : computed.net < 0 ? "negative" : "neutral"}
+          />
+        ) : null}
+        {computed.status !== "SOLD" && typeof computed.unrealized === "number" ? (
+          <Stat
+            label="Unrealized Gain"
+            value={formatCurrency(computed.unrealized, { accounting: true })}
+            tone={computed.unrealized > 0 ? "positive" : computed.unrealized < 0 ? "negative" : "neutral"}
+          />
+        ) : null}
+        {computed.held !== null ? <Stat label="Held" value={`${computed.held} days`} /> : null}
+      </div>
 
-              return (
-                <div key={row.label} className="flex items-start justify-between gap-4">
-                  <div className="text-sm text-zinc-700">{row.label}</div>
-                  <div className="text-right text-sm font-medium text-zinc-900">{display}</div>
-                </div>
-              );
-            })}
+      {/* Catalog Identity vs Collection Information: the page's core
+          distinction between "what this card is" (shared, catalog-level)
+          and "what I know about my copy" (this user_cards row only). */}
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div className="rounded-xl border bg-white">
+          <div className="border-b px-4 py-3 font-semibold text-zinc-900">Catalog Identity</div>
+          <div className="p-4 grid gap-3">
+            {catalogRows.map((row) => (
+              <DetailRow key={row.label} label={row.label} value={row.value} />
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white">
+          <div className="border-b px-4 py-3 font-semibold text-zinc-900">
+            Collection Information
+          </div>
+          <div className="p-4 grid gap-3">
+            {collectionRows.map((row) => (
+              <DetailRow key={row.label} label={row.label} value={row.value} />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -684,23 +794,4 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       </div>
     </div>
   );
-}
-
-function MiniBadge({
-  children,
-  tone = "zinc",
-}: {
-  children: React.ReactNode;
-  tone?: "zinc" | "blue" | "purple" | "amber";
-}) {
-  const cls =
-    tone === "blue"
-      ? "border-zinc-300 bg-zinc-100 text-zinc-200"
-      : tone === "purple"
-      ? "border-purple-200 bg-purple-50 text-purple-700"
-      : tone === "amber"
-      ? "border-amber-200 bg-amber-50 text-amber-700"
-      : "border-zinc-200 bg-white text-zinc-700";
-
-  return <span className={`rounded-full border px-2 py-0.5 font-medium ${cls}`}>{children}</span>;
 }
