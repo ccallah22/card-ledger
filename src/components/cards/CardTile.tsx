@@ -3,7 +3,6 @@ import { IconDots, MiniBadge, type BadgeTone } from "@/components/cards/BinderUi
 import type { MyCard } from "@/lib/repositories/myCards";
 import { getDataQualitySignals } from "@/lib/repositories/dataQualitySignals";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
-import { loadImageForCard, loadThumbnailForCard } from "@/lib/imageStore";
 import type { SharedImage } from "@/lib/db/sharedImages";
 
 function asNumber(v: unknown): number | undefined {
@@ -40,6 +39,11 @@ export type CardTileProps = {
   card: MyCard;
   selected: boolean;
   onToggleSelected: (id: string, checked: boolean) => void;
+  // Resolved by the caller via useUserCardDisplayImages (persisted
+  // card_media, falling back to the legacy localStorage image) -- this
+  // component no longer queries storage/localStorage itself. See that
+  // hook's own comment for the exact priority order.
+  imageUrl: string | null;
   sharedImage?: SharedImage | null;
   report?: { reports: number; status?: string };
   onOpenMenu: (e: React.MouseEvent<HTMLButtonElement>, id: string) => void;
@@ -49,6 +53,7 @@ export function CardTile({
   card: c,
   selected,
   onToggleSelected,
+  imageUrl,
   sharedImage,
   report,
   onOpenMenu,
@@ -85,9 +90,7 @@ export function CardTile({
     !!report &&
     (report.status === "blocked" || (report.reports ?? 0) >= REPORT_HIDE_THRESHOLD);
 
-  const storedThumb = loadThumbnailForCard(c.id);
-  const storedImage = loadImageForCard(c.id);
-  const displayImage = hideImage ? "" : storedThumb ?? storedImage ?? sharedImage?.dataUrl ?? "";
+  const displayImage = hideImage ? "" : imageUrl ?? sharedImage?.dataUrl ?? "";
 
   const rowHref = `/cards/${c.id}`;
 

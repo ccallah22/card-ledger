@@ -82,6 +82,18 @@ export type MyCard = {
   imageType?: ImageType;
   thumbPath?: string | null;
 
+  // Phase 2B.1: whether this card has a persisted front image in card_media
+  // (processed_path or original_path) -- the actual account-level, cross-
+  // device-visible source of truth for "does this card have a photo",
+  // unlike imagePath/thumbPath above (dead columns the current Add/Edit
+  // flow never populates -- see the Card Detail and Binder audits). Does
+  // NOT account for a legacy-localStorage-only image, since that's private
+  // to one browser and can't be known consistently by every consumer of
+  // this field (Binder, Dashboard, Next Actions, Collection Health) the way
+  // a database-backed fact can. Read-only/derived -- never accepted as an
+  // input (see MyCardInput below, which intentionally omits it).
+  hasPersistedImage: boolean;
+
   createdAt?: string;
   updatedAt?: string;
 };
@@ -139,12 +151,17 @@ export type MyCardInput = {
   thumbPath?: string | null;
 };
 
+// card_media is embedded here (not queried separately) so hasPersistedImage
+// below comes from the same single round-trip as everything else on
+// MyCard -- no second query, no per-card fetch. Only the columns
+// hasPersistedImage actually needs are selected.
 const SELECT = `
   *,
   cards!inner(*, sets(*), card_players(players(*))),
   card_variants(*, parallel_types(*)),
   locations(*),
-  grading_companies(*)
+  grading_companies(*),
+  card_media(side, processed_path, original_path)
 `;
 
 type UserCardJoined = UserCardRow & {
@@ -157,6 +174,7 @@ type UserCardJoined = UserCardRow & {
   card_variants: (CardVariantRow & { parallel_types: ParallelTypeRow | null }) | null;
   locations: LocationRow | null;
   grading_companies: GradingCompanyRow | null;
+  card_media: { side: string; processed_path: string | null; original_path: string | null }[] | null;
 };
 
 function toMyCard(row: UserCardJoined): MyCard {
@@ -226,6 +244,10 @@ function toMyCard(row: UserCardJoined): MyCard {
     imageType: (row.image_type as ImageType) ?? undefined,
     thumbPath: row.thumb_path,
 
+    hasPersistedImage: (row.card_media ?? []).some(
+      (m) => m.side === "front" && !!(m.processed_path || m.original_path),
+    ),
+
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -252,7 +274,8 @@ const SELECT_FOR_PLAYER = `
   cards!inner(*, sets(*), card_players!inner(players(*))),
   card_variants(*, parallel_types(*)),
   locations(*),
-  grading_companies(*)
+  grading_companies(*),
+  card_media(side, processed_path, original_path)
 `;
 
 /**

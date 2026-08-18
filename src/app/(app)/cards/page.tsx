@@ -12,6 +12,7 @@ import { CardRowMenu } from "@/components/cards/CardRowMenu";
 import { BinderGrid } from "@/components/cards/BinderGrid";
 import { BinderSet } from "@/components/cards/BinderSet";
 import { CardTile } from "@/components/cards/CardTile";
+import { useUserCardDisplayImages } from "@/hooks/cards/useUserCardDisplayImages";
 
 import {
   type MyCard,
@@ -630,6 +631,15 @@ function CardsPageInner() {
       return s !== "SOLD" && s !== "WANT";
     });
   }, [cards]);
+
+  // Phase 2B.1: one batched resolution (persisted card_media, falling back
+  // to legacy localStorage) for every card that could ever appear in this
+  // session -- baseList, not the narrower `filtered` list, so toggling a
+  // search/collector/sport/quality filter never re-triggers a new batch
+  // fetch, only the initial load or a genuine add/edit/delete/bulk change
+  // to `cards` does. Same shared hook Player Hub and Card Detail already
+  // use -- no second image resolver.
+  const { imagesByUserCardId } = useUserCardDisplayImages(baseList.map((c) => c.id));
 
   const afterSport = useMemo(() => {
     if (sportFilter === "ALL") return baseList;
@@ -1690,6 +1700,7 @@ function CardsPageInner() {
                           card={c}
                           selected={selectedIds.has(c.id)}
                           onToggleSelected={toggleSelected}
+                          imageUrl={imagesByUserCardId.get(c.id) ?? null}
                           sharedImage={sharedImage}
                           report={report}
                           onOpenMenu={(e, id) => {

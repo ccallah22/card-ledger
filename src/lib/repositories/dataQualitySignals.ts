@@ -46,7 +46,13 @@ const SIGNALS: DataQualitySignal[] = [
     label: "missing photos",
     priority: "low",
     appliesTo: () => true,
-    isComplete: (card) => !!card.imagePath,
+    // Phase 2B.1 correction: this used to check card.imagePath, a
+    // user_cards column the current Add/Edit Card flow never populates --
+    // every card was permanently reported as missing a photo regardless of
+    // whether it actually had one. hasPersistedImage (myCards.ts) reflects
+    // real card_media presence instead, computed in the same query this
+    // signal's caller already ran (no second query here or anywhere else).
+    isComplete: (card) => card.hasPersistedImage,
     action: {
       titleForCount: (count) => `${count} ${cardWord(count)} missing photos`,
       description: "Add a photo so these cards are easier to identify, share, and sell.",
