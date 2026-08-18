@@ -617,6 +617,18 @@ function CardsPageInner() {
     clearCollectorFilters();
   }
 
+  // Single reset implementation shared by BinderToolbar's "Clear filters"
+  // button and the "no cards match your filters" empty state below -- the
+  // empty state reuses this exact function rather than a second copy.
+  function clearAllFilters() {
+    setQ("");
+    setSportFilter("ALL");
+    clearCollectorFilters();
+    setQualityFilter("ALL");
+    setShowFilters(false);
+    refresh();
+  }
+
   // Sets don't carry a sport yet (no sport/league picker in the add-card
   // form), so the Sport tab is a single "Unknown" bucket until that catalog
   // path exists.
@@ -1144,28 +1156,28 @@ function CardsPageInner() {
   const activeMenuId = openMenuId ?? closingMenuId;
   const menuCard = activeMenuId ? filtered.find((c) => c.id === activeMenuId) : null;
 
-  // ✅ stats
+  // ✅ stats -- Phase 2B.2: totalCards/totalSpent/totalPortfolioValue/
+  // totalNetGain (the four numbers BinderStats actually renders) now
+  // describe the currently VISIBLE cards -- the same `filtered` list
+  // rendered in the grid below -- instead of the whole collection or just
+  // the sport-filtered slice, so these numbers always match what's on
+  // screen when search/collector/quality filters are active. Reuses
+  // `filtered` directly rather than a second filter pass (the previous
+  // collectionSummary-based shortcut only ever matched the unfiltered case
+  // by coincidence, since it ignored every filter except Sport).
+  //
+  // The remaining fields below (totalSold, netPosition, forSaleValue,
+  // costOfSold, graded, raw, staleCount, ageCount, avgAge, medianAge) are
+  // unrelated to this fix -- confirmed unused by any current renderer --
+  // and are left exactly as they were (sport-filtered only), out of scope
+  // for this phase.
   const totals = useMemo(() => {
     const cardsInSport =
       sportFilter === "ALL" ? cards : cards.filter((c) => resolveSport(c) === sportFilter);
 
-    // The shared collection summary has no sport dimension, so it's only a
-    // safe substitute for the unfiltered (sportFilter === "ALL") case; a
-    // specific sport tab still needs the local, per-sport computation below.
-    const useSharedSummary = sportFilter === "ALL" && collectionSummary !== null;
+    const totalCards = filtered.length;
 
-    const totalCards = useSharedSummary
-      ? collectionSummary.counts.have + collectionSummary.counts.forSale
-      : cardsInSport.filter((c) => {
-          const s = c.status ?? "HAVE";
-          return s !== "SOLD" && s !== "WANT";
-        }).length;
-
-    const totalSpent = useSharedSummary
-      ? collectionSummary.financial.totalSpent
-      : cardsInSport
-          .filter((c) => (c.status ?? "HAVE") !== "WANT")
-          .reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
+    const totalSpent = filtered.reduce((sum, c) => sum + (asNumber(c.purchasePrice) ?? 0), 0);
 
     const soldCards = cardsInSport.filter((c) => (c.status ?? "HAVE") === "SOLD");
     const totalSold = soldCards.reduce((sum, c) => sum + (asNumber(c.soldPrice) ?? 0), 0);
@@ -1183,18 +1195,17 @@ function CardsPageInner() {
       return s !== "SOLD" && s !== "WANT";
     });
 
-    const totalPortfolioValue = useSharedSummary
-      ? collectionSummary.financial.portfolioValue
-      : inventory.reduce((sum, c) => sum + (asNumber(c.estimatedValue) ?? 0), 0);
+    const totalPortfolioValue = filtered.reduce(
+      (sum, c) => sum + (asNumber(c.estimatedValue) ?? 0),
+      0,
+    );
 
-    const totalNetGain = useSharedSummary
-      ? collectionSummary.financial.unrealizedNetGain
-      : inventory.reduce((sum, c) => {
-          const estimatedValue = asNumber(c.estimatedValue);
-          if (typeof estimatedValue !== "number") return sum;
-          const paid = asNumber(c.purchasePrice) ?? 0;
-          return sum + (estimatedValue - paid);
-        }, 0);
+    const totalNetGain = filtered.reduce((sum, c) => {
+      const estimatedValue = asNumber(c.estimatedValue);
+      if (typeof estimatedValue !== "number") return sum;
+      const paid = asNumber(c.purchasePrice) ?? 0;
+      return sum + (estimatedValue - paid);
+    }, 0);
 
     const graded = inventory.filter((c) => c.gradingStatus === "GRADED").length;
     const raw = Math.max(0, inventory.length - graded);
@@ -1235,7 +1246,7 @@ function CardsPageInner() {
       avgAge,
       medianAge,
     };
-  }, [cards, sportFilter, collectionSummary]);
+  }, [cards, sportFilter, filtered]);
 
   const netTone =
     totals.totalNetGain > 0 ? "positive" : totals.totalNetGain < 0 ? "negative" : "neutral";
@@ -1617,17 +1628,20 @@ function CardsPageInner() {
   setPatchOnly={setPatchOnly}
   setRookieOnly={setRookieOnly}
   clearCollectorFilters={clearCollectorFilters}
-  clearAllFilters={() => {
-    setQ("");
-    setSportFilter("ALL");
-    clearCollectorFilters();
-    setQualityFilter("ALL");
-    setShowFilters(false);
-    refresh();
-  }}
+  clearAllFilters={clearAllFilters}
 />
 
-      {/* Stats */}
+      {/* Stats -- these numbers now describe the currently visible cards
+          (totals is sourced from `filtered`, see its own comment above).
+          This caption only appears when a filter/search has actually
+          narrowed the view, so it doesn't clutter the default (unfiltered)
+          state, where the stats already equal the whole HAVE/FOR_SALE
+          collection and no clarification is needed. */}
+      {filtered.length !== baseList.length ? (
+        <p className="text-xs text-zinc-500">
+          Showing {filtered.length} of {baseList.length} cards based on your filters.
+        </p>
+      ) : null}
 <BinderStats
   totals={totals}
   netTone={netTone}
@@ -1643,16 +1657,34 @@ function CardsPageInner() {
         </div>
       ) : null}
 
-      {/* Binder */}
-<BinderGrid isEmpty={filtered.length === 0}>
-        {filtered.length === 0 ? (
-          <div className="empty-state space-y-3">
-            <div>No cards yet — add your first one to get started.</div>
-            <Link href="/cards/new" className="btn-primary">
-              Add your first card
-            </Link>
-          </div>
-        ) : (
+      {/* Binder -- Phase 2B.2: three distinct states instead of one shared
+          "no cards" message. Case A (baseList empty): a truly new/empty
+          Binder. Case B (baseList has cards, filtered doesn't): filters or
+          search excluded everything -- reuses the same clearAllFilters()
+          BinderToolbar's own "Clear filters" button calls, not a second
+          reset implementation. Neither case is shown when filtered.length
+          > 0, in which case emptyState is undefined and BinderGrid renders
+          children (the grouped-set grid) normally. */}
+<BinderGrid
+  emptyState={
+    baseList.length === 0 ? (
+      <div className="empty-state space-y-3">
+        <div className="text-base font-semibold text-zinc-900">Your Binder is empty.</div>
+        <div>Add your first card to begin building your collection.</div>
+        <Link href="/cards/new" className="btn-primary">
+          Add Card
+        </Link>
+      </div>
+    ) : filtered.length === 0 ? (
+      <div className="empty-state space-y-3">
+        <div>No cards match your current filters.</div>
+        <button type="button" onClick={clearAllFilters} className="btn-primary">
+          Clear Filters
+        </button>
+      </div>
+    ) : undefined
+  }
+>
           <div className="space-y-3">
             {groupedBySet.map((group, index) => {
               const selectedTeam = teamFiltersBySet[group.key] ?? "ALL";
@@ -1716,7 +1748,6 @@ function CardsPageInner() {
 );
             })}
           </div>
-        )}
       </BinderGrid>
 
       {menuCard && menuPos && activeMenuId

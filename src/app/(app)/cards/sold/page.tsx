@@ -378,9 +378,9 @@ export default function SoldHistoryPage() {
           <div className="error-state">We couldn’t load your sold history. {error}</div>
         ) : soldCards.length === 0 ? (
           <div className="empty-state space-y-3">
-            <div>Add cards to see your portfolio breakdown.</div>
-            <Link href="/cards/new" className="btn-primary">
-              Add a card
+            <div>You haven&apos;t sold any cards yet.</div>
+            <Link href="/cards" className="btn-primary">
+              Go to your Binder
             </Link>
           </div>
         ) : (

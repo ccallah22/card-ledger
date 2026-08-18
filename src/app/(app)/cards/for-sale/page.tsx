@@ -253,7 +253,12 @@ export default function ForSalePage() {
         ) : error ? (
           <div className="error-state">We couldn’t load your for-sale cards. {error}</div>
         ) : forSaleCards.length === 0 ? (
-          <div className="empty-state">No cards marked for sale yet.</div>
+          <div className="empty-state space-y-3">
+            <div>No cards are currently listed for sale.</div>
+            <Link href="/cards" className="btn-primary">
+              Go to your Binder
+            </Link>
+          </div>
         ) : (
           <div className="divide-y">
             {forSaleCards.map((c) => {
