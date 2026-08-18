@@ -33,6 +33,11 @@ export function Stat({
   );
 }
 
+// Phase 2B.3: despite the name, every current caller uses this as a
+// single-select filter toggle (e.g. Sport), not a true ARIA tabs widget
+// (no tablist/tabpanel relationship, no arrow-key navigation) -- so
+// aria-pressed is the correct state here, not aria-selected/role="tab",
+// which would imply keyboard behavior this component doesn't implement.
 export function Tab({
   active,
   onClick,
@@ -61,7 +66,7 @@ export function Tab({
       : "bg-zinc-100 text-zinc-800 hover:bg-zinc-200";
 
   return (
-    <button type="button" onClick={onClick} className={`${base} ${cls}`}>
+    <button type="button" onClick={onClick} aria-pressed={active} className={`${base} ${cls}`}>
       {children}
     </button>
   );
@@ -80,6 +85,7 @@ export function Chip({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={
         "inline-flex whitespace-nowrap items-center rounded-full border px-3 py-1 text-xs font-medium transition " +
         (active

@@ -98,8 +98,11 @@ export function BinderToolbar({
     <div className="rounded-xl border bg-white p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="w-full sm:hidden">
-          <label className="block text-[11px] font-medium text-zinc-600 mb-1">Sport</label>
+          <label htmlFor="binder-sport-select" className="block text-[11px] font-medium text-zinc-600 mb-1">
+            Sport
+          </label>
           <select
+            id="binder-sport-select"
             value={sportFilter}
             onChange={(e) => setSportAndReset(e.target.value)}
             className="w-full rounded-md border border-zinc-400 bg-white px-3 py-2 text-base sm:text-sm text-zinc-900"

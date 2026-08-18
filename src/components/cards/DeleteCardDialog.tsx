@@ -13,10 +13,15 @@ export function DeleteCardDialog({
       onClick={onCancel}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-card-dialog-title"
         className="w-full max-w-md rounded-2xl border bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-lg font-semibold">Delete card?</div>
+        <div id="delete-card-dialog-title" className="text-lg font-semibold">
+          Delete card?
+        </div>
 
         <div className="mt-1 text-sm text-zinc-600">
           This will permanently remove:

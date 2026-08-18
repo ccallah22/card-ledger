@@ -1735,6 +1735,7 @@ function CardsPageInner() {
                           imageUrl={imagesByUserCardId.get(c.id) ?? null}
                           sharedImage={sharedImage}
                           report={report}
+                          isMenuOpen={openMenuId === c.id}
                           onOpenMenu={(e, id) => {
                             setOpenMenuId((prev) => (prev === id ? null : id));
                             if (openMenuId === id) return;

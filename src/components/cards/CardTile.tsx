@@ -15,6 +15,14 @@ function currency(n: number) {
   return n < 0 ? `-${formatted}` : formatted;
 }
 
+// Same identity-string shape as page.tsx's own (page-local, unexported)
+// labelForCard -- kept as a second small function rather than an import
+// since CardTile shouldn't depend on the page module, but the format is
+// deliberately identical for consistency across the app.
+function cardIdentityLabel(c: MyCard) {
+  return `${c.playerName} • ${c.year} • ${c.setName}${c.cardNumber ? ` #${c.cardNumber}` : ""}`;
+}
+
 function parallelBadgeTone(parallel?: string): BadgeTone | undefined {
   if (!parallel) return undefined;
   const p = parallel.toLowerCase();
@@ -47,6 +55,11 @@ export type CardTileProps = {
   sharedImage?: SharedImage | null;
   report?: { reports: number; status?: string };
   onOpenMenu: (e: React.MouseEvent<HTMLButtonElement>, id: string) => void;
+  // Whether this specific card's row menu (CardRowMenu, rendered by the
+  // parent) is currently open -- lets the kebab trigger expose
+  // aria-expanded correctly without CardTile needing to know anything
+  // about the portal/positioning logic that owns the actual menu.
+  isMenuOpen?: boolean;
 };
 
 export function CardTile({
@@ -57,8 +70,10 @@ export function CardTile({
   sharedImage,
   report,
   onOpenMenu,
+  isMenuOpen,
 }: CardTileProps) {
   const status = c.status ?? "HAVE";
+  const identity = cardIdentityLabel(c);
 
   const variation = c.variation;
   const parallel = c.parallel;
@@ -117,6 +132,7 @@ export function CardTile({
             checked={selected}
             onChange={(e) => onToggleSelected(c.id, e.target.checked)}
             className="h-4 w-4 accent-zinc-900"
+            aria-label={`Select ${identity}`}
           />
         </label>
       </div>
@@ -200,8 +216,10 @@ export function CardTile({
           }}
           onPointerDown={(e) => e.stopPropagation()}
           className="rounded-full bg-white/90 p-2 text-zinc-600 shadow-sm hover:bg-white hover:text-zinc-900"
-          aria-label="Row actions"
-          title="Actions"
+          aria-label={`Actions for ${identity}`}
+          aria-haspopup="menu"
+          aria-expanded={!!isMenuOpen}
+          title={`Actions for ${identity}`}
         >
           <IconDots />
         </button>
