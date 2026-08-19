@@ -150,7 +150,7 @@ export async function POST(req: Request) {
     };
 
     return NextResponse.json(result);
-  } catch (err) {
+  } catch {
     return NextResponse.json({ message: "Image check failed." }, { status: 500 });
   }
 }

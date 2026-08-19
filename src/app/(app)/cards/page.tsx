@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SummaryChip } from "@/components/ui/SummaryChip";
 import { BinderStats } from "@/components/cards/BinderStats";
@@ -40,6 +40,11 @@ async function requireProfileId(): Promise<string> {
 
 const STALE_DAYS = 90;
 
+// Module-level (not per-render) so the reference is stable across renders --
+// see teamFiltersBySet below, which reads this instead of a fresh {}
+// literal so it doesn't defeat the useMemo that depends on it.
+const EMPTY_TEAM_FILTERS_BY_SET: Record<string, string> = {};
+
 type SortMode =
   | "PLAYER_ASC"
   | "YEAR_DESC"
@@ -49,203 +54,6 @@ type SortMode =
 
 function normalize(s?: string) {
   return (s ?? "").trim().toLowerCase();
-}
-
-function hashString(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) {
-    h = (h << 5) - h + s.charCodeAt(i);
-    h |= 0;
-  }
-  return Math.abs(h);
-}
-
-function teamSwatchStyle(team: string): CSSProperties {
-  const base = hashString(team) % 360;
-  const a = `hsl(${base} 70% 45%)`;
-  const b = `hsl(${(base + 35) % 360} 70% 32%)`;
-  return {
-    background: `linear-gradient(135deg, ${a}, ${b})`,
-    color: "white",
-  };
-}
-
-type CwcTeam = {
-  abbr: string;
-  fullName: string;
-  primaryColor: string;
-  secondaryColor: string;
-  altNames?: string[];
-};
-
-const CWC_SET_KEY = `${normalize("Panini Prizm FIFA Club World Cup")}__2025`;
-
-const CWC_TEAMS: CwcTeam[] = [
-  { abbr: "ALAH", fullName: "Al Ahly FC", primaryColor: "#E60000", secondaryColor: "#000000" },
-  { abbr: "ALAI", fullName: "Al Ain FC", primaryColor: "#5A2A82", secondaryColor: "#F2A900" },
-  { abbr: "ALHI", fullName: "Al Hilal", primaryColor: "#0057B8", secondaryColor: "#FFFFFF" },
-  {
-    abbr: "ATM",
-    fullName: "Atletico de Madrid",
-    primaryColor: "#E60026",
-    secondaryColor: "#FFFFFF",
-    altNames: ["Atletico Madrid"],
-  },
-  {
-    abbr: "PSG",
-    fullName: "Paris Saint-Germain",
-    primaryColor: "#004170",
-    secondaryColor: "#DA291C",
-    altNames: ["Paris Saint Germain", "Paris SG"],
-  },
-  { abbr: "AKL", fullName: "Auckland City FC", primaryColor: "#002D62", secondaryColor: "#FFFFFF" },
-  { abbr: "BOC", fullName: "Boca Juniors", primaryColor: "#003F79", secondaryColor: "#FFB81C" },
-  { abbr: "BVB", fullName: "Borussia Dortmund", primaryColor: "#FDE100", secondaryColor: "#000000" },
-  { abbr: "FCB", fullName: "FC Bayern Munchen", primaryColor: "#DC052D", secondaryColor: "#FFFFFF" },
-  { abbr: "BOTA", fullName: "Botafogo", primaryColor: "#000000", secondaryColor: "#FFFFFF" },
-  { abbr: "MTY", fullName: "CF Monterrey", primaryColor: "#002D62", secondaryColor: "#FFFFFF" },
-  { abbr: "CHE", fullName: "Chelsea FC", primaryColor: "#034694", secondaryColor: "#FFFFFF" },
-  {
-    abbr: "URD",
-    fullName: "Urawa Red Diamonds",
-    primaryColor: "#E60012",
-    secondaryColor: "#000000",
-  },
-  {
-    abbr: "EST",
-    fullName: "Esperance Sportive de Tunis",
-    primaryColor: "#D50000",
-    secondaryColor: "#FFD100",
-  },
-  {
-    abbr: "INT",
-    fullName: "FC Internazionale Milano",
-    primaryColor: "#0057B8",
-    secondaryColor: "#000000",
-    altNames: ["Inter", "Inter Milan"],
-  },
-  { abbr: "POR", fullName: "FC Porto", primaryColor: "#0033A0", secondaryColor: "#FFFFFF" },
-  { abbr: "FLA", fullName: "Flamengo", primaryColor: "#C8102E", secondaryColor: "#000000" },
-  { abbr: "FLU", fullName: "Fluminense", primaryColor: "#7A263A", secondaryColor: "#006341" },
-  { abbr: "JUV", fullName: "Juventus", primaryColor: "#000000", secondaryColor: "#FFFFFF" },
-  { abbr: "PAC", fullName: "CF Pachuca", primaryColor: "#0033A0", secondaryColor: "#FFFFFF" },
-  { abbr: "PAL", fullName: "Palmeiras", primaryColor: "#006437", secondaryColor: "#FFFFFF" },
-  {
-    abbr: "MSU",
-    fullName: "Mamelodi Sundowns FC",
-    primaryColor: "#FFD100",
-    secondaryColor: "#0057B8",
-  },
-  { abbr: "MCI", fullName: "Manchester City", primaryColor: "#6CABDD", secondaryColor: "#FFFFFF" },
-  { abbr: "RMA", fullName: "Real Madrid", primaryColor: "#FFFFFF", secondaryColor: "#FEBE10" },
-  { abbr: "SAL", fullName: "FC Salzburg", primaryColor: "#ED1C24", secondaryColor: "#FFFFFF" },
-  { abbr: "RIV", fullName: "River Plate", primaryColor: "#FFFFFF", secondaryColor: "#D50032" },
-  { abbr: "SLB", fullName: "SL Benfica", primaryColor: "#E41B13", secondaryColor: "#FFFFFF" },
-  { abbr: "ULS", fullName: "Ulsan HD FC", primaryColor: "#0057B8", secondaryColor: "#FFD100" },
-  { abbr: "WAC", fullName: "Wydad AC", primaryColor: "#E30613", secondaryColor: "#FFFFFF" },
-  { abbr: "MIA", fullName: "Inter Miami CF", primaryColor: "#F7B5CD", secondaryColor: "#231F20" },
-  {
-    abbr: "SEA",
-    fullName: "Seattle Sounders FC",
-    primaryColor: "#1DFF0B",
-    secondaryColor: "#00539F",
-  },
-];
-
-function hexToRgb(hex: string) {
-  const value = hex.replace("#", "");
-  if (value.length !== 6) return null;
-  const r = Number.parseInt(value.slice(0, 2), 16);
-  const g = Number.parseInt(value.slice(2, 4), 16);
-  const b = Number.parseInt(value.slice(4, 6), 16);
-  return { r, g, b };
-}
-
-function contrastTextColor(primary: string, secondary: string) {
-  const p = hexToRgb(primary);
-  const s = hexToRgb(secondary);
-  if (!p || !s) return "white";
-  const r = (p.r + s.r) / 2;
-  const g = (p.g + s.g) / 2;
-  const b = (p.b + s.b) / 2;
-  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return luminance > 0.6 ? "black" : "white";
-}
-
-function resolveCwcTeam(team: string) {
-  const value = normalize(team);
-  if (!value) return null;
-  return CWC_TEAMS.find((t) => normalize(t.fullName) === value) ??
-    CWC_TEAMS.find((t) => normalize(t.abbr) === value) ??
-    CWC_TEAMS.find((t) => t.altNames?.some((alt) => normalize(alt) === value)) ??
-    CWC_TEAMS.find((t) => value.includes(normalize(t.fullName))) ??
-    CWC_TEAMS.find((t) => t.altNames?.some((alt) => value.includes(normalize(alt)))) ??
-    CWC_TEAMS.find((t) => value.includes(normalize(t.abbr)));
-}
-
-function cwcSwatchStyle(team: CwcTeam): CSSProperties {
-  return {
-    background: `linear-gradient(135deg, ${team.primaryColor}, ${team.secondaryColor})`,
-    color: contrastTextColor(team.primaryColor, team.secondaryColor),
-  };
-}
-
-type NflTeam = {
-  id: string;
-  abbr: string;
-  city: string;
-  name: string;
-  fullName: string;
-  primaryColor: string;
-  textColor: string;
-};
-
-const NFL_TEAMS: NflTeam[] = [
-  { id: "ari", abbr: "ARI", city: "Arizona", name: "Cardinals", fullName: "Arizona Cardinals", primaryColor: "#97233F", textColor: "#FFFFFF" },
-  { id: "atl", abbr: "ATL", city: "Atlanta", name: "Falcons", fullName: "Atlanta Falcons", primaryColor: "#A71930", textColor: "#FFFFFF" },
-  { id: "bal", abbr: "BAL", city: "Baltimore", name: "Ravens", fullName: "Baltimore Ravens", primaryColor: "#241773", textColor: "#FFFFFF" },
-  { id: "buf", abbr: "BUF", city: "Buffalo", name: "Bills", fullName: "Buffalo Bills", primaryColor: "#00338D", textColor: "#FFFFFF" },
-  { id: "car", abbr: "CAR", city: "Carolina", name: "Panthers", fullName: "Carolina Panthers", primaryColor: "#0085CA", textColor: "#FFFFFF" },
-  { id: "chi", abbr: "CHI", city: "Chicago", name: "Bears", fullName: "Chicago Bears", primaryColor: "#0B162A", textColor: "#FFFFFF" },
-  { id: "cin", abbr: "CIN", city: "Cincinnati", name: "Bengals", fullName: "Cincinnati Bengals", primaryColor: "#FB4F14", textColor: "#000000" },
-  { id: "cle", abbr: "CLE", city: "Cleveland", name: "Browns", fullName: "Cleveland Browns", primaryColor: "#311D00", textColor: "#FFFFFF" },
-  { id: "dal", abbr: "DAL", city: "Dallas", name: "Cowboys", fullName: "Dallas Cowboys", primaryColor: "#041E42", textColor: "#FFFFFF" },
-  { id: "den", abbr: "DEN", city: "Denver", name: "Broncos", fullName: "Denver Broncos", primaryColor: "#FB4F14", textColor: "#000000" },
-  { id: "det", abbr: "DET", city: "Detroit", name: "Lions", fullName: "Detroit Lions", primaryColor: "#0076B6", textColor: "#FFFFFF" },
-  { id: "gb", abbr: "GB", city: "Green Bay", name: "Packers", fullName: "Green Bay Packers", primaryColor: "#203731", textColor: "#FFB612" },
-  { id: "hou", abbr: "HOU", city: "Houston", name: "Texans", fullName: "Houston Texans", primaryColor: "#03202F", textColor: "#FFFFFF" },
-  { id: "ind", abbr: "IND", city: "Indianapolis", name: "Colts", fullName: "Indianapolis Colts", primaryColor: "#002C5F", textColor: "#FFFFFF" },
-  { id: "jax", abbr: "JAX", city: "Jacksonville", name: "Jaguars", fullName: "Jacksonville Jaguars", primaryColor: "#006778", textColor: "#FFFFFF" },
-  { id: "kc", abbr: "KC", city: "Kansas City", name: "Chiefs", fullName: "Kansas City Chiefs", primaryColor: "#E31837", textColor: "#FFFFFF" },
-  { id: "lv", abbr: "LV", city: "Las Vegas", name: "Raiders", fullName: "Las Vegas Raiders", primaryColor: "#000000", textColor: "#FFFFFF" },
-  { id: "lac", abbr: "LAC", city: "Los Angeles", name: "Chargers", fullName: "Los Angeles Chargers", primaryColor: "#0080C6", textColor: "#FFFFFF" },
-  { id: "lar", abbr: "LAR", city: "Los Angeles", name: "Rams", fullName: "Los Angeles Rams", primaryColor: "#003594", textColor: "#FFFFFF" },
-  { id: "mia", abbr: "MIA", city: "Miami", name: "Dolphins", fullName: "Miami Dolphins", primaryColor: "#008E97", textColor: "#FFFFFF" },
-  { id: "min", abbr: "MIN", city: "Minnesota", name: "Vikings", fullName: "Minnesota Vikings", primaryColor: "#4F2683", textColor: "#FFFFFF" },
-  { id: "ne", abbr: "NE", city: "New England", name: "Patriots", fullName: "New England Patriots", primaryColor: "#002244", textColor: "#FFFFFF" },
-  { id: "no", abbr: "NO", city: "New Orleans", name: "Saints", fullName: "New Orleans Saints", primaryColor: "#D3BC8D", textColor: "#000000" },
-  { id: "nyg", abbr: "NYG", city: "New York", name: "Giants", fullName: "New York Giants", primaryColor: "#0B2265", textColor: "#FFFFFF" },
-  { id: "nyj", abbr: "NYJ", city: "New York", name: "Jets", fullName: "New York Jets", primaryColor: "#125740", textColor: "#FFFFFF" },
-  { id: "phi", abbr: "PHI", city: "Philadelphia", name: "Eagles", fullName: "Philadelphia Eagles", primaryColor: "#004C54", textColor: "#FFFFFF" },
-  { id: "pit", abbr: "PIT", city: "Pittsburgh", name: "Steelers", fullName: "Pittsburgh Steelers", primaryColor: "#FFB612", textColor: "#000000" },
-  { id: "sea", abbr: "SEA", city: "Seattle", name: "Seahawks", fullName: "Seattle Seahawks", primaryColor: "#002244", textColor: "#69BE28" },
-  { id: "sf", abbr: "SF", city: "San Francisco", name: "49ers", fullName: "San Francisco 49ers", primaryColor: "#AA0000", textColor: "#FFFFFF" },
-  { id: "tb", abbr: "TB", city: "Tampa Bay", name: "Buccaneers", fullName: "Tampa Bay Buccaneers", primaryColor: "#D50A0A", textColor: "#FFFFFF" },
-  { id: "ten", abbr: "TEN", city: "Tennessee", name: "Titans", fullName: "Tennessee Titans", primaryColor: "#0C2340", textColor: "#FFFFFF" },
-  { id: "was", abbr: "WAS", city: "Washington", name: "Commanders", fullName: "Washington Commanders", primaryColor: "#5A1414", textColor: "#FFFFFF" },
-];
-
-function resolveNflTeam(team: string) {
-  const value = normalize(team);
-  if (!value) return null;
-  return (
-    NFL_TEAMS.find((t) => normalize(t.fullName) === value) ??
-    NFL_TEAMS.find((t) => normalize(t.name) === value) ??
-    NFL_TEAMS.find((t) => normalize(t.city) === value) ??
-    NFL_TEAMS.find((t) => normalize(t.abbr) === value) ??
-    NFL_TEAMS.find((t) => value.includes(normalize(t.fullName))) ??
-    NFL_TEAMS.find((t) => value.includes(normalize(t.name)))
-  );
 }
 
 function asNumber(v: unknown): number | undefined {
@@ -285,8 +93,7 @@ const NEEDS_FILTER_SIGNAL_ID: Record<"photos" | "value" | "location", string> = 
   location: "missing-storage-location",
 };
 
-const QUALITY_FILTER_BUCKETS = ["ALL", "NEEDS_ATTENTION", "HIGH_PRIORITY", "COMPLETE"] as const;
-type QualityFilterBucket = (typeof QUALITY_FILTER_BUCKETS)[number];
+type QualityFilterBucket = "ALL" | "NEEDS_ATTENTION" | "HIGH_PRIORITY" | "COMPLETE";
 // A DataQualitySignal id (string) is also a valid value, selecting cards
 // incomplete for that one specific signal.
 type QualityFilterOption = QualityFilterBucket | string;
@@ -311,15 +118,6 @@ function healthScoreLabel(score: number) {
 }
 
 // Collector helpers
-function hasParallel(c: MyCard) {
-  const v = normalize(c.variation);
-  const p = normalize(c.parallel);
-  return !!(v || p);
-}
-function isNumbered(c: MyCard) {
-  const total = c.serialTotal;
-  return typeof total === "number" && Number.isFinite(total) && total > 0;
-}
 function isAuto(c: MyCard) {
   return !!c.isAutograph;
 }
@@ -382,7 +180,16 @@ function CardsPageInner() {
 
   const [sortMode, setSortMode] = useState<SortMode>("PLAYER_ASC");
   const [collapsedSets, setCollapsedSets] = useState<Set<string>>(new Set());
-  const [teamFiltersBySet, setTeamFiltersBySet] = useState<Record<string, string>>({});
+  // No setter reaches this anymore now that setTeamFilter (the only caller
+  // of the former setTeamFiltersBySet) was removed as dead code -- this can
+  // never be anything but {} for the component's lifetime, so it's a plain
+  // constant rather than state. Reads the module-level
+  // EMPTY_TEAM_FILTERS_BY_SET (not a fresh {} literal here) so the
+  // reference stays stable across renders, same as the useMemo below
+  // depending on it expects. Every read site is unchanged and behaves
+  // identically (teamFiltersBySet[group.key] was already always undefined
+  // in practice).
+  const teamFiltersBySet = EMPTY_TEAM_FILTERS_BY_SET;
 
   // ✅ Row actions (kebab menu)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -1152,10 +959,6 @@ function CardsPageInner() {
       else next.add(key);
       return next;
     });
-  }
-
-  function setTeamFilter(key: string, team: string) {
-    setTeamFiltersBySet((prev) => ({ ...prev, [key]: team }));
   }
 
   const activeMenuId = openMenuId ?? closingMenuId;
