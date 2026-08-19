@@ -457,12 +457,13 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           <div>
             <div className="relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden">
               {displayImage ? (
-                // eslint-disable-next-line @next/next/no-img-element -- imageUrl
-                // is either a private, expiring signed Supabase Storage URL
-                // (see useUserCardDisplayImages/getCardMediaImageUrls) or a
-                // localStorage/community data URL, never a static asset --
-                // next/image would need remote-domain config for a URL that
-                // changes per session/user, out of scope for this phase.
+                // imageUrl is either a private, expiring signed Supabase
+                // Storage URL (see useUserCardDisplayImages/
+                // getCardMediaImageUrls) or a localStorage/community data
+                // URL, never a static asset -- next/image would need
+                // remote-domain config for a URL that changes per
+                // session/user, out of scope for this phase.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={displayImage}
                   alt={`${card.playerName} ${card.cardNumber ?? ""} (${activeSide})`.trim()}

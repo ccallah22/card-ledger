@@ -144,8 +144,9 @@ export default function SoldHistoryPage() {
           setCards(data);
           setCollectionSummary(summary);
         }
-      } catch (e: any) {
-        if (active) setError(e?.message ?? "Failed to load cards");
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed to load cards";
+        if (active) setError(message);
       } finally {
         if (active) setLoading(false);
       }
@@ -284,10 +285,6 @@ export default function SoldHistoryPage() {
   }, [soldCards]);
 
   const netTone = totals.realizedNet > 0 ? "positive" : totals.realizedNet < 0 ? "negative" : "neutral";
-  const avgTone = totals.avgProfit > 0 ? "positive" : totals.avgProfit < 0 ? "negative" : "neutral";
-  const roiTone = totals.roi > 0 ? "positive" : totals.roi < 0 ? "negative" : "neutral";
-
-  const roiPct = `${Math.round(totals.roi * 100)}%`;
 
   return (
     <div className="space-y-6">

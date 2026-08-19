@@ -20,9 +20,16 @@ async function requireProfileId(): Promise<string> {
   return profile.id;
 }
 
+function omit<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): Omit<T, K> {
+  const keySet = new Set<keyof T>(keys);
+  const entries = (Object.entries(obj) as [keyof T, T[keyof T]][]).filter(
+    ([key]) => !keySet.has(key),
+  );
+  return Object.fromEntries(entries) as Omit<T, K>;
+}
+
 function cardToInput(c: MyCard): MyCardInput {
-  const { id, createdAt, updatedAt, ...input } = c;
-  return input;
+  return omit(c, ["id", "createdAt", "updatedAt"]);
 }
 
 function downloadJson(filename: string, data: unknown) {
@@ -54,9 +61,10 @@ export default function BackupPage() {
         const data = await listMyCards(profileId);
         if (endTrace) endTrace();
         if (active) setCards(data);
-      } catch (e: any) {
+      } catch (e) {
         captureError(e, { area: "backup-load" });
-        if (active) setError(e?.message ?? "Failed to load cards.");
+        const message = e instanceof Error ? e.message : "Failed to load cards.";
+        if (active) setError(message);
       } finally {
         if (active) setLoading(false);
       }

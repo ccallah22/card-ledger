@@ -3,8 +3,16 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+type DebugSessionState = {
+  loading: boolean;
+  error?: string | null;
+  userId?: string | null;
+  email?: string | null;
+  hasSession?: boolean;
+};
+
 export default function DebugPage() {
-  const [state, setState] = useState<any>({ loading: true });
+  const [state, setState] = useState<DebugSessionState>({ loading: true });
 
   useEffect(() => {
     const supabase = createClient();

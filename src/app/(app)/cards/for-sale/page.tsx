@@ -72,8 +72,9 @@ export default function ForSalePage() {
           setCards(data);
           setCollectionSummary(summary);
         }
-      } catch (e: any) {
-        if (active) setError(e?.message ?? "Failed to load cards");
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed to load cards";
+        if (active) setError(message);
       } finally {
         if (active) setLoading(false);
       }
@@ -157,8 +158,9 @@ export default function ForSalePage() {
       // recomputing from `forSaleCards` until the next full load.
       setCollectionSummary(null);
       setSelectedIds(new Set());
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to remove selected cards.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to remove selected cards.";
+      setError(message);
     } finally {
       setBulkBusy(false);
     }
@@ -325,8 +327,10 @@ export default function ForSalePage() {
                                   prev.map((item) => (item.id === c.id ? next : item))
                                 );
                                 setCollectionSummary(null);
-                              } catch (e: any) {
-                                setError(e?.message ?? "Failed to remove from For Sale.");
+                              } catch (e) {
+                                const message =
+                                  e instanceof Error ? e.message : "Failed to remove from For Sale.";
+                                setError(message);
                               }
                             }}
                             className="btn-destructive text-xs"
@@ -391,8 +395,10 @@ export default function ForSalePage() {
                             prev.map((item) => (item.id === c.id ? next : item))
                           );
                           setCollectionSummary(null);
-                        } catch (e: any) {
-                          setError(e?.message ?? "Failed to remove from For Sale.");
+                        } catch (e) {
+                          const message =
+                            e instanceof Error ? e.message : "Failed to remove from For Sale.";
+                          setError(message);
                         }
                       }}
                       className="rounded-md border px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"

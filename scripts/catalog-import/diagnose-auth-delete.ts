@@ -156,7 +156,7 @@ async function main() {
 
     let authUserFound = false;
     let email: string | null = null;
-    let anomalies: string[] = [];
+    const anomalies: string[] = [];
 
     const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(profileId);
     if (userErr) {

@@ -260,8 +260,9 @@ function parseEntries(raw: string): ParseResult {
         }))
         .filter((r) => r.number && r.name && r.section);
       return { entries, sectionParallels: {} };
-    } catch (e: any) {
-      return { entries: [], sectionParallels: {}, error: e?.message || "Invalid JSON." };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Invalid JSON.";
+      return { entries: [], sectionParallels: {}, error: message };
     }
   }
 
@@ -446,8 +447,9 @@ export default function ChecklistAdminPage() {
       setStatus(
         `Imported ${inserted} rows${replaceExisting ? ` (deleted ${deleted} existing)` : ""}.`
       );
-    } catch (e: any) {
-      setError(e?.message || "Import failed.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Import failed.";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -476,8 +478,9 @@ export default function ChecklistAdminPage() {
         parallelCount: Number(data?.parallelCount ?? 0),
         parallelCounts: Array.isArray(data?.parallelCounts) ? data.parallelCounts : [],
       });
-    } catch (e: any) {
-      setPreviewError(e?.message || "Failed to load preview.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load preview.";
+      setPreviewError(message);
     } finally {
       setPreviewLoading(false);
     }

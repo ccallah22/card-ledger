@@ -12,10 +12,6 @@ async function requireProfileId(): Promise<string> {
   return profile.id;
 }
 
-function currency(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
-}
-
 export default function MarkSoldPage({
   params,
 }: {

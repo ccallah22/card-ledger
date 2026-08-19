@@ -13,7 +13,11 @@ function parseAdminEmails(): string[] {
     .filter(Boolean);
 }
 
-async function loadSectionCounts(supabase: any, table: string, setKey: string) {
+async function loadSectionCounts(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: string,
+  setKey: string,
+) {
   const pageSize = 1000;
   let from = 0;
   const counts = new Map<string, number>();
@@ -73,7 +77,8 @@ export async function GET(req: Request) {
       parallelCount: parallelCounts.reduce((sum, [, count]) => sum + count, 0),
       parallelCounts,
     });
-  } catch (e: any) {
-    return NextResponse.json({ message: e?.message ?? "Preview failed" }, { status: 400 });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Preview failed";
+    return NextResponse.json({ message }, { status: 400 });
   }
 }

@@ -37,8 +37,9 @@ export default function LocationsPage() {
         const profileId = await requireProfileId();
         const data = await listMyCards(profileId);
         if (active) setCards(data);
-      } catch (e: any) {
-        if (active) setError(e?.message ?? "Failed to load cards");
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed to load cards";
+        if (active) setError(message);
       } finally {
         if (active) setLoading(false);
       }
@@ -96,9 +97,10 @@ export default function LocationsPage() {
       );
       const byId = new Map(updated.map((c) => [c.id, c]));
       setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
-    } catch (e: any) {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to rename locations.";
       setNotice("");
-      setError(e?.message ?? "Failed to rename locations.");
+      setError(message);
       return;
     }
 
@@ -126,9 +128,10 @@ export default function LocationsPage() {
       );
       const byId = new Map(updated.map((c) => [c.id, c]));
       setCards((prev) => prev.map((c) => byId.get(c.id) ?? c));
-    } catch (e: any) {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to clear locations.";
       setNotice("");
-      setError(e?.message ?? "Failed to clear locations.");
+      setError(message);
       return;
     }
 

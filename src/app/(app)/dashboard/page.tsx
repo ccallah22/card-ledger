@@ -67,8 +67,9 @@ export default function DashboardPage() {
           setSummary(summaryData);
           setCards(cardsData);
         }
-      } catch (e: any) {
-        if (active) setError(e?.message ?? "Failed to load your dashboard");
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed to load your dashboard";
+        if (active) setError(message);
       } finally {
         if (active) setLoading(false);
       }

@@ -380,7 +380,6 @@ function NewCardPageInner() {
     loading: catalogVariantsLoading,
     query: catalogVariantQuery,
     setQuery: setCatalogVariantQuery,
-    selectedVariant,
     setSelectedVariant,
   } = useCatalogVariantLookup(selectedCard?.id ?? null);
   const [showCatalogVariantResults, setShowCatalogVariantResults] = useState(false);

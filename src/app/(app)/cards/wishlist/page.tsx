@@ -57,8 +57,9 @@ export default function WishlistPage() {
         const profileId = await requireProfileId();
         const data = await listMyCards(profileId);
         if (active) setCards(data);
-      } catch (e: any) {
-        if (active) setError(e?.message ?? "Failed to load cards");
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed to load cards";
+        if (active) setError(message);
       } finally {
         if (active) setLoading(false);
       }

@@ -417,9 +417,10 @@ function CardsPageInner() {
           setCards(data);
           setCollectionSummary(summary);
         }
-      } catch (e: any) {
+      } catch (e) {
         captureError(e, { area: "binder-load" });
-        if (mounted) setError(e?.message || "Failed to load cards");
+        const message = e instanceof Error ? e.message : "Failed to load cards";
+        if (mounted) setError(message);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -576,9 +577,10 @@ function CardsPageInner() {
       if (endTrace) endTrace();
       setCards(data);
       setCollectionSummary(summary);
-    } catch (e: any) {
+    } catch (e) {
       captureError(e, { area: "binder-refresh" });
-      setError(e?.message || "Failed to load cards");
+      const message = e instanceof Error ? e.message : "Failed to load cards";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -632,7 +634,7 @@ function CardsPageInner() {
   // Sets don't carry a sport yet (no sport/league picker in the add-card
   // form), so the Sport tab is a single "Unknown" bucket until that catalog
   // path exists.
-  function resolveSport(_c: MyCard) {
+  function resolveSport() {
     return "Unknown";
   }
 
@@ -655,7 +657,7 @@ function CardsPageInner() {
 
   const afterSport = useMemo(() => {
     if (sportFilter === "ALL") return baseList;
-    return baseList.filter((c) => resolveSport(c) === sportFilter);
+    return baseList.filter(() => resolveSport() === sportFilter);
   }, [baseList, sportFilter]);
 
   // ✅ Data quality filter (driven by the ?needs= query param, e.g.
@@ -699,7 +701,8 @@ function CardsPageInner() {
     const map = new Map<string, { label: string; count: number }>();
 
     for (const c of baseList) {
-      const sport = resolveSport(c);
+      void c;
+      const sport = resolveSport();
       const key = normalize(sport);
       const prev = map.get(key);
       if (!prev) map.set(key, { label: sport, count: 1 });
@@ -1051,8 +1054,9 @@ function CardsPageInner() {
       setCollectionSummary(null);
       clearSelection();
       return true;
-    } catch (e: any) {
-      alert(`Bulk update failed: ${e?.message ?? "unknown error"}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "unknown error";
+      alert(`Bulk update failed: ${message}`);
       return false;
     } finally {
       setBulkBusy(false);
@@ -1133,8 +1137,9 @@ function CardsPageInner() {
       setCards((prev) => prev.filter((c) => !selectedIds.has(c.id)));
       setCollectionSummary(null);
       clearSelection();
-    } catch (e: any) {
-      alert(`Bulk delete failed: ${e?.message ?? "unknown error"}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "unknown error";
+      alert(`Bulk delete failed: ${message}`);
     } finally {
       setBulkBusy(false);
     }
@@ -1173,7 +1178,7 @@ function CardsPageInner() {
   // for this phase.
   const totals = useMemo(() => {
     const cardsInSport =
-      sportFilter === "ALL" ? cards : cards.filter((c) => resolveSport(c) === sportFilter);
+      sportFilter === "ALL" ? cards : cards.filter(() => resolveSport() === sportFilter);
 
     const totalCards = filtered.length;
 
@@ -1265,7 +1270,7 @@ function CardsPageInner() {
       };
     }
     const cardsInSport =
-      sportFilter === "ALL" ? cards : cards.filter((c) => resolveSport(c) === sportFilter);
+      sportFilter === "ALL" ? cards : cards.filter(() => resolveSport() === sportFilter);
     return {
       have: cardsInSport.filter((c) => (c.status ?? "HAVE") === "HAVE").length,
       wanted: cardsInSport.filter((c) => (c.status ?? "HAVE") === "WANT").length,
@@ -1311,8 +1316,9 @@ function CardsPageInner() {
       await deleteMyCard(deleteTarget.id);
       setCards((prev) => prev.filter((c) => c.id !== deleteTarget.id));
       setCollectionSummary(null);
-    } catch (e: any) {
-      alert(`Delete failed: ${e?.message ?? "unknown error"}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "unknown error";
+      alert(`Delete failed: ${message}`);
     } finally {
       setDeleteTarget(null);
     }
