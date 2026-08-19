@@ -8,6 +8,7 @@ import { listMyCards, type MyCard } from "@/lib/repositories/myCards";
 import { getNextActions, type NextAction } from "@/lib/repositories/nextActions";
 import { getCollectionHealthScore } from "@/lib/repositories/collectionHealth";
 import { getDefaultCollectionGoal } from "@/lib/repositories/collectionGoals";
+import { getCollectionInsights } from "@/lib/repositories/collectionInsights";
 import { Stat, MiniBadge } from "@/components/cards/BinderUi";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { StatCard } from "@/components/ui/StatCard";
@@ -81,116 +82,14 @@ export default function DashboardPage() {
   // the most-recently-added cards.
   const recentCards = useMemo(() => cards.slice(0, RECENT_ADDITIONS_LIMIT), [cards]);
 
-  const mostValuableCard = useMemo(() => {
-    const withValue = cards.filter(
-      (c): c is MyCard & { estimatedValue: number } =>
-        typeof c.estimatedValue === "number" && Number.isFinite(c.estimatedValue)
-    );
-    if (withValue.length === 0) return null;
-    return withValue.reduce((best, c) => {
-      if (c.estimatedValue > best.estimatedValue) return c;
-      if (c.estimatedValue < best.estimatedValue) return best;
-      // Tie on estimated value: prefer the newest created card.
-      return (c.createdAt ?? "") > (best.createdAt ?? "") ? c : best;
-    });
-  }, [cards]);
-
-  const biggestUnrealizedGain = useMemo(() => {
-    const withGain = cards
-      .filter((c) => c.status !== "SOLD")
-      .filter(
-        (c): c is MyCard & { estimatedValue: number; purchasePrice: number } =>
-          typeof c.estimatedValue === "number" &&
-          Number.isFinite(c.estimatedValue) &&
-          typeof c.purchasePrice === "number" &&
-          Number.isFinite(c.purchasePrice)
-      )
-      .map((c) => ({ card: c, gain: c.estimatedValue - c.purchasePrice }));
-    if (withGain.length === 0) return null;
-    return withGain.reduce((best, entry) => {
-      if (entry.gain > best.gain) return entry;
-      if (entry.gain < best.gain) return best;
-      // Tie on gain: prefer the newest created card.
-      return (entry.card.createdAt ?? "") > (best.card.createdAt ?? "") ? entry : best;
-    });
-  }, [cards]);
-
-  const mostCollectedPlayer = useMemo(() => {
-    type PlayerAgg = { id: number; name: string; slug: string; count: number; newestCreatedAt: string };
-    const byPlayerId = new Map<number, PlayerAgg>();
-
-    const qualifyingCards = cards.filter((c) => c.status !== "WANT" && c.status !== "SOLD");
-    for (const card of qualifyingCards) {
-      const seenOnThisCard = new Set<number>();
-      for (const player of card.players ?? []) {
-        if (seenOnThisCard.has(player.id)) continue;
-        seenOnThisCard.add(player.id);
-
-        const existing = byPlayerId.get(player.id);
-        const createdAt = card.createdAt ?? "";
-        if (!existing) {
-          byPlayerId.set(player.id, {
-            id: player.id,
-            name: player.name,
-            slug: player.slug,
-            count: 1,
-            newestCreatedAt: createdAt,
-          });
-        } else {
-          existing.count += 1;
-          if (createdAt > existing.newestCreatedAt) existing.newestCreatedAt = createdAt;
-        }
-      }
-    }
-
-    if (byPlayerId.size === 0) return null;
-    return Array.from(byPlayerId.values()).reduce((best, entry) => {
-      if (entry.count > best.count) return entry;
-      if (entry.count < best.count) return best;
-      // Tie on card count: prefer the player whose most recently added card is newest.
-      return entry.newestCreatedAt > best.newestCreatedAt ? entry : best;
-    });
-  }, [cards]);
-
-  const mostCollectedSet = useMemo(() => {
-    type SetAgg = {
-      key: number | string;
-      name: string;
-      slug?: string;
-      count: number;
-      newestCreatedAt: string;
-    };
-    const bySetKey = new Map<number | string, SetAgg>();
-
-    const qualifyingCards = cards.filter((c) => c.status !== "WANT" && c.status !== "SOLD");
-    for (const card of qualifyingCards) {
-      if (!card.setName) continue;
-      const key = card.setId ?? card.setName;
-      const createdAt = card.createdAt ?? "";
-
-      const existing = bySetKey.get(key);
-      if (!existing) {
-        bySetKey.set(key, {
-          key,
-          name: card.setName,
-          slug: card.setSlug,
-          count: 1,
-          newestCreatedAt: createdAt,
-        });
-      } else {
-        existing.count += 1;
-        if (createdAt > existing.newestCreatedAt) existing.newestCreatedAt = createdAt;
-      }
-    }
-
-    if (bySetKey.size === 0) return null;
-    return Array.from(bySetKey.values()).reduce((best, entry) => {
-      if (entry.count > best.count) return entry;
-      if (entry.count < best.count) return best;
-      // Tie on card count: prefer the set whose newest qualifying card is newest.
-      return entry.newestCreatedAt > best.newestCreatedAt ? entry : best;
-    });
-  }, [cards]);
+  // Phase 2D.1: highestValueCard/biggestUnrealizedGain/mostCollectedPlayer/
+  // mostCollectedSet used to be computed right here in four separate
+  // useMemo blocks; that logic (same filters, same tie-break rules, moved
+  // unchanged) now lives in the shared collectionInsights.ts repository so
+  // a future consumer (Player Hub, Binder) can reuse it instead of
+  // recomputing it. This is one pure, synchronous call over the same
+  // already-fetched `cards` array -- no new query, no N+1.
+  const insights = useMemo(() => getCollectionInsights(cards), [cards]);
 
   const growthTimeline = useMemo(() => {
     const now = new Date();
@@ -390,89 +289,121 @@ export default function DashboardPage() {
 
           <section className="space-y-2">
             <SectionHeader title="Collection Insights" />
-            {mostValuableCard ? (
+            {insights.value.highestValueCard ? (
               <Link
-                href={`/cards/${mostValuableCard.id}`}
+                href={`/cards/${insights.value.highestValueCard.id}`}
                 className="block rounded-xl border bg-white p-4 hover:bg-zinc-50"
               >
                 <div className="text-xs text-zinc-500">Most Valuable Card</div>
                 <div className="mt-1 font-medium text-zinc-900">
-                  {mostValuableCard.playerName}
+                  {insights.value.highestValueCard.playerName}
                 </div>
                 <div className="text-xs text-zinc-500">
                   {[
-                    mostValuableCard.year,
-                    mostValuableCard.setName,
-                    mostValuableCard.cardNumber ? `#${mostValuableCard.cardNumber}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" • ")}
-                </div>
-                <div className="mt-1 text-lg font-semibold text-zinc-900">
-                  {formatCurrency(mostValuableCard.estimatedValue)}
-                </div>
-              </Link>
-            ) : (
-              <div className="empty-state">No estimated values available yet.</div>
-            )}
-            {biggestUnrealizedGain ? (
-              <Link
-                href={`/cards/${biggestUnrealizedGain.card.id}`}
-                className="block rounded-xl border bg-white p-4 hover:bg-zinc-50"
-              >
-                <div className="text-xs text-zinc-500">Biggest Unrealized Gain</div>
-                <div className="mt-1 font-medium text-zinc-900">
-                  {biggestUnrealizedGain.card.playerName}
-                </div>
-                <div className="text-xs text-zinc-500">
-                  {[
-                    biggestUnrealizedGain.card.year,
-                    biggestUnrealizedGain.card.setName,
-                    biggestUnrealizedGain.card.cardNumber
-                      ? `#${biggestUnrealizedGain.card.cardNumber}`
+                    insights.value.highestValueCard.year,
+                    insights.value.highestValueCard.setName,
+                    insights.value.highestValueCard.cardNumber
+                      ? `#${insights.value.highestValueCard.cardNumber}`
                       : null,
                   ]
                     .filter(Boolean)
                     .join(" • ")}
                 </div>
                 <div className="mt-1 text-lg font-semibold text-zinc-900">
-                  {formatCurrency(biggestUnrealizedGain.gain, { accounting: true })}
+                  {formatCurrency(insights.value.highestValueCard.estimatedValue)}
+                </div>
+              </Link>
+            ) : (
+              <div className="empty-state">No estimated values available yet.</div>
+            )}
+            {insights.value.biggestUnrealizedGain ? (
+              <Link
+                href={`/cards/${insights.value.biggestUnrealizedGain.id}`}
+                className="block rounded-xl border bg-white p-4 hover:bg-zinc-50"
+              >
+                <div className="text-xs text-zinc-500">Biggest Unrealized Gain</div>
+                <div className="mt-1 font-medium text-zinc-900">
+                  {insights.value.biggestUnrealizedGain.playerName}
+                </div>
+                <div className="text-xs text-zinc-500">
+                  {[
+                    insights.value.biggestUnrealizedGain.year,
+                    insights.value.biggestUnrealizedGain.setName,
+                    insights.value.biggestUnrealizedGain.cardNumber
+                      ? `#${insights.value.biggestUnrealizedGain.cardNumber}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </div>
+                <div className="mt-1 text-lg font-semibold text-zinc-900">
+                  {formatCurrency(insights.value.biggestUnrealizedGain.gain, { accounting: true })}
                 </div>
               </Link>
             ) : (
               <div className="empty-state">No unrealized gains available yet.</div>
             )}
-            {mostCollectedPlayer ? (
+            {insights.players.mostCollectedPlayer ? (
               <div className="block rounded-xl border bg-white p-4">
                 <div className="text-xs text-zinc-500">Most Collected Player</div>
-                {mostCollectedPlayer.slug ? (
+                {insights.players.mostCollectedPlayer.slug ? (
                   <Link
-                    href={`/players/${mostCollectedPlayer.slug}`}
+                    href={`/players/${insights.players.mostCollectedPlayer.slug}`}
                     className="mt-1 block font-medium text-zinc-900 hover:underline"
                   >
-                    {mostCollectedPlayer.name}
+                    {insights.players.mostCollectedPlayer.name}
                   </Link>
                 ) : (
-                  <div className="mt-1 font-medium text-zinc-900">{mostCollectedPlayer.name}</div>
+                  <div className="mt-1 font-medium text-zinc-900">
+                    {insights.players.mostCollectedPlayer.name}
+                  </div>
                 )}
                 <div className="mt-1 text-lg font-semibold text-zinc-900">
-                  {mostCollectedPlayer.count} {mostCollectedPlayer.count === 1 ? "card" : "cards"}
+                  {insights.players.mostCollectedPlayer.cardCount}{" "}
+                  {insights.players.mostCollectedPlayer.cardCount === 1 ? "card" : "cards"}
                 </div>
               </div>
             ) : (
               <div className="empty-state">No player data available yet.</div>
             )}
-            {mostCollectedSet ? (
+            {insights.sets.mostCollectedSet ? (
               <div className="block rounded-xl border bg-white p-4">
                 <div className="text-xs text-zinc-500">Most Collected Set</div>
-                <div className="mt-1 font-medium text-zinc-900">{mostCollectedSet.name}</div>
+                <div className="mt-1 font-medium text-zinc-900">
+                  {insights.sets.mostCollectedSet.name}
+                </div>
                 <div className="mt-1 text-lg font-semibold text-zinc-900">
-                  {mostCollectedSet.count} {mostCollectedSet.count === 1 ? "card" : "cards"}
+                  {insights.sets.mostCollectedSet.cardCount}{" "}
+                  {insights.sets.mostCollectedSet.cardCount === 1 ? "card" : "cards"}
                 </div>
               </div>
             ) : (
               <div className="empty-state">No set data available yet.</div>
             )}
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Stat label="Unique Players" value={`${insights.players.uniquePlayerCount}`} />
+              <Stat
+                label="Oldest Card"
+                value={
+                  insights.timeline.oldestCard
+                    ? `${insights.timeline.oldestCard.playerName} (${insights.timeline.oldestCard.year})`
+                    : "—"
+                }
+              />
+              <Stat
+                label="Newest Card"
+                value={
+                  insights.timeline.newestCard
+                    ? `${insights.timeline.newestCard.playerName} (${insights.timeline.newestCard.year})`
+                    : "—"
+                }
+              />
+              <Stat
+                label="Average Card Age"
+                value={totalCards > 0 ? formatDays(summary.age.avgAgeDays) : "—"}
+              />
+            </div>
           </section>
 
           <section className="space-y-2">
