@@ -55,10 +55,12 @@ export function CatalogSearch() {
       </div>
 
       <input
+        type="search"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         className="w-full rounded-md border bg-background px-3 py-2 text-base sm:text-sm"
         placeholder="Search catalog cards..."
+        aria-label="Search catalog cards"
       />
 
       <div className="mt-6 space-y-3">

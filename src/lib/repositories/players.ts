@@ -83,20 +83,34 @@ export async function listPlayers(filters?: PlayerFilters): Promise<PlayerWithCo
   return ((data ?? []) as unknown as PlayerWithContextRow[]).map(toPlayerWithContext);
 }
 
+// Phase 2C.1: tokenized instead of one whole-phrase ilike. A single
+// `full_name.ilike.'%Pat Mahomes%'` never matches "Patrick Mahomes" -- the
+// literal phrase "Pat Mahomes" isn't a substring of it -- even though every
+// word the user typed genuinely appears in the name. Splitting into
+// whitespace tokens and requiring EACH token to independently match
+// (full_name OR search_text) fixes that real, verified gap (confirmed
+// against live data: "Al Page" now finds "Alan Page", which the old
+// single-phrase match missed entirely) without introducing fuzzy matching
+// -- every token is still a plain, exact ilike substring check. Chaining
+// multiple .or() calls on the same query ANDs them together (each is a
+// separate WHERE condition), verified against the real project.
 export async function searchPlayers(
   queryText: string,
   filters?: PlayerFilters,
 ): Promise<PlayerWithContext[]> {
-  const trimmed = queryText.trim();
+  const tokens = queryText.trim().split(/\s+/).filter(Boolean);
 
-  if (!trimmed) return [];
+  if (tokens.length === 0) return [];
 
   let query = supabase
     .from("players")
     .select(filters?.sportId ? CONTEXT_SELECT_SPORT_FILTERED : CONTEXT_SELECT)
-    .or(`full_name.ilike.%${trimmed}%,search_text.ilike.%${trimmed}%`)
     .order("full_name", { ascending: true })
     .limit(25);
+
+  for (const token of tokens) {
+    query = query.or(`full_name.ilike.%${token}%,search_text.ilike.%${token}%`);
+  }
 
   if (filters?.teamId) query = query.eq("team_id", filters.teamId);
   if (filters?.leagueId) query = query.eq("league_id", filters.leagueId);

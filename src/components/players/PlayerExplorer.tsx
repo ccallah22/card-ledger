@@ -110,10 +110,12 @@ export function PlayerExplorer() {
       </div>
 
       <input
+        type="search"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         className="w-full rounded-md border bg-background px-3 py-2 text-base sm:text-sm"
         placeholder="Search by player name..."
+        aria-label="Search players by name"
       />
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -163,7 +165,7 @@ export function PlayerExplorer() {
         Current search: {search || "Nothing typed yet"}
       </p>
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-6">
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading players…</p>
         ) : error ? (
@@ -171,7 +173,13 @@ export function PlayerExplorer() {
         ) : players.length === 0 ? (
           <p className="text-sm text-muted-foreground">No players found.</p>
         ) : (
-          players.map((player) => <PlayerCard key={player.id} player={player} />)
+          <ul className="space-y-3">
+            {players.map((player) => (
+              <li key={player.id}>
+                <PlayerCard player={player} />
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
