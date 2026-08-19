@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const FOOTER_SECTIONS = [
@@ -37,7 +38,13 @@ export default function MarketingShell({
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[var(--brand-primary)] ring-1 ring-black/10">
-              <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
+              <Image
+                src="/icon.png"
+                alt="TheBinder"
+                width={48}
+                height={48}
+                className="h-full w-full object-cover"
+              />
             </div>
             <span className="text-xl font-semibold tracking-tight text-zinc-900 font-display">
               TheBinder
@@ -76,7 +83,13 @@ export default function MarketingShell({
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-[var(--brand-primary)] ring-1 ring-black/10">
-                  <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
+                  <Image
+                    src="/icon.png"
+                    alt="TheBinder"
+                    width={36}
+                    height={36}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
                 <div className="font-display text-base font-semibold text-zinc-900">TheBinder</div>
               </div>

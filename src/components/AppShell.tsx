@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
@@ -764,7 +765,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="hidden sm:block border-b bg-[var(--brand-primary)] text-white">
             <div className="flex items-center justify-center px-4 py-2 gap-3">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-primary)] text-white overflow-hidden ring-1 ring-white/15">
-                <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
+                <Image
+                  src="/icon.png"
+                  alt="TheBinder"
+                  width={56}
+                  height={56}
+                  className="h-full w-full object-cover"
+                />
               </div>
               <div className="text-xl font-semibold tracking-tight font-display">TheBinder</div>
             </div>
@@ -776,7 +783,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-between px-4 py-2 gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand-primary)] text-white overflow-hidden ring-1 ring-white/15">
-                  <img src="/icon.png" alt="TheBinder" className="h-full w-full object-cover" />
+                  <Image
+                    src="/icon.png"
+                    alt="TheBinder"
+                    width={32}
+                    height={32}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
                 <div className="text-sm font-semibold tracking-tight font-display">TheBinder</div>
               </div>

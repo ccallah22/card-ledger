@@ -72,6 +72,10 @@ export function PlayerOwnedCardTile({
           </span>
         ) : null}
         {imageUrl ? (
+          // imageUrl is a signed Supabase Storage URL resolved by the
+          // caller (see PlayerOwnedCardTileProps.imageUrl above);
+          // next/image is intentionally not used here.
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt={

@@ -144,6 +144,10 @@ export function CardTile({
           <div className="flex flex-1 min-h-0 flex-col gap-2 rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2 sm:aspect-[2.5/3.5] overflow-hidden">
             <div className="flex-1 min-h-0 w-full rounded-md border border-zinc-200 bg-white/70 flex items-center justify-center overflow-hidden sm:aspect-[2.5/3.5]">
               {displayImage ? (
+                // displayImage is either imageUrl (a signed Supabase Storage
+                // URL) or a community-shared image's data URL; next/image is
+                // intentionally not used here.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={displayImage}
                   alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}

@@ -289,6 +289,10 @@ export default function ForSalePage() {
                         <Link href={`/cards/${c.id}`} className="block">
                           <div className="h-[110px] w-[78px] overflow-hidden rounded-md border bg-zinc-50 flex items-center justify-center">
                             {imageUrl ? (
+                              // imageUrl is a legacy localStorage data URL
+                              // (loadThumbnailForCard/loadImageForCard);
+                              // next/image is intentionally not used here.
+                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={imageUrl}
                                 alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}

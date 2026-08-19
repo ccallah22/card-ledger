@@ -923,6 +923,10 @@ export default function EditCardPage({
               </div>
               <div className="mt-2 h-44 w-full rounded-md border bg-white flex items-center justify-center overflow-hidden">
                 {imageUrl ? (
+                  // imageUrl is either a signed Supabase Storage URL resolved
+                  // from card_media or a local data URL for a not-yet-saved
+                  // pick; next/image is intentionally not used here.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={imageUrl} alt="Card" className="h-full w-full object-cover" />
                 ) : (
                   <div className="text-xs text-zinc-400">No image</div>
@@ -1029,6 +1033,11 @@ export default function EditCardPage({
               </div>
               <div className="mt-2 h-44 w-full rounded-md border bg-white flex items-center justify-center overflow-hidden">
                 {backImageUrl ? (
+                  // backImageUrl is either a signed Supabase Storage URL
+                  // resolved from card_media or a local data URL for a
+                  // not-yet-saved pick; next/image is intentionally not used
+                  // here.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={backImageUrl} alt="Card back" className="h-full w-full object-cover" />
                 ) : (
                   <div className="text-xs text-zinc-400">No image</div>

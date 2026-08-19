@@ -65,6 +65,11 @@ export default function ModerationPage() {
                 <div className="flex gap-4">
                   <div className="h-28 w-20 rounded-md border bg-zinc-50 overflow-hidden">
                     {item.imageUrl ? (
+                      // item.imageUrl is whatever community-shared image URL
+                      // was on screen when the report was filed (signed
+                      // Supabase URL or data URL); next/image is
+                      // intentionally not used here.
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={item.imageUrl} alt="Reported" className="h-full w-full object-contain" />
                     ) : null}
                   </div>

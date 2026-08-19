@@ -376,6 +376,10 @@ export function CardImageCropModal({
                 data-crop-viewport
                 className="relative h-[432px] w-[304px] overflow-hidden rounded-md border border-zinc-200 bg-white/70"
               >
+                {/* cropData.dataUrl is an in-memory base64 data URL being
+                    live-transformed (pan/zoom/rotate) via inline style below;
+                    next/image is intentionally not used here. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={cropData.dataUrl}
                   alt="Crop preview"

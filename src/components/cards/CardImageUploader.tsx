@@ -65,6 +65,10 @@ export function CardImageUploader({
             const display = imageUrl || (!hideCommunity ? sharedImage?.dataUrl : "");
             if (display) {
               return (
+                // display is either imageUrl (a signed Supabase Storage URL
+                // or local data URL) or a community-shared image's data URL;
+                // next/image is intentionally not used here.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={display}
                   alt="Card"
