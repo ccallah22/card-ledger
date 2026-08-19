@@ -343,6 +343,26 @@ export default function DashboardPage() {
             ) : (
               <div className="empty-state">No unrealized gains available yet.</div>
             )}
+            {insights.value.highestValuePlayer ? (
+              <Link
+                href={`/players/${insights.value.highestValuePlayer.slug}`}
+                className="block rounded-xl border bg-white p-4 hover:bg-zinc-50"
+              >
+                <div className="text-xs text-zinc-500">Highest Value Player</div>
+                <div className="mt-1 font-medium text-zinc-900">
+                  {insights.value.highestValuePlayer.name}
+                </div>
+                <div className="text-xs text-zinc-500">
+                  {insights.value.highestValuePlayer.cardCount}{" "}
+                  {insights.value.highestValuePlayer.cardCount === 1 ? "card" : "cards"}
+                </div>
+                <div className="mt-1 text-lg font-semibold text-zinc-900">
+                  {formatCurrency(insights.value.highestValuePlayer.totalEstimatedValue)}
+                </div>
+              </Link>
+            ) : (
+              <div className="empty-state">No player value data available yet.</div>
+            )}
             {insights.players.mostCollectedPlayer ? (
               <div className="block rounded-xl border bg-white p-4">
                 <div className="text-xs text-zinc-500">Most Collected Player</div>
@@ -402,6 +422,34 @@ export default function DashboardPage() {
               <Stat
                 label="Average Card Age"
                 value={totalCards > 0 ? formatDays(summary.age.avgAgeDays) : "—"}
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Stat label="Unique Sets" value={`${insights.sets.uniqueSetCount}`} />
+              <Stat
+                label="Most Represented Year"
+                value={
+                  insights.years.mostRepresentedYear
+                    ? `${insights.years.mostRepresentedYear.year} (${insights.years.mostRepresentedYear.cardCount})`
+                    : "—"
+                }
+              />
+              <Stat
+                label="Graded"
+                value={
+                  insights.grading.gradedPercent !== null
+                    ? `${insights.grading.gradedPercent}% (${insights.grading.gradedCount} of ${insights.grading.gradedCount + insights.grading.rawCount})`
+                    : "—"
+                }
+              />
+              <Stat
+                label="Value Coverage"
+                value={
+                  insights.value.coverage.coveragePercent !== null
+                    ? `${insights.value.coverage.coveragePercent}% (${insights.value.coverage.pricedCardCount} of ${insights.value.coverage.pricedCardCount + insights.value.coverage.unpricedCardCount})`
+                    : "—"
+                }
               />
             </div>
           </section>
