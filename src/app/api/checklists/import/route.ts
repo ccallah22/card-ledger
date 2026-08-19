@@ -8,6 +8,25 @@ type Entry = {
   section: string;
 };
 
+// Smallest local shape for the parsed request body -- fields are `unknown`
+// (not the concrete types they're eventually coerced to) since every field
+// is already validated/coerced at its use site (String(), Boolean(),
+// Array.isArray, typeof checks below); this type only replaces `any` for
+// property-access safety, it is not a substitute for that runtime
+// validation.
+type ImportRequestBody = {
+  setKey?: unknown;
+  replace?: unknown;
+  entries?: unknown;
+  set?: {
+    year?: unknown;
+    name?: unknown;
+    brand?: unknown;
+    sport?: unknown;
+  } | null;
+  sectionParallels?: unknown;
+};
+
 const TABLE = "checklist_entries";
 const PARALLELS_TABLE = "checklist_section_parallels";
 const SETS_TABLE = "sets";
@@ -35,7 +54,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "Not authorized" }, { status: 403 });
   }
 
-  let body: any = null;
+  let body: ImportRequestBody | null = null;
   try {
     body = await req.json();
   } catch {

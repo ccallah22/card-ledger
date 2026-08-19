@@ -1,26 +1,13 @@
 import { NextResponse } from "next/server";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
-
-type ReportStatus = "active" | "blocked" | "approved";
-
-type ReportItem = {
-  fingerprint: string;
-  imageUrl: string;
-  reports: number;
-  status: ReportStatus;
-  reasons: Record<string, number>;
-  updatedAt: string;
-};
-
-const store: Map<string, ReportItem> =
-  (globalThis as any).__imageReportStore ?? new Map();
-(globalThis as any).__imageReportStore = store;
+import { getImageReportStore, type ReportItem } from "@/lib/imageReportStore";
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function getOrCreate(fingerprint: string, imageUrl: string) {
+function getOrCreate(fingerprint: string, imageUrl: string): ReportItem {
+  const store = getImageReportStore();
   const existing = store.get(fingerprint);
   if (existing) return existing;
   const item: ReportItem = {
@@ -36,6 +23,7 @@ function getOrCreate(fingerprint: string, imageUrl: string) {
 }
 
 export async function GET() {
+  const store = getImageReportStore();
   const items = Array.from(store.values()).sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt)
   );
@@ -55,6 +43,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Missing imageUrl." }, { status: 400 });
     }
 
+    const store = getImageReportStore();
     const item = getOrCreate(fingerprint, imageUrl);
     item.reports += 1;
     item.updatedAt = nowIso();
@@ -79,6 +68,7 @@ export async function PATCH(req: Request) {
     if (!fingerprint || typeof fingerprint !== "string") {
       return NextResponse.json({ message: "Missing fingerprint." }, { status: 400 });
     }
+    const store = getImageReportStore();
     const item = store.get(fingerprint);
     if (!item) return NextResponse.json({ message: "Not found." }, { status: 404 });
 

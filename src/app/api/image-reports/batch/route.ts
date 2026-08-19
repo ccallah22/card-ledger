@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
+import { getImageReportStore } from "@/lib/imageReportStore";
 
-type ReportItem = {
+type BatchReportSummary = {
   fingerprint: string;
   reports: number;
   status: string;
 };
-
-const store: Map<string, any> = (globalThis as any).__imageReportStore ?? new Map();
-(globalThis as any).__imageReportStore = store;
 
 export async function POST(req: Request) {
   try {
@@ -16,7 +14,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Missing fingerprints." }, { status: 400 });
     }
 
-    const result: Record<string, ReportItem> = {};
+    const store = getImageReportStore();
+    const result: Record<string, BatchReportSummary> = {};
     for (const fp of fingerprints) {
       const item = store.get(fp);
       if (item) {

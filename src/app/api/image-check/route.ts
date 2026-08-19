@@ -19,11 +19,30 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function extractText(payload: any) {
+// Smallest local shape covering only the fields this route reads from an
+// OpenAI Responses-API result -- not a model of the full response schema.
+// Leaves are `unknown` and every access below stays behind the same
+// typeof/Array.isArray runtime guards the code already had; this type only
+// replaces `any` for property-access safety.
+type ResponsesApiContentItem = {
+  type?: unknown;
+  text?: unknown;
+};
+
+type ResponsesApiOutputItem = {
+  content?: unknown;
+};
+
+type ResponsesApiPayload = {
+  output_text?: unknown;
+  output?: unknown;
+};
+
+function extractText(payload: ResponsesApiPayload | null | undefined) {
   if (typeof payload?.output_text === "string") return payload.output_text;
-  const output = Array.isArray(payload?.output) ? payload.output : [];
+  const output = Array.isArray(payload?.output) ? (payload.output as ResponsesApiOutputItem[]) : [];
   for (const item of output) {
-    const content = Array.isArray(item?.content) ? item.content : [];
+    const content = Array.isArray(item?.content) ? (item.content as ResponsesApiContentItem[]) : [];
     for (const c of content) {
       if (c?.type === "output_text" && typeof c?.text === "string") return c.text;
     }
