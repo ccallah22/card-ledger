@@ -62,15 +62,26 @@ export function useChecklistLookup({
     Record<string, string[]>
   >({});
 
+  // Render-time reset (React's documented "adjusting state when a prop
+  // changes" pattern) instead of a synchronous setState-in-effect: the
+  // moment checklistKey changes, the previous checklist's entries/section
+  // parallels disappear in the same render pass, before paint. `checklistLoading`
+  // is also decided here (true only when there's a new key to actually
+  // fetch) so the effect below never needs a synchronous setState of its
+  // own -- only the promise callbacks (already exempt from this lint rule)
+  // touch state from inside it.
+  const [prevChecklistKey, setPrevChecklistKey] = useState(checklistKey);
+  if (checklistKey !== prevChecklistKey) {
+    setPrevChecklistKey(checklistKey);
+    setChecklistEntries([]);
+    setChecklistSectionParallels({});
+    setChecklistLoading(!!checklistKey);
+  }
+
   useEffect(() => {
-    if (!checklistKey) {
-      setChecklistEntries([]);
-      setChecklistSectionParallels({});
-      return;
-    }
+    if (!checklistKey) return;
 
     let active = true;
-    setChecklistLoading(true);
     Promise.all([
       checklistDb.dbLoadChecklistEntries(checklistKey),
       checklistDb.dbLoadChecklistSectionParallels(checklistKey),

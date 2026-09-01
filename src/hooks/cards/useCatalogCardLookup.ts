@@ -15,17 +15,28 @@ export function useCatalogCardLookup(checklistSectionId: number | null) {
   const [query, setQuery] = useState("");
   const [selectedCard, setSelectedCard] = useState<CardSummary | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  // Render-time reset (React's documented "adjusting state when a prop
+  // changes" pattern) instead of a synchronous setState-in-effect: the
+  // moment checklistSectionId changes, the previous section's selection,
+  // query, and stale cards disappear in the same render pass, before
+  // paint -- no flash of a stale/wrong-section list, and no separate effect
+  // render just to reset. `loading` is also decided here (true only when
+  // there's a new section id to actually fetch) so the effect below never
+  // needs a synchronous setState of its own -- only the promise callbacks
+  // (already exempt from this lint rule) touch state from inside it.
+  const [prevChecklistSectionId, setPrevChecklistSectionId] = useState(checklistSectionId);
+  if (checklistSectionId !== prevChecklistSectionId) {
+    setPrevChecklistSectionId(checklistSectionId);
     setSelectedCard(null);
     setQuery("");
+    setCards([]);
+    setLoading(!!checklistSectionId);
+  }
 
-    if (!checklistSectionId) {
-      setCards([]);
-      return;
-    }
+  useEffect(() => {
+    if (!checklistSectionId) return;
 
-    setLoading(true);
+    let active = true;
     listCardsForChecklistSection(checklistSectionId)
       .then((rows) => {
         if (active) setCards(rows);

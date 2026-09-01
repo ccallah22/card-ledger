@@ -48,15 +48,23 @@ export function useSetLookup({
     return () => clearTimeout(t);
   }, [setQuery]);
 
+  // Render-time reset (React's documented "adjusting state when a prop
+  // changes" pattern) instead of a synchronous setState-in-effect: the
+  // moment the debounced query changes, the previous query's stale
+  // suggestions disappear in the same render pass, before paint. The
+  // effect below is then only responsible for the asynchronous fetch and
+  // its cleanup.
+  const [prevDebouncedSetQuery, setPrevDebouncedSetQuery] = useState(debouncedSetQuery);
+  if (debouncedSetQuery !== prevDebouncedSetQuery) {
+    setPrevDebouncedSetQuery(debouncedSetQuery);
+    setSetEntries([]);
+  }
+
   useEffect(() => {
-    let active = true;
     const trimmed = debouncedSetQuery.trim();
+    if (!trimmed) return;
 
-    if (!trimmed) {
-      setSetEntries([]);
-      return;
-    }
-
+    let active = true;
     searchSets(trimmed)
       .then((sets) => {
         if (!active) return;

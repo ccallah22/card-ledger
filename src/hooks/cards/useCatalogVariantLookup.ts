@@ -16,17 +16,28 @@ export function useCatalogVariantLookup(cardId: number | null) {
   const [query, setQuery] = useState("");
   const [selectedVariant, setSelectedVariant] = useState<CardVariantSummary | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  // Render-time reset (React's documented "adjusting state when a prop
+  // changes" pattern) instead of a synchronous setState-in-effect: the
+  // moment cardId changes, the previous card's selected variant, query, and
+  // stale variants disappear in the same render pass, before paint -- no
+  // flash of a stale/wrong-card list, and no separate effect render just to
+  // reset. `loading` is also decided here (true only when there's a new
+  // card id to actually fetch) so the effect below never needs a
+  // synchronous setState of its own -- only the promise callbacks (already
+  // exempt from this lint rule) touch state from inside it.
+  const [prevCardId, setPrevCardId] = useState(cardId);
+  if (cardId !== prevCardId) {
+    setPrevCardId(cardId);
     setSelectedVariant(null);
     setQuery("");
+    setVariants([]);
+    setLoading(!!cardId);
+  }
 
-    if (!cardId) {
-      setVariants([]);
-      return;
-    }
+  useEffect(() => {
+    if (!cardId) return;
 
-    setLoading(true);
+    let active = true;
     listCardVariantsForCard(cardId)
       .then((rows) => {
         if (active) setVariants(rows);

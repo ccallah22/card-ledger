@@ -18,17 +18,28 @@ export function useChecklistSectionLookup(setId: number | null) {
   const [query, setQuery] = useState("");
   const [selectedSection, setSelectedSection] = useState<ChecklistSectionRow | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  // Render-time reset (React's documented "adjusting state when a prop
+  // changes" pattern) instead of a synchronous setState-in-effect: the
+  // moment setId changes, the previous set's selected section, query, and
+  // stale sections disappear in the same render pass, before paint -- no
+  // flash of a stale/wrong-set list, and no separate effect render just to
+  // reset. `loading` is also decided here (true only when there's a new set
+  // id to actually fetch) so the effect below never needs a synchronous
+  // setState of its own -- only the promise callbacks (already exempt from
+  // this lint rule) touch state from inside it.
+  const [prevSetId, setPrevSetId] = useState(setId);
+  if (setId !== prevSetId) {
+    setPrevSetId(setId);
     setSelectedSection(null);
     setQuery("");
+    setSections([]);
+    setLoading(!!setId);
+  }
 
-    if (!setId) {
-      setSections([]);
-      return;
-    }
+  useEffect(() => {
+    if (!setId) return;
 
-    setLoading(true);
+    let active = true;
     listChecklistSections(setId)
       .then((rows) => {
         if (active) setSections(rows);
