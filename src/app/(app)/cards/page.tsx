@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SummaryChip } from "@/components/ui/SummaryChip";
 import { BinderStats } from "@/components/cards/BinderStats";
@@ -397,10 +397,15 @@ function CardsPageInner() {
     void loadCardsFromDb();
   }
 
-  function exportCsv() {
+  // Memoized so its identity only changes when `cards` does -- lets the
+  // event-listener effect below list `exportCsv` as a dependency (closing
+  // the stale-closure gap exhaustive-deps was flagging) without
+  // re-registering the listener on every render, same frequency as the
+  // previous `[cards]`-only dependency array.
+  const exportCsv = useCallback(() => {
     const csv = cardsToCsv(cards);
     downloadCsv(`thebinder-${new Date().toISOString().slice(0, 10)}.csv`, csv);
-  }
+  }, [cards]);
 
   useEffect(() => {
     function onExport() {
@@ -408,7 +413,7 @@ function CardsPageInner() {
     }
     window.addEventListener("cards:export", onExport as EventListener);
     return () => window.removeEventListener("cards:export", onExport as EventListener);
-  }, [cards]);
+  }, [exportCsv]);
 
   function clearCollectorFilters() {
     setDupOnly(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export function Field({
   label,
@@ -19,21 +19,32 @@ export function Field({
   const inputClass =
     "mt-1 w-full min-w-0 max-w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400";
 
-  const [dateDisplay, setDateDisplay] = useState("");
+  function formatDateDisplay(v: string) {
+    if (!v) return "";
+    const parts = v.split("-");
+    if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`;
+    return v;
+  }
 
-  useEffect(() => {
-    if (!isDate) return;
-    if (!value) {
-      setDateDisplay("");
-      return;
-    }
-    const parts = value.split("-");
-    if (parts.length === 3) {
-      setDateDisplay(`${parts[1]}/${parts[2]}/${parts[0]}`);
-      return;
-    }
-    setDateDisplay(value);
-  }, [isDate, value]);
+  const [dateDisplay, setDateDisplay] = useState(() => (isDate ? formatDateDisplay(value) : ""));
+
+  // Render-time reset (React's documented "adjusting state when a prop
+  // changes" pattern) instead of a synchronous setState-in-effect:
+  // dateDisplay is a local typing buffer (it can legitimately diverge from
+  // `value` mid-keystroke, e.g. "12/2" before the year is finished, via the
+  // input's own onChange below), so it can't be purely derived at render
+  // time -- but it must still resync from `value`/`isDate` whenever either
+  // changes for a reason OTHER than this component's own onChange (e.g. the
+  // parent resets the field or swaps which record is being edited). Mirrors
+  // the original effect's exact dependency set ([isDate, value]) and its
+  // "leave dateDisplay untouched while !isDate" behavior.
+  const [prevIsDate, setPrevIsDate] = useState(isDate);
+  const [prevValue, setPrevValue] = useState(value);
+  if (isDate !== prevIsDate || value !== prevValue) {
+    setPrevIsDate(isDate);
+    setPrevValue(value);
+    if (isDate) setDateDisplay(formatDateDisplay(value));
+  }
 
   function parseDateInput(input: string) {
     const trimmed = input.trim();

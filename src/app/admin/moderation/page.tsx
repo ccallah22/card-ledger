@@ -16,9 +16,11 @@ export default function ModerationPage() {
   const [items, setItems] = useState<ReportItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  function refresh() {
-    setLoading(true);
-    fetch("/api/image-reports")
+  // Returns the in-flight fetch so callers can await it if needed; only
+  // sets state from promise callbacks (.then()/.finally()), never
+  // synchronously in a caller's effect body.
+  function loadItems() {
+    return fetch("/api/image-reports")
       .then((r) => r.json())
       .then((data) => {
         setItems(Array.isArray(data.items) ? data.items : []);
@@ -26,8 +28,12 @@ export default function ModerationPage() {
       .finally(() => setLoading(false));
   }
 
+  // Mount-time fetch: `loading` already starts true (see useState(true)
+  // above), so this effect never needs its own synchronous setState --
+  // loadItems()'s own .finally() flips it back to false once the fetch
+  // settles.
   useEffect(() => {
-    refresh();
+    loadItems();
   }, []);
 
   async function act(fingerprint: string, action: "approve" | "block" | "clear") {
@@ -36,7 +42,11 @@ export default function ModerationPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fingerprint, action }),
     });
-    refresh();
+    // Called from a user-triggered event handler, not an effect body, so
+    // setting loading synchronously here to show the refresh in progress
+    // isn't subject to the same-render-effect rule.
+    setLoading(true);
+    loadItems();
   }
 
   return (

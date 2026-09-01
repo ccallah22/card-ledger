@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -14,12 +14,16 @@ export default function LoginClient() {
 
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
   const [error, setError] = useState<string>("");
-  const [info, setInfo] = useState<string>("");
+  // Seeded once from signedOut at mount (every real navigation to this page
+  // -- window.location.assign/router.replace to "/login?signed_out=1" from
+  // AppShell/AccountClient -- always mounts a fresh LoginClient instance
+  // with the query param already present, so an effect re-syncing this on
+  // signedOut changes was never actually needed). onLogin freely
+  // overwrites info afterwards (cleared on submit, or set to the
+  // account-created message), which a derived-from-signedOut value
+  // couldn't support.
+  const [info, setInfo] = useState<string>(() => (signedOut ? "You’ve been signed out." : ""));
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-
-  useEffect(() => {
-    if (signedOut) setInfo("You’ve been signed out.");
-  }, [signedOut]);
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault(); // prevents page reload
