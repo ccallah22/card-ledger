@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPlayerBySlug, type PlayerWithContext } from "@/lib/repositories/players";
 import { listMyCardsForPlayer, type MyCard } from "@/lib/repositories/myCards";
@@ -512,17 +513,27 @@ export default function PlayerDetailPage({
           </div>
         ) : (
           <>
-            <ul className="mt-2 divide-y divide-dashed divide-zinc-200 rounded-xl border border-dashed border-zinc-200 bg-zinc-50">
+            <ul className="mt-2 divide-y divide-dashed divide-zinc-200 overflow-hidden rounded-xl border border-dashed border-zinc-200 bg-zinc-50">
               {overview.missingCards.map((card) => (
-                <li key={card.cardId} className="px-4 py-3 text-sm text-zinc-600">
-                  {[
-                    card.year,
-                    card.setName,
-                    card.cardNumber ? `#${card.cardNumber}` : null,
-                    card.title,
-                  ]
-                    .filter(Boolean)
-                    .join(" • ")}
+                <li key={card.cardId}>
+                  {/* Missing cards are catalog entries, never owned copies --
+                      this links to the shared /catalog/cards/[cardId] page,
+                      never /cards/[id] (which expects a user_cards UUID). No
+                      ownership is implied and nothing here creates a
+                      user_card. */}
+                  <Link
+                    href={`/catalog/cards/${card.cardId}`}
+                    className="block px-4 py-3 text-sm text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)] focus-visible:ring-offset-2"
+                  >
+                    {[
+                      card.year,
+                      card.setName,
+                      card.cardNumber ? `#${card.cardNumber}` : null,
+                      card.title,
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </Link>
                 </li>
               ))}
             </ul>
