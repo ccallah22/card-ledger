@@ -1184,20 +1184,40 @@ function NewCardPageInner() {
     setCandidateAutoSelected(true);
   }, [isWishlistCard, selectedCandidate, resolvedCandidateCycleKey, searchCycleKey, confidenceAssessments]);
 
+  // frontImage/backImage are fresh objects returned by useCardImageSlot on
+  // every render, so depending on them directly would rerun this effect on
+  // every render (not just when isWishlistCard changes). Their individual
+  // setter functions are ordinary useState setters, though, which React
+  // guarantees keep a stable identity across renders of this component --
+  // destructuring just the setters used here lets the dependency array be
+  // exhaustive without changing when the effect actually fires.
+  const { setImageUrl: setFrontImageUrl, setImageOwnerConfirm: setFrontImageOwnerConfirm, setImageShare: setFrontImageShare, setCardPhotoConfirm: setFrontCardPhotoConfirm } = frontImage;
+  const { setImageUrl: setBackImageUrl, setImageOwnerConfirm: setBackImageOwnerConfirm, setImageShare: setBackImageShare, setCardPhotoConfirm: setBackCardPhotoConfirm } = backImage;
+
   useEffect(() => {
     if (!isWishlistCard) return;
     setLocation("");
     setPurchasePrice("");
     setPurchaseDate("");
-    frontImage.setImageUrl(null);
-    frontImage.setImageOwnerConfirm(false);
-    frontImage.setImageShare(false);
-    frontImage.setCardPhotoConfirm(false);
-    backImage.setImageUrl(null);
-    backImage.setImageOwnerConfirm(false);
-    backImage.setImageShare(false);
-    backImage.setCardPhotoConfirm(false);
-  }, [isWishlistCard]);
+    setFrontImageUrl(null);
+    setFrontImageOwnerConfirm(false);
+    setFrontImageShare(false);
+    setFrontCardPhotoConfirm(false);
+    setBackImageUrl(null);
+    setBackImageOwnerConfirm(false);
+    setBackImageShare(false);
+    setBackCardPhotoConfirm(false);
+  }, [
+    isWishlistCard,
+    setFrontImageUrl,
+    setFrontImageOwnerConfirm,
+    setFrontImageShare,
+    setFrontCardPhotoConfirm,
+    setBackImageUrl,
+    setBackImageOwnerConfirm,
+    setBackImageShare,
+    setBackCardPhotoConfirm,
+  ]);
 
   // Vision Engine V2, Phase 6A correction: true once a card has been
   // created for this submission but some media or OCR work is still

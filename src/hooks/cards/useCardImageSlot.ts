@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { processImageFile, renderCroppedImage } from "@/lib/image";
 import { computeCoverScale, clampOffsetForRotation } from "@/lib/cropGeometry";
 
@@ -57,7 +57,16 @@ export function useCardImageSlot(side: CardImageSlotSide) {
   const [cropZoom, setCropZoom] = useState(1);
   const [cropRotationBase, setCropRotationBase] = useState(0);
   const [cropRotationFine, setCropRotationFine] = useState(0);
-  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  // Raw pan position from the last explicit drag/pinch/reset. Not
+  // necessarily legal for the CURRENT zoom/rotation: every other place that
+  // moves the crop (drag, pinch, applyCropRotation, handleImageFile's
+  // reset) already computes and stores an in-bounds value, but the plain
+  // zoom slider in CardImageCropModal.tsx calls setCropZoom directly with
+  // no accompanying offset re-clamp -- rawCropOffset can briefly go stale
+  // right after that one path. The publicly exposed `cropOffset` below is
+  // always the clamped projection of this value, recomputed live (see its
+  // comment) instead of resynchronized via an effect.
+  const [rawCropOffset, setRawCropOffset] = useState({ x: 0, y: 0 });
   const cropDragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   function clampCropOffset(
@@ -79,10 +88,18 @@ export function useCardImageSlot(side: CardImageSlotSide) {
     );
   }
 
-  useEffect(() => {
-    if (!cropData) return;
-    setCropOffset((prev) => clampCropOffset(prev, cropData));
-  }, [cropZoom, cropData, cropRotationBase, cropRotationFine]);
+  // Derived every render rather than synchronized via an effect: cropOffset
+  // is always the nearest legal point to rawCropOffset for the CURRENT
+  // zoom/rotation/image. This is what keeps the crop in-bounds when zoom
+  // changes through the one path that doesn't already re-clamp itself (the
+  // plain zoom slider) -- drag/pinch/rotation/reset all already pass an
+  // already-legal value into setCropOffset, so clamping them again here is
+  // a no-op; the slider case is the one this actually corrects, and it does
+  // so on the SAME render zoom changes (no extra render pass, no flash of
+  // an out-of-bounds crop, no effect/render loop possible). confirmCrop
+  // below reads this same derived value, so what's exported always matches
+  // what was last rendered.
+  const cropOffset = cropData ? clampCropOffset(rawCropOffset, cropData) : rawCropOffset;
 
   async function runImageCheck(dataUrl: string) {
     const res = await fetch("/api/image-check", {
@@ -147,8 +164,8 @@ export function useCardImageSlot(side: CardImageSlotSide) {
       cropZoom;
     setCropRotationBase(nextBase);
     setCropRotationFine(nextFine);
-    setCropOffset((prev) =>
-      clampOffsetForRotation(
+    setRawCropOffset((prev) => {
+      const next = clampOffsetForRotation(
         prev,
         cropData.width,
         cropData.height,
@@ -156,8 +173,12 @@ export function useCardImageSlot(side: CardImageSlotSide) {
         CROP_BOX_HEIGHT,
         rotationDeg,
         scale
-      )
-    );
+      );
+      // Preserve the previous object when the clamp is a no-op (common for
+      // a small rotation nudge that doesn't push the offset out of bounds)
+      // so this doesn't force a re-render when nothing actually changed.
+      return next.x === prev.x && next.y === prev.y ? prev : next;
+    });
   }
 
   function handleImageFile(file: File | null) {
@@ -168,7 +189,7 @@ export function useCardImageSlot(side: CardImageSlotSide) {
       .then(async (result) => {
         setCropSource({ dataUrl: result.dataUrl, width: result.width, height: result.height });
         setCropData({ dataUrl: result.dataUrl, width: result.width, height: result.height });
-        setCropOffset({ x: 0, y: 0 });
+        setRawCropOffset({ x: 0, y: 0 });
         setCropZoom(1);
         setCropRotationBase(0);
         setCropRotationFine(0);
@@ -213,7 +234,7 @@ export function useCardImageSlot(side: CardImageSlotSide) {
     cropRotationBase,
     cropRotationFine,
     cropOffset,
-    setCropOffset,
+    setCropOffset: setRawCropOffset,
     cropDragRef,
 
     cropBoxWidth: CROP_BOX_WIDTH,
