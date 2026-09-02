@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
+import type { ChecklistSectionRow } from "@/lib/repositories/checklistSections";
 
 export type CardRow = {
   id: number;
@@ -48,8 +49,11 @@ export async function searchCards(query: string): Promise<CardRow[]> {
   return (data ?? []) as CardRow[];
 }
 
-export async function getCard(id: number): Promise<CardRow | null> {
-  const { data, error } = await supabase
+export async function getCard(
+  id: number,
+  client: SupabaseClient = supabase,
+): Promise<CardRow | null> {
+  const { data, error } = await client
     .from("cards")
     .select("*")
     .eq("id", id)
@@ -68,6 +72,14 @@ export async function getCard(id: number): Promise<CardRow | null> {
  */
 export type CardWithContext = {
   id: number;
+  // Phase "Search -> Add to Collection": cards.set_id/checklist_section_id
+  // are plain columns already on the cards table (see CardRow above), just
+  // not previously selected here -- added so a caller establishing Add
+  // Card's catalog-selection hierarchy from an already-resolved card (see
+  // cards/new's catalogCardId bootstrap) doesn't need a second lookup for
+  // identifiers this same row already carries.
+  setId: number;
+  checklistSectionId: number | null;
   cardNumber: string;
   title: string | null;
   rookieCard: boolean;
@@ -79,10 +91,19 @@ export type CardWithContext = {
   setBrand: string | null;
   setManufacturer: string | null;
   playerNames: string[];
+  // Full section row (not just the id) so a caller can pass this straight
+  // into useChecklistSectionLookup's setSelectedSection without a second
+  // fetch. null when this card has no checklist section -- checklist_
+  // section_id is still nullable during the Catalog v2 migration (see
+  // CardRow's own comment), so null here is an honest, expected value, not
+  // a fetch failure -- never defaulted/invented.
+  checklistSection: ChecklistSectionRow | null;
 };
 
 type CardWithContextRow = {
   id: number;
+  set_id: number;
+  checklist_section_id: number | null;
   card_number: string;
   title: string | null;
   rookie_card: boolean;
@@ -91,14 +112,17 @@ type CardWithContextRow = {
   is_memorabilia: boolean;
   sets: { name: string | null; release_year: number | null; brand: string | null; manufacturer: string | null } | null;
   card_players: { players: { full_name: string } | null }[] | null;
+  checklist_sections: ChecklistSectionRow | null;
 };
 
 const CARD_CONTEXT_SELECT =
-  "id, card_number, title, rookie_card, is_insert, is_autograph, is_memorabilia, sets(name, release_year, brand, manufacturer), card_players(players(full_name))";
+  "id, set_id, checklist_section_id, card_number, title, rookie_card, is_insert, is_autograph, is_memorabilia, sets(name, release_year, brand, manufacturer), card_players(players(full_name)), checklist_sections(*)";
 
 function toCardWithContext(row: CardWithContextRow): CardWithContext {
   return {
     id: row.id,
+    setId: row.set_id,
+    checklistSectionId: row.checklist_section_id,
     cardNumber: row.card_number,
     title: row.title,
     rookieCard: row.rookie_card,
@@ -112,6 +136,7 @@ function toCardWithContext(row: CardWithContextRow): CardWithContext {
     playerNames: (row.card_players ?? [])
       .map((cp) => cp.players?.full_name)
       .filter((name): name is string => !!name),
+    checklistSection: row.checklist_sections ?? null,
   };
 }
 

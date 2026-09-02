@@ -1,12 +1,31 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { GradingStatus, CardStatus } from "@/lib/types";
 import { type MyCardInput, createMyCard } from "@/lib/repositories/myCards";
-import { searchCatalog, type CardWithContext } from "@/lib/repositories/cards";
+import {
+  searchCatalog,
+  getCardWithContext,
+  type CardWithContext,
+  type CardSummary,
+} from "@/lib/repositories/cards";
 import { findSetBySlug } from "@/lib/repositories/sets";
+import type { ChecklistSectionRow } from "@/lib/repositories/checklistSections";
+
+// The exact set/section/card hierarchy resolved from a URL-provided
+// catalogCardId (see the "Search -> Add to Collection" bootstrap below),
+// used to drive that hierarchy's staged preselection one level at a time.
+type CatalogPreselectTarget = {
+  setId: number;
+  // Full section row, or null for a legitimately sectionless card
+  // (checklist_section_id is still nullable during the Catalog v2
+  // migration -- see cards.ts's CardRow comment) -- never a fake/invented
+  // section.
+  sectionRow: ChecklistSectionRow | null;
+  cardSummary: CardSummary;
+};
 import { slugify } from "@/lib/slug";
 import { listLocations } from "@/lib/repositories/locations";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
@@ -276,6 +295,12 @@ function NewCardPageInner() {
   const searchParams = useSearchParams();
   const isWishlist = searchParams.get("wishlist") === "1";
   const isForSaleIntent = searchParams.get("forSale") === "1";
+  // "Search -> Add to Collection": present only when this page was reached
+  // via a catalog card's "Add to My Collection" link
+  // (/cards/new?catalogCardId=<cards.id>). Read independently of
+  // wishlist/forSale/mode above -- each of these composes with the others,
+  // none replaces another.
+  const catalogCardIdParam = searchParams.get("catalogCardId");
 
   // Mobile-only "Scan Card" / "Enter Manually" entry choice. Desktop always
   // shows the form regardless of this state (see the className toggles
@@ -397,6 +422,28 @@ function NewCardPageInner() {
   // reopening the dropdown and re-running auto-select.
   const suppressNextDropdownOpenRef = useRef(false);
 
+  // useCallback with an empty dependency array: every setter this touches
+  // is a plain useState setter (guaranteed stable), and the function reads
+  // nothing else from render scope -- only its own `result` argument -- so
+  // its true dependencies are empty. This gives it a stable identity across
+  // renders, which both the catalog search effect below and the
+  // catalogCardId bootstrap effect further down need to be able to list it
+  // as a dependency without retriggering on every render. Declared here
+  // (before the search effect that references it in its dependency array)
+  // rather than nearer selectCatalogMatch below, since a dependency array
+  // is evaluated at render time and referencing a not-yet-initialized
+  // const there -- unlike inside a closure body that only runs later --
+  // would throw.
+  const fillFieldsFromCatalogMatch = useCallback((result: CardWithContext) => {
+    setPlayerName(result.playerNames.join(" / "));
+    if (result.releaseYear != null) setYear(String(result.releaseYear));
+    if (result.setName) setSetName(result.setName);
+    setCardNumber(result.cardNumber);
+    setIsRookie(result.rookieCard);
+    setIsAutograph(result.isAutograph);
+    setIsPatch(result.isMemorabilia);
+  }, []);
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedCatalogQuery(catalogQuery), 150);
     return () => clearTimeout(t);
@@ -449,17 +496,7 @@ function NewCardPageInner() {
     return () => {
       active = false;
     };
-  }, [debouncedCatalogQuery]);
-
-  function fillFieldsFromCatalogMatch(result: CardWithContext) {
-    setPlayerName(result.playerNames.join(" / "));
-    if (result.releaseYear != null) setYear(String(result.releaseYear));
-    if (result.setName) setSetName(result.setName);
-    setCardNumber(result.cardNumber);
-    setIsRookie(result.rookieCard);
-    setIsAutograph(result.isAutograph);
-    setIsPatch(result.isMemorabilia);
-  }
+  }, [debouncedCatalogQuery, fillFieldsFromCatalogMatch]);
 
   function selectCatalogMatch(result: CardWithContext) {
     fillFieldsFromCatalogMatch(result);
@@ -467,6 +504,129 @@ function NewCardPageInner() {
     setCatalogQuery(`${result.cardNumber} ${result.playerNames.join(" / ")}`.trim());
     setShowCatalogResults(false);
   }
+
+  // ---- "Search -> Add to Collection" catalog preselection bootstrap ----
+  // If this page was reached via a catalog card's "Add to My Collection"
+  // link (/cards/new?catalogCardId=<cards.id>), this resolves that exact
+  // catalog card once on mount and establishes the same
+  // selectedSetId/selectedSection/selectedCard hierarchy manual lookup
+  // would have produced -- reusing fillFieldsFromCatalogMatch for the
+  // plain text fields (the fields that actually flow into buildCard()/
+  // save) and the existing useChecklistSectionLookup/useCatalogCardLookup/
+  // useCatalogVariantLookup hooks for the rest (selectedSection/
+  // selectedCard themselves are UI-tracking/variant-lookup-triggering
+  // state today -- see this page's own "Catalog v2 preview: picking a
+  // [section/card] doesn't change what gets saved yet" copy above --
+  // setting them here is what makes the variant lookup fetch/become
+  // available and what shows the right section/card as already-selected,
+  // not something the save pipeline itself needs). Absent entirely when
+  // catalogCardId isn't in the URL: normal manual /cards/new behavior is
+  // unchanged.
+  const [catalogPreselectStatus, setCatalogPreselectStatus] = useState<
+    "idle" | "loading" | "error" | "applied"
+  >("idle");
+
+  // Refs, not state: this is one-time bootstrap bookkeeping the render
+  // never needs to read, and a ref lets the effects below check it without
+  // needing it as a dependency.
+  const catalogPreselectTargetRef = useRef<CatalogPreselectTarget | null>(null);
+  // Guards each stage to fire exactly once for this target. Once "done",
+  // none of the three effects below ever call these setters again, so a
+  // later manual selection change is never forced back to the URL's card
+  // (the "one-time guard" this bootstrap is built around).
+  const catalogPreselectStageRef = useRef<
+    "pending-set" | "pending-section" | "pending-card" | "done"
+  >("pending-set");
+
+  // Stage 0 (mount-only): resolve the catalog card, fill the plain text
+  // fields exactly like selecting a manual catalog match already does, and
+  // kick off the set side of the hierarchy.
+  useEffect(() => {
+    if (!catalogCardIdParam) return;
+    const numericId = Number(catalogCardIdParam);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      setCatalogPreselectStatus("error");
+      return;
+    }
+
+    let active = true;
+    setCatalogPreselectStatus("loading");
+    getCardWithContext(numericId)
+      .then((found) => {
+        if (!active) return;
+        if (!found) {
+          setCatalogPreselectStatus("error");
+          return;
+        }
+        fillFieldsFromCatalogMatch(found);
+        catalogPreselectTargetRef.current = {
+          setId: found.setId,
+          sectionRow: found.checklistSection,
+          cardSummary: { id: found.id, card_number: found.cardNumber, title: found.title },
+        };
+        catalogPreselectStageRef.current = "pending-section";
+        setSelectedSetId(found.setId);
+        setCatalogPreselectStatus("applied");
+      })
+      .catch(() => {
+        if (active) setCatalogPreselectStatus("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [catalogCardIdParam, fillFieldsFromCatalogMatch]);
+
+  // Stage 1: once selectedSetId reflects the resolved target set, apply the
+  // section half of the hierarchy. Deferred to its own effect (not called
+  // synchronously alongside setSelectedSetId above) so it runs strictly
+  // after useChecklistSectionLookup's own render-time reset-on-set-change
+  // has already resolved -- calling setSelectedSection in the same tick as
+  // the setId change would race that reset and could be clobbered by it.
+  //
+  // A sectionless target (sectionRow === null) is handled entirely in this
+  // stage rather than deferred to Stage 2: selectedSection already starts
+  // at null (useChecklistSectionLookup's own initial state), so
+  // setSelectedSection(null) here is a no-op React bails out of re-rendering
+  // for -- Stage 2's effect would then never see selectedSection "change"
+  // and would never fire. Since useCatalogCardLookup's controlling id
+  // (selectedSection?.id ?? null) is null both before and after in this
+  // case, there's no render-time reset to race against anyway, so it's
+  // safe to set the card directly here instead of waiting a stage.
+  useEffect(() => {
+    const target = catalogPreselectTargetRef.current;
+    if (!target) return;
+    if (catalogPreselectStageRef.current !== "pending-section") return;
+    if (selectedSetId !== target.setId) return;
+
+    setSelectedSection(target.sectionRow);
+    if (target.sectionRow === null) {
+      setSelectedCard(target.cardSummary);
+      catalogPreselectStageRef.current = "done";
+    } else {
+      catalogPreselectStageRef.current = "pending-card";
+    }
+  }, [selectedSetId, setSelectedSection, setSelectedCard]);
+
+  // Stage 2: once selectedSection reflects the resolved target section,
+  // apply the exact catalog card. Set directly via setSelectedCard rather
+  // than waiting for it to appear in catalogCardOptions (the section's own
+  // fetched list) -- this runs strictly after useCatalogCardLookup's own
+  // render-time reset-on-section-change has already resolved, avoiding the
+  // same race Stage 1 avoids relative to Stage 0. No variant is selected
+  // here; useCatalogVariantLookup's own effect fetches this card's variants
+  // once selectedCard is set, and the user picks one manually, same as any
+  // other card.
+  useEffect(() => {
+    const target = catalogPreselectTargetRef.current;
+    if (!target) return;
+    if (catalogPreselectStageRef.current !== "pending-card") return;
+    if (!target.sectionRow) return;
+    if (selectedSection?.id !== target.sectionRow.id) return;
+
+    setSelectedCard(target.cardSummary);
+    catalogPreselectStageRef.current = "done";
+  }, [selectedSection, setSelectedCard]);
 
   // ✅ NEW
   const [location, setLocation] = useState("");
@@ -1277,6 +1437,17 @@ function NewCardPageInner() {
       cardNumber: cardNumber.trim() || undefined,
       team: team.trim() || undefined,
 
+      // "Search -> Add to Collection" / manual catalog lookup: selectedCard
+      // is the same state both the URL bootstrap and manual Set/Section/
+      // Card lookup write to, so reading it here (rather than the original
+      // ?catalogCardId= query param) always reflects the collector's most
+      // recent explicit choice -- a manual override after bootstrap, or a
+      // clear/change of the hierarchy, is picked up automatically. undefined
+      // when nothing has ever been explicitly selected, in which case
+      // resolveCatalogIds() falls through to its existing free-text
+      // resolution, exactly as before this field existed.
+      catalogCardId: selectedCard?.id,
+
       // Catalog v2: only set when a section has been picked (see
       // useChecklistSectionLookup) -- undefined here means
       // resolveCatalogIds() falls through to the exact existing V1 flow.
@@ -1750,6 +1921,21 @@ function NewCardPageInner() {
       setChecklistSection("ALL");
       setShowChecklistResults(true);
 
+      // Now that selectedCard.id feeds buildCard()'s catalogCardId (see
+      // above), it must not survive into the next card -- otherwise the
+      // catalog identity from the card just saved would silently reappear
+      // as the "explicit selection" for whatever the collector adds next.
+      // setSelectedCard(null) is enough: useCatalogVariantLookup's own
+      // render-time reset (keyed on selectedCard?.id) clears selectedVariant
+      // and its fetched variant list the moment this takes effect, the same
+      // way it already does for any other card-id change. selectedSection/
+      // selectedSetId are deliberately left alone, matching this reset
+      // block's existing choice not to clear year/setName either -- adding
+      // another card from the same set/section is the common case here.
+      // The bootstrap's one-time stage guard is already "done" by this
+      // point, so this plain reset can't be raced or overridden by it.
+      setSelectedCard(null);
+
       // Vision Engine V2, Phase 5B correction: clear creation/retry state
       // only now that every pending step has actually succeeded and the
       // form has been reset -- the next Save starts a genuinely new card.
@@ -2062,6 +2248,16 @@ function NewCardPageInner() {
         ) : setName.trim() && year.trim() ? (
           <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
             Checklist is only available after selecting a set with a checklist.
+          </div>
+        ) : null}
+
+        {catalogPreselectStatus === "loading" ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            Loading catalog card…
+          </div>
+        ) : catalogPreselectStatus === "error" ? (
+          <div className="sm:col-span-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            We couldn&apos;t load that catalog card. You can still select a card manually.
           </div>
         ) : null}
 

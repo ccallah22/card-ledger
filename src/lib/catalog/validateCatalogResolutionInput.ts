@@ -122,6 +122,7 @@ export function validateBody(
   const setName = readRequiredText(body, "setName", errors);
   const year = readOptionalText(body, "year", errors, MAX_YEAR_LENGTH);
   const cardNumber = readOptionalText(body, "cardNumber", errors);
+  const catalogCardId = readOptionalPositiveInt(body, "catalogCardId", errors);
   const checklistSectionId = readOptionalPositiveInt(body, "checklistSectionId", errors);
   const swatchDescriptor = readOptionalText(body, "swatchDescriptor", errors);
   const insert = readOptionalText(body, "insert", errors);
@@ -142,6 +143,7 @@ export function validateBody(
       setName,
       year,
       cardNumber,
+      catalogCardId,
       checklistSectionId,
       swatchDescriptor,
       insert,

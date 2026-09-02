@@ -105,6 +105,15 @@ export type MyCardInput = {
   cardNumber?: string;
   team?: string;
 
+  // "Search -> Add to Collection" / manual catalog lookup: the exact
+  // cards.id the collector explicitly selected (cards/new/page.tsx's
+  // selectedCard.id), whether via manual Set/Section/Card lookup or via
+  // ?catalogCardId= URL preselection. When present, this is authoritative
+  // -- resolveCatalogIds uses it directly instead of guessing a card from
+  // the free-text fields below. Omitted for every caller that hasn't made
+  // an explicit selection, in which case resolution is unchanged.
+  catalogCardId?: number;
+
   // Catalog v2 (optional, backward compatible -- see
   // docs/database/catalog-v2-migration-plan.md). When omitted, catalog
   // resolution uses the existing Catalog v1 flow unchanged.
@@ -338,6 +347,7 @@ async function resolveCatalogIdsViaApi(input: MyCardInput): Promise<CatalogResol
     setName: input.setName,
     year: input.year ?? null,
     cardNumber: input.cardNumber ?? null,
+    catalogCardId: input.catalogCardId ?? null,
     checklistSectionId: input.checklistSectionId ?? null,
     swatchDescriptor: input.swatchDescriptor ?? null,
     insert: input.insert ?? null,

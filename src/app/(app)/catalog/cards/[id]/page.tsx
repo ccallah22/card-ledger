@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCardWithContext, type CardWithContext } from "@/lib/repositories/cards";
 
@@ -61,6 +62,18 @@ export default function CatalogCardDetailPage({
       {subtitleParts.length > 0 ? (
         <p className="text-sm text-zinc-600">{subtitleParts.join(" • ")}</p>
       ) : null}
+
+      {/* This starts the existing Add Card workflow with catalog identity
+          preselected -- it does not create a user_card, mark this catalog
+          card owned, wishlist it, or list it for sale. Nothing is written
+          until the collector completes and saves the Add Card form
+          themselves, exactly as if they'd found this same card by manual
+          lookup there. */}
+      <div className="mt-4">
+        <Link href={`/cards/new?catalogCardId=${card.id}`} className="btn-primary">
+          Add to My Collection
+        </Link>
+      </div>
 
       <div className="mt-4 space-y-1 text-sm text-zinc-700">
         <div>Card #: {card.cardNumber}</div>

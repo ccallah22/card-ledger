@@ -6,6 +6,7 @@ import {
   findCardBySetAndNumber,
   createCard,
   findOrCreateCardV2,
+  getCard,
   type CardRow,
 } from "@/lib/repositories/cards";
 import { findOrCreateCardPlayer, listCardPlayers } from "@/lib/repositories/cardPlayers";
@@ -95,79 +96,98 @@ async function resolveCardForPlayer(
 }
 
 async function resolveCatalogIds(profileId: string, input: MyCardInput, client: SupabaseClient) {
-  const releaseYear = input.year ? Number.parseInt(input.year, 10) : NaN;
+  let card: CardRow;
 
-  const set = await findOrCreateSet(
-    {
-      name: input.setName,
-      release_year: Number.isFinite(releaseYear) ? releaseYear : null,
-    },
-    client,
-  );
+  if (input.catalogCardId) {
+    // "Search -> Add to Collection" / manual catalog lookup: the collector
+    // already explicitly picked this exact catalog card (selectedCard.id
+    // in cards/new/page.tsx), so it is the authoritative identity -- skip
+    // set/player/card resolution (and any player_card linking) entirely
+    // rather than re-deriving/guessing a card from the free-text fields
+    // below, which could disagree with what was explicitly picked (e.g.
+    // stale playerName/year/setName left over from a prior manual search).
+    // Still validated here, server-side, against the trusted service-role
+    // client -- never trusted merely because the browser sent a number.
+    const existing = await getCard(input.catalogCardId, client);
+    if (!existing) {
+      throw new Error(`Catalog card ${input.catalogCardId} not found`);
+    }
+    card = existing;
+  } else {
+    const releaseYear = input.year ? Number.parseInt(input.year, 10) : NaN;
 
-  // Bug fix: this is the trusted server-side boundary (service-role
-  // client, the only live-app path that writes to `players`) -- input
-  // is defensively parsed here, before any findOrCreatePlayer call,
-  // rather than trusting the client to have already split it. This
-  // matters concretely because /cards/new's catalog-candidate autofill
-  // can set the Player field to `result.playerNames.join(" / ")`; if a
-  // user accepts that suggestion and saves without editing it, this is
-  // the only place standing between that string and a bogus combined-name
-  // `players` row. A plain single-player name (the overwhelmingly common
-  // case, with no "/") parses to a one-element array, so this changes
-  // nothing about existing single-player behavior -- see
-  // parsePlayerNames.ts.
-  const playerNames = parsePlayerNames(input.playerName.trim());
-  const primaryPlayerName = playerNames[0] ?? null;
-  const player = primaryPlayerName
-    ? await findOrCreatePlayer({ full_name: primaryPlayerName }, client)
-    : null;
+    const set = await findOrCreateSet(
+      {
+        name: input.setName,
+        release_year: Number.isFinite(releaseYear) ? releaseYear : null,
+      },
+      client,
+    );
 
-  // Catalog v2: when a checklist section is given, resolve the card through
-  // the section-scoped identity instead of the v1 set-scoped
-  // resolveCardForPlayer path. Omitted (the case for every existing caller
-  // today) falls through to the exact existing Catalog v1 behavior.
-  const card = input.checklistSectionId
-    ? await findOrCreateCardV2(
-        {
-          checklistSectionId: input.checklistSectionId,
-          setId: set.id,
-          cardNumber: input.cardNumber ?? "",
-          title: input.insert ?? null,
-          isInsert: !!input.insert,
-        },
-        client,
-      )
-    : await resolveCardForPlayer(
-        set.id,
-        input.cardNumber ?? "",
-        player?.id ?? null,
-        {
-          title: input.insert ?? null,
-          rookie_card: input.isRookie ?? false,
-          is_insert: !!input.insert,
-        },
-        client,
-      );
+    // Bug fix: this is the trusted server-side boundary (service-role
+    // client, the only live-app path that writes to `players`) -- input
+    // is defensively parsed here, before any findOrCreatePlayer call,
+    // rather than trusting the client to have already split it. This
+    // matters concretely because /cards/new's catalog-candidate autofill
+    // can set the Player field to `result.playerNames.join(" / ")`; if a
+    // user accepts that suggestion and saves without editing it, this is
+    // the only place standing between that string and a bogus combined-name
+    // `players` row. A plain single-player name (the overwhelmingly common
+    // case, with no "/") parses to a one-element array, so this changes
+    // nothing about existing single-player behavior -- see
+    // parsePlayerNames.ts.
+    const playerNames = parsePlayerNames(input.playerName.trim());
+    const primaryPlayerName = playerNames[0] ?? null;
+    const player = primaryPlayerName
+      ? await findOrCreatePlayer({ full_name: primaryPlayerName }, client)
+      : null;
 
-  if (player) {
-    await findOrCreateCardPlayer(card.id, player.id, "primary", client);
+    // Catalog v2: when a checklist section is given, resolve the card through
+    // the section-scoped identity instead of the v1 set-scoped
+    // resolveCardForPlayer path. Omitted (the case for every existing caller
+    // today) falls through to the exact existing Catalog v1 behavior.
+    card = input.checklistSectionId
+      ? await findOrCreateCardV2(
+          {
+            checklistSectionId: input.checklistSectionId,
+            setId: set.id,
+            cardNumber: input.cardNumber ?? "",
+            title: input.insert ?? null,
+            isInsert: !!input.insert,
+          },
+          client,
+        )
+      : await resolveCardForPlayer(
+          set.id,
+          input.cardNumber ?? "",
+          player?.id ?? null,
+          {
+            title: input.insert ?? null,
+            rookie_card: input.isRookie ?? false,
+            is_insert: !!input.insert,
+          },
+          client,
+        );
 
-    // For a genuine multi-player "/"-combined name (e.g.
-    // "Ashton Jeanty/Omarion Hampton"), link every additional distinct
-    // parsed name to this same card too, using the existing
-    // findOrCreateCardPlayer/findOrCreatePlayer functions as-is --
-    // card_players' primary key is (card_id, player_id), not scoped to
-    // one row per card, so this needs no schema change. This does NOT
-    // change resolveCardForPlayer's card-number disambiguation contract:
-    // that still keys only off `player` (the first/primary parsed name),
-    // exactly as before this fix -- additional players are linked only
-    // AFTER the card itself is already resolved. No redesign of the
-    // resolver's single-primary-player card-matching logic was needed to
-    // do this safely.
-    for (const additionalName of playerNames.slice(1)) {
-      const additionalPlayer = await findOrCreatePlayer({ full_name: additionalName }, client);
-      await findOrCreateCardPlayer(card.id, additionalPlayer.id, "primary", client);
+    if (player) {
+      await findOrCreateCardPlayer(card.id, player.id, "primary", client);
+
+      // For a genuine multi-player "/"-combined name (e.g.
+      // "Ashton Jeanty/Omarion Hampton"), link every additional distinct
+      // parsed name to this same card too, using the existing
+      // findOrCreateCardPlayer/findOrCreatePlayer functions as-is --
+      // card_players' primary key is (card_id, player_id), not scoped to
+      // one row per card, so this needs no schema change. This does NOT
+      // change resolveCardForPlayer's card-number disambiguation contract:
+      // that still keys only off `player` (the first/primary parsed name),
+      // exactly as before this fix -- additional players are linked only
+      // AFTER the card itself is already resolved. No redesign of the
+      // resolver's single-primary-player card-matching logic was needed to
+      // do this safely.
+      for (const additionalName of playerNames.slice(1)) {
+        const additionalPlayer = await findOrCreatePlayer({ full_name: additionalName }, client);
+        await findOrCreateCardPlayer(card.id, additionalPlayer.id, "primary", client);
+      }
     }
   }
 
@@ -238,6 +258,7 @@ export async function resolveCatalogIdsServer(
     setName: input.setName,
     year: input.year ?? undefined,
     cardNumber: input.cardNumber ?? undefined,
+    catalogCardId: input.catalogCardId ?? undefined,
     checklistSectionId: input.checklistSectionId ?? undefined,
     swatchDescriptor: input.swatchDescriptor ?? undefined,
     insert: input.insert ?? undefined,
