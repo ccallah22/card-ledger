@@ -33,15 +33,101 @@ export async function listSets(): Promise<SetRow[]> {
   return (data ?? []) as SetRow[];
 }
 
-export async function searchSets(queryText: string): Promise<SetRow[]> {
-  const trimmed = queryText.trim();
+/**
+ * Resolves one search token to the COMPLETE set of sets.id it matches --
+ * deliberately unbounded (no .limit() here), unlike cards.ts's per-token
+ * lookups: those cap at TOKEN_ID_LOOKUP_LIMIT because a card search result
+ * is already visibly capped at the same size class, but truncating a
+ * token's id population BEFORE cross-token intersection is a correctness
+ * bug here, not an optimization -- an arbitrary/unordered subset of (say)
+ * the first N rows Postgres happens to return for a broad token ("Prizm")
+ * could easily exclude the specific set another token ("2024") narrows
+ * down to, permanently and silently dropping a genuine match. The
+ * user-visible result limiting belongs solely on the final fetch below
+ * (.limit(25)), which runs AFTER intersection against the complete matching
+ * population, exactly like the pre-tokenization implementation did.
+ *
+ * Unlike cards.ts's per-token lookups, this never needs more than one query
+ * or any join: name, search_text, manufacturer, and brand are all plain
+ * columns directly on `sets` itself (manufacturer_id/brand_id are the newer
+ * normalized Catalog v2 foreign keys, but the free-text manufacturer/brand
+ * columns are still populated on every create -- see SetRow above), and
+ * release_year is a plain integer column on the same row. A single .or()
+ * across several of a table's OWN columns (as opposed to .or() spanning a
+ * joined table, which PostgREST doesn't support cleanly) is standard,
+ * well-supported syntax.
+ *
+ * An exact 4-digit token additionally matches release_year by equality,
+ * unioned with (not replacing) the same ilike text evidence every token
+ * gets -- "2024" matches a set with release_year=2024 even if its
+ * search_text/name is incomplete, but a set that merely mentions "2024" in
+ * its name/search_text still matches too.
+ */
+async function setIdsMatchingToken(token: string): Promise<Set<number>> {
+  const orClauses = [
+    `name.ilike.%${token}%`,
+    `search_text.ilike.%${token}%`,
+    `manufacturer.ilike.%${token}%`,
+    `brand.ilike.%${token}%`,
+  ];
+  if (/^\d{4}$/.test(token)) {
+    orClauses.push(`release_year.eq.${token}`);
+  }
 
-  if (!trimmed) return [];
+  const { data, error } = await supabase
+    .from("sets")
+    .select("id")
+    .or(orClauses.join(","));
+
+  if (error) throw error;
+
+  return new Set((data ?? []).map((row) => (row as { id: number }).id));
+}
+
+// Same shape/logic as cards.ts's intersectIdSets, kept as its own small
+// local copy rather than importing/exporting across repository files for
+// one generic Set<number>[] -> number[] utility -- this phase is scoped to
+// sets.ts alone, and this is a few lines of plain set math, not
+// set-search-specific logic worth sharing.
+function intersectSetIds(idSets: Set<number>[]): number[] {
+  if (idSets.length === 0) return [];
+
+  const [first, ...rest] = idSets;
+  const result = new Set(first);
+
+  for (const s of rest) {
+    for (const id of result) {
+      if (!s.has(id)) result.delete(id);
+    }
+  }
+
+  return [...result];
+}
+
+/**
+ * Tokenized catalog set search: splits the query into whitespace tokens and
+ * requires every token to match at least one relevant field on the same set
+ * (see setIdsMatchingToken), then fetches the full SetRow for the resulting
+ * ids. This lets "2024 Prizm" find "2024 Panini Prizm" even though "2024
+ * Prizm" is not a contiguous substring of that name -- each token matches
+ * independently (2024 via release_year or text, Prizm via name text) and
+ * the per-token id sets are intersected, so a set only survives if EVERY
+ * token found evidence on that same sets.id (never token 1 satisfied by one
+ * set and token 2 by an unrelated one). Preserves the existing result cap
+ * (25) and name-ascending ordering; no ranking/relevance scoring added.
+ */
+export async function searchSets(queryText: string): Promise<SetRow[]> {
+  const tokens = queryText.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+
+  const perTokenIds = await Promise.all(tokens.map(setIdsMatchingToken));
+  const finalIds = intersectSetIds(perTokenIds);
+  if (finalIds.length === 0) return [];
 
   const { data, error } = await supabase
     .from("sets")
     .select("*")
-    .or(`name.ilike.%${trimmed}%,search_text.ilike.%${trimmed}%`)
+    .in("id", finalIds)
     .order("name", { ascending: true })
     .limit(25);
 
