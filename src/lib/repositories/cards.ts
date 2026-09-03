@@ -236,12 +236,149 @@ async function cardIdsMatchingPlayerText(token: string): Promise<number[]> {
   return (data ?? []).map((row) => (row as { id: number }).id);
 }
 
+// ---- Variant evidence (Phase "Variant-Aware Catalog Search") ----
+//
+// A card_variants row is evidence that its OWN card_id is relevant, not a
+// search result in its own right -- these all query card_variants directly
+// (optionally inner-joined to parallel_types for the name) and return plain
+// card_id values, the same "resolve a token to card ids" shape every other
+// helper above already returns. That keeps them dropping straight into
+// matchingCardIdsForToken's existing per-token union / cross-token
+// intersection below with no second search architecture.
+//
+// Kept as separate single-purpose queries rather than one combined .or()
+// across card_variants + the joined parallel_types table: PostgREST's
+// .or(..., { referencedTable }) pattern (see cardIdsMatchingSetText above)
+// ORs multiple columns on ONE joined table, not a mix of the base table's
+// own column (swatch_descriptor) and a joined table's column (parallel_
+// types.name) in a single expression -- keeping them separate is the
+// correct, well-supported shape rather than an unsupported cross-join OR.
+//
+// name_override (a free-text per-variant name override, but only ever
+// populated by the legacy V1 findOrCreateCardVariant path -- the Catalog v2
+// path and CardVariantSummary/the catalog detail page's own variant list
+// never read or write it) and notes (unstructured freeform text, not a
+// curated identifying descriptor like swatch_descriptor) are deliberately
+// excluded: neither is part of the "known variant" evidence model the
+// catalog card detail page already surfaces, so searching them would
+// promise more identifying signal than actually exists. serial_numbered is
+// also excluded as its own text concept -- the explicit "/25" print-run
+// token below already covers that collector search style precisely,
+// without the ambiguity a generic "serial"/"numbered" keyword would add.
+// is_refractor/is_die_cut/is_short_print are excluded too: no synonym
+// vocabulary for them was requested for this phase (only autograph/
+// memorabilia were), and adding one isn't a small, defensible mapping the
+// same way AUTOGRAPH_SEARCH_TERMS/MEMORABILIA_SEARCH_TERMS below are.
+
+async function cardIdsMatchingVariantParallelName(token: string): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("card_variants")
+    .select("card_id, parallel_types!inner(name)")
+    .ilike("parallel_types.name", `%${token}%`)
+    .limit(TOKEN_ID_LOOKUP_LIMIT);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+}
+
+async function cardIdsMatchingVariantSwatch(token: string): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("card_variants")
+    .select("card_id")
+    .ilike("swatch_descriptor", `%${token}%`)
+    .limit(TOKEN_ID_LOOKUP_LIMIT);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+}
+
+// Explicit collector notation only (see the "/NN" token check in
+// matchingCardIdsForToken below) -- never triggered by a plain numeric
+// token, so a card-number search like "25" can't accidentally turn into an
+// unrelated /25-parallel search.
+async function cardIdsMatchingVariantPrintRun(printRun: number): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("card_variants")
+    .select("card_id")
+    .eq("print_run", printRun)
+    .limit(TOKEN_ID_LOOKUP_LIMIT);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+}
+
+async function cardIdsMatchingVariantFlag(
+  column: "has_autograph" | "has_memorabilia",
+): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("card_variants")
+    .select("card_id")
+    .eq(column, true)
+    .limit(TOKEN_ID_LOOKUP_LIMIT);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+}
+
+// Small, explicit collector-vocabulary mapping only -- deliberately not
+// "au" (too generic/ambiguous a token to safely treat as autograph
+// evidence; the app has no existing convention treating bare "au" as a
+// recognized search term the way "Auto" is already used as a badge label
+// elsewhere). Whole-token match only (see the .has() check below), never a
+// substring match, so words like "automobile" can't accidentally qualify.
+const AUTOGRAPH_SEARCH_TERMS = new Set(["auto", "autograph"]);
+const MEMORABILIA_SEARCH_TERMS = new Set(["mem", "memorabilia", "relic", "patch"]);
+
+// The full non-numeric text-evidence lookup every non-numeric token has
+// always gotten (title/search_text on cards, name/search_text on the
+// joined set, full_name/search_text on the joined player) plus the new
+// variant parallel-name/swatch-descriptor text evidence. Pulled out on its
+// own so a token that ALSO carries special semantic meaning (a "/NN"
+// print-run token, or an autograph/memorabilia synonym) still gets every
+// bit of this -- semantic evidence is additive on top of it, never a
+// replacement, so a card discoverable through plain text before this
+// phase (e.g. a title literally containing the word "Autograph", or a
+// swatch descriptor that happens to read "/25") can't go missing just
+// because its token now also resolves to something more specific.
+// Returns an array of already-in-flight promises (not a single awaited
+// Promise.all) so a caller can concatenate additional evidence promises
+// and await everything together in one Promise.all -- one round of
+// concurrency, not a nested/sequential one.
+function genericTextEvidencePromises(token: string): Promise<number[]>[] {
+  return [
+    cardIdsMatchingOwnFields(`title.ilike.%${token}%,search_text.ilike.%${token}%`),
+    cardIdsMatchingSetText(token),
+    cardIdsMatchingPlayerText(token),
+    cardIdsMatchingVariantParallelName(token),
+    cardIdsMatchingVariantSwatch(token),
+  ];
+}
+
 /**
- * Resolves one search token to the set of card ids it matches: numeric
- * tokens match card_number (plus, if 4 digits, release_year/printed_year on
- * cards and release_year on the joined set); everything else matches
- * title/search_text on cards, name/search_text on the joined set, and
- * full_name/search_text on the joined player.
+ * Resolves one search token to the set of card ids it matches:
+ * - a plain numeric token (e.g. "25", "2024") keeps its own, unchanged
+ *   path: card_number (plus, if 4 digits, release_year/printed_year on
+ *   cards and release_year on the joined set) -- it never receives the
+ *   text-evidence or semantic-flag evidence below, so it stays exactly as
+ *   narrow as before this phase;
+ * - every other token (this includes an explicit "/NN" token and any
+ *   autograph/memorabilia synonym) always gets the full genericTextEvidence
+ *   above -- title/search_text/set/player/parallel-name/swatch-descriptor
+ *   -- PLUS whatever special evidence its shape also earns it:
+ *     - "/NN" additionally matches variant print_run = NN exactly;
+ *     - a recognized autograph synonym (AUTOGRAPH_SEARCH_TERMS) additionally
+ *       matches the base card's own is_autograph flag AND any variant's
+ *       has_autograph flag;
+ *     - a recognized memorabilia synonym (MEMORABILIA_SEARCH_TERMS)
+ *       additionally matches is_memorabilia/has_memorabilia the same way.
+ *   All of this is unioned into one Set for the token -- a card whose title
+ *   literally says "Autograph" but whose is_autograph flag is incomplete,
+ *   or whose only "/25" evidence is a stray text match rather than an
+ *   actual print_run=25 variant, is still found either way.
  */
 async function matchingCardIdsForToken(token: string): Promise<Set<number>> {
   const isNumeric = /^\d+$/.test(token);
@@ -261,12 +398,28 @@ async function matchingCardIdsForToken(token: string): Promise<Set<number>> {
     return new Set(idLists.flat());
   }
 
-  const idLists = await Promise.all([
-    cardIdsMatchingOwnFields(`title.ilike.%${token}%,search_text.ilike.%${token}%`),
-    cardIdsMatchingSetText(token),
-    cardIdsMatchingPlayerText(token),
-  ]);
+  const evidence = genericTextEvidencePromises(token);
 
+  const printRunMatch = /^\/(\d+)$/.exec(token);
+  if (printRunMatch) {
+    evidence.push(cardIdsMatchingVariantPrintRun(Number(printRunMatch[1])));
+  }
+
+  const normalized = token.toLowerCase();
+  if (AUTOGRAPH_SEARCH_TERMS.has(normalized)) {
+    evidence.push(
+      cardIdsMatchingOwnFields("is_autograph.eq.true"),
+      cardIdsMatchingVariantFlag("has_autograph"),
+    );
+  }
+  if (MEMORABILIA_SEARCH_TERMS.has(normalized)) {
+    evidence.push(
+      cardIdsMatchingOwnFields("is_memorabilia.eq.true"),
+      cardIdsMatchingVariantFlag("has_memorabilia"),
+    );
+  }
+
+  const idLists = await Promise.all(evidence);
   return new Set(idLists.flat());
 }
 
@@ -288,10 +441,15 @@ function intersectIdSets(sets: Set<number>[]): number[] {
 /**
  * First-pass intelligent catalog search: splits the query into whitespace
  * tokens and requires every token to match at least one relevant field
- * across cards/sets/players (see matchingCardIdsForToken), then fetches the
- * display-ready CardWithContext shape for the resulting card ids. Only
- * handles year/card-number/title/set-name/player-name; no ranking, no
- * filters, no ownership awareness yet.
+ * across cards/sets/players/variants (see matchingCardIdsForToken), then
+ * fetches the display-ready CardWithContext shape for the resulting card
+ * ids. A matching variant is evidence that its base card is relevant --
+ * variants are never returned as their own result, so one base card with
+ * several matching variants still appears exactly once here (finalIds is a
+ * deduplicated array of cards.id throughout, and this final fetch selects
+ * `id` in that set). Handles year/card-number/title/set-name/player-name/
+ * parallel-name/swatch-descriptor/print-run/autograph/memorabilia; no
+ * ranking, no filters, no ownership awareness yet.
  */
 export async function searchCatalog(query: string): Promise<CardWithContext[]> {
   const tokens = query.trim().split(/\s+/).filter(Boolean);
