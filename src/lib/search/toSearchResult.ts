@@ -52,7 +52,51 @@ export function setToSearchResult(set: SetRow): SearchResult {
   };
 }
 
+// Search UX phase "Show Player Identity in Card Results": player identity
+// belongs in the primary label -- a base card's title is almost always
+// null (title is really only populated for inserts/special checklist
+// entries), so the previous `card.title || Card #N` label routinely showed
+// no player name at all, even on an app whose whole premise is organizing
+// a collection around players. Card number stays out of the label (it
+// already lives in sublabel below) so a card with a known player never
+// shows the same number twice on one row.
+//
+// Multi-player join uses " / ", the same separator already established
+// elsewhere in this codebase for the exact same playerNames array (see
+// myCards.ts's `playerName: playerNames.join(" / ")`,
+// candidateEngine.ts, and cards/new/page.tsx's own catalog-match rows) --
+// reusing it here keeps this row consistent with how the rest of the app
+// already renders a multi-player name, rather than introducing a new
+// separator convention. Capped at 2 full names plus a "+N more" tail (the
+// same "show a few, then '...and N more'" shape already used for overflow
+// elsewhere in the app, e.g. admin/checklists's section-count lists) so an
+// unusually large team/checklist card can't blow out the row.
+const MAX_DISPLAYED_CARD_PLAYERS = 2;
+
+function playerDisplayForCard(playerNames: string[]): string {
+  if (playerNames.length <= MAX_DISPLAYED_CARD_PLAYERS) {
+    return playerNames.join(" / ");
+  }
+  const shown = playerNames.slice(0, MAX_DISPLAYED_CARD_PLAYERS).join(" / ");
+  return `${shown} +${playerNames.length - MAX_DISPLAYED_CARD_PLAYERS} more`;
+}
+
 export function cardToSearchResult(card: CardWithContext): SearchResult {
+  const playerDisplay = playerDisplayForCard(card.playerNames);
+
+  // Player name is primary when known. A meaningful title (an insert name,
+  // not just a fallback) rides alongside it rather than being dropped --
+  // "Patrick Mahomes — Fireworks" identifies both who the card is AND which
+  // specific card, where either alone would lose information. Without a
+  // player, this falls back to exactly the same title/card-number
+  // hierarchy the label always used, so a card with no player association
+  // still gets a sensible, never-blank label.
+  const label = playerDisplay
+    ? card.title
+      ? `${playerDisplay} — ${card.title}`
+      : playerDisplay
+    : card.title || `Card #${card.cardNumber}`;
+
   const sublabelParts = [
     card.releaseYear != null ? String(card.releaseYear) : null,
     card.setName,
@@ -63,7 +107,7 @@ export function cardToSearchResult(card: CardWithContext): SearchResult {
     kind: "card",
     id: `card:${card.id}`,
     entityId: card.id,
-    label: card.title || `Card #${card.cardNumber}`,
+    label,
     sublabel: sublabelParts.length > 0 ? sublabelParts.join(" • ") : null,
     href: `/catalog/cards/${card.id}`,
   };
