@@ -119,7 +119,28 @@ export function CatalogSearch() {
         ) : !debouncedQuery.trim() ? (
           <p className="text-sm text-muted-foreground">Start typing to search the catalog.</p>
         ) : results.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No players, sets, or cards found.</p>
+          // Reached only on a genuinely completed, non-empty-query search
+          // that matched nothing at all -- loading/error/blank-query each
+          // return their own branch above this one, and `results` is the
+          // flat combined players+sets+cards array, so even one match in
+          // any single category already skips this branch entirely. Not
+          // found here doesn't mean the collector did anything wrong, and
+          // manual Add Card is a fully supported path, not a last resort --
+          // the copy is written to reflect both. Deliberately a plain link
+          // to /cards/new with no query string: Add Card has no existing
+          // free-text-prefill parameter, and inventing one to carry this
+          // query over would mean parsing an arbitrary typed phrase into
+          // player/year/set/card-number fields, which is neither tiny nor
+          // unambiguous -- a clean direct link is enough for this phase.
+          <div className="rounded-xl border bg-white p-4">
+            <p className="text-sm text-zinc-700">No catalog matches found.</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              If this card isn&apos;t in TheBinder yet, you can still add it manually.
+            </p>
+            <Link href="/cards/new" className="btn-primary mt-3">
+              Add Card Manually
+            </Link>
+          </div>
         ) : (
           <>
             {grouped.player.length > 0 ? (
