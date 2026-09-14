@@ -184,14 +184,23 @@ export async function searchCardsWithContext(query: string): Promise<CardWithCon
 // are combined by *intersecting* those per-token id sets (every token must
 // match something). This keeps each individual query simple/native and only
 // does client-side set math, at the cost of extra round trips per token.
-const TOKEN_ID_LOOKUP_LIMIT = 200;
-
+//
+// Phase "Remove Pre-Intersection Card Search Truncation": each per-token
+// lookup below is deliberately UNBOUNDED (no .limit() at all), mirroring the
+// same correctness fix already made in sets.ts's setIdsMatchingToken.
+// Truncating a token's id population before cross-token intersection is a
+// correctness bug, not an optimization -- an arbitrary/unordered subset of
+// (say) the first 200 rows Postgres happens to return for a broad token
+// ("Prizm") could easily exclude the specific card another token
+// ("Mahomes") narrows down to, permanently and silently dropping a genuine
+// match. User-visible result limiting belongs solely on searchCatalog's
+// final fetch (its own .limit(25) below), which runs AFTER intersection
+// against each token's complete matching population.
 async function cardIdsMatchingOwnFields(orClause: string): Promise<number[]> {
   const { data, error } = await supabase
     .from("cards")
     .select("id")
-    .or(orClause)
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    .or(orClause);
 
   if (error) throw error;
 
@@ -202,8 +211,7 @@ async function cardIdsMatchingSetYear(year: number): Promise<number[]> {
   const { data, error } = await supabase
     .from("cards")
     .select("id, sets!inner(release_year)")
-    .eq("sets.release_year", year)
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    .eq("sets.release_year", year);
 
   if (error) throw error;
 
@@ -214,8 +222,7 @@ async function cardIdsMatchingSetText(token: string): Promise<number[]> {
   const { data, error } = await supabase
     .from("cards")
     .select("id, sets!inner(name, search_text)")
-    .or(`name.ilike.%${token}%,search_text.ilike.%${token}%`, { referencedTable: "sets" })
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    .or(`name.ilike.%${token}%,search_text.ilike.%${token}%`, { referencedTable: "sets" });
 
   if (error) throw error;
 
@@ -228,8 +235,7 @@ async function cardIdsMatchingPlayerText(token: string): Promise<number[]> {
     .select("id, card_players!inner(players!inner(full_name, search_text))")
     .or(`full_name.ilike.%${token}%,search_text.ilike.%${token}%`, {
       referencedTable: "card_players.players",
-    })
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    });
 
   if (error) throw error;
 
@@ -274,8 +280,7 @@ async function cardIdsMatchingVariantParallelName(token: string): Promise<number
   const { data, error } = await supabase
     .from("card_variants")
     .select("card_id, parallel_types!inner(name)")
-    .ilike("parallel_types.name", `%${token}%`)
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    .ilike("parallel_types.name", `%${token}%`);
 
   if (error) throw error;
 
@@ -286,8 +291,7 @@ async function cardIdsMatchingVariantSwatch(token: string): Promise<number[]> {
   const { data, error } = await supabase
     .from("card_variants")
     .select("card_id")
-    .ilike("swatch_descriptor", `%${token}%`)
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    .ilike("swatch_descriptor", `%${token}%`);
 
   if (error) throw error;
 
@@ -302,8 +306,7 @@ async function cardIdsMatchingVariantPrintRun(printRun: number): Promise<number[
   const { data, error } = await supabase
     .from("card_variants")
     .select("card_id")
-    .eq("print_run", printRun)
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    .eq("print_run", printRun);
 
   if (error) throw error;
 
@@ -316,8 +319,7 @@ async function cardIdsMatchingVariantFlag(
   const { data, error } = await supabase
     .from("card_variants")
     .select("card_id")
-    .eq(column, true)
-    .limit(TOKEN_ID_LOOKUP_LIMIT);
+    .eq(column, true);
 
   if (error) throw error;
 
@@ -667,10 +669,13 @@ export type CandidateSearchFilters = {
   cardNumber?: string | null;
 };
 
-// Smaller than searchCatalog()'s TOKEN_ID_LOOKUP_LIMIT (200): the candidate
-// engine (src/lib/catalog/candidateEngine.ts) does one additional variant
-// lookup per pooled card to score the parallel field, so the pool this
-// feeds is deliberately kept modest.
+// This is the OCR candidate engine's own final result-pool cap, unrelated
+// to searchCatalog()'s per-token evidence lookups (those are unbounded --
+// see the "Remove Pre-Intersection Card Search Truncation" phase comment
+// near cardIdsMatchingOwnFields above): the candidate engine (src/lib/
+// catalog/candidateEngine.ts) does one additional variant lookup per pooled
+// card to score the parallel field, so the pool this feeds is deliberately
+// kept modest.
 const CANDIDATE_POOL_LIMIT = 50;
 
 // Card numbers are compared/searched with a conservative normalization:
