@@ -1,6 +1,51 @@
 import { NextResponse } from "next/server";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+import { IMAGE_RULES } from "@/lib/image";
+import { checkAiRateLimit } from "@/lib/aiRateLimit";
 
 const REQUEST_TIMEOUT_MS = 15000;
+
+// Mirrors src/app/api/vision/route.ts's own image validation exactly --
+// deliberately duplicated (not extracted into a shared module) so this
+// phase does not touch Vision's existing, already-correct implementation
+// at all, per this task's explicit scope. IMAGE_RULES itself (the actual
+// limits) is still the single shared source of truth, reused from
+// src/lib/image.ts rather than re-declared.
+const ALLOWED_MIME_TYPES = new Set(IMAGE_RULES.allowedTypes);
+const MAX_IMAGE_BYTES = IMAGE_RULES.maxBytes;
+// Base64 inflates raw bytes by ~4/3, plus data-URL prefix/JSON overhead --
+// intentionally generous so it can be checked from Content-Length alone,
+// before the body is parsed. The authoritative decoded-byte check is
+// validateImageDataUrl below.
+const MAX_REQUEST_BODY_BYTES = Math.ceil(MAX_IMAGE_BYTES * 1.4) + 2048;
+
+function validateImageDataUrl(
+  imageDataUrl: string,
+): { ok: true; approxBytes: number } | { ok: false; reason: string; status: 400 | 413 } {
+  const match = imageDataUrl.match(/^data:([a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+  if (!match) {
+    return { ok: false, reason: "imageDataUrl must be a base64 data URL.", status: 400 };
+  }
+  const [, mime, base64Data] = match;
+  if (!ALLOWED_MIME_TYPES.has(mime.toLowerCase())) {
+    return { ok: false, reason: `Unsupported image MIME type "${mime}".`, status: 400 };
+  }
+
+  // Decoded byte length from a base64 string, without allocating the
+  // actual bytes -- padding-aware, exact.
+  const len = base64Data.length;
+  const padding = base64Data.endsWith("==") ? 2 : base64Data.endsWith("=") ? 1 : 0;
+  const approxBytes = Math.floor((len * 3) / 4) - padding;
+
+  if (approxBytes > MAX_IMAGE_BYTES) {
+    return { ok: false, reason: "Image exceeds the maximum allowed size.", status: 413 };
+  }
+
+  return { ok: true, approxBytes };
+}
+
+const RATE_LIMIT_MESSAGE =
+  "You've reached the scanning limit for now. You can still add this card manually, or try scanning again shortly.";
 
 type OcrSide = "front" | "back";
 
@@ -120,6 +165,25 @@ function parseModelJson(rawOutput: string, side: OcrSide) {
 }
 
 export async function POST(req: Request) {
+  // Authentication first, before body parsing or anything else -- an
+  // unauthenticated caller must never reach OCR, let alone OpenAI.
+  const supabase = await createServerClient();
+  const { data: userData, error: authError } = await supabase.auth.getUser();
+  const user = userData?.user;
+  if (authError || !user) {
+    return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
+  }
+
+  // Reject an oversized body before it is even parsed, when the client
+  // reports Content-Length (not authoritative alone -- the decoded-byte
+  // check in validateImageDataUrl below is the real limit -- but this
+  // avoids buffering a grossly oversized body into memory/JSON.parse at
+  // all when the client is honest about its size).
+  const contentLength = Number(req.headers.get("content-length") ?? "");
+  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BODY_BYTES) {
+    return NextResponse.json({ message: "Request payload too large." }, { status: 413 });
+  }
+
   try {
     const body: unknown = await req.json();
     const imageDataUrl = isRecord(body) ? body.imageDataUrl : undefined;
@@ -132,6 +196,26 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { message: "Missing or invalid side; expected \"front\" or \"back\"." },
         { status: 400 },
+      );
+    }
+
+    const imageCheck = validateImageDataUrl(imageDataUrl);
+    if (!imageCheck.ok) {
+      return NextResponse.json({ message: imageCheck.reason }, { status: imageCheck.status });
+    }
+
+    // Rate limit last, after every input check has already passed -- no
+    // point consuming a unit of quota for a request that was going to be
+    // rejected anyway, and this keeps the quota measuring genuine attempts
+    // to reach OpenAI, not malformed noise.
+    const rateLimit = await checkAiRateLimit(supabase);
+    if (!rateLimit.allowed) {
+      if (rateLimit.reason === "error") {
+        return NextResponse.json({ message: "OCR failed." }, { status: 500 });
+      }
+      return NextResponse.json(
+        { message: RATE_LIMIT_MESSAGE },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
       );
     }
 

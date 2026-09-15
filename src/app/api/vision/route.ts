@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { IMAGE_RULES } from "@/lib/image";
+import { checkAiRateLimit } from "@/lib/aiRateLimit";
 import { parseCardVisionAnalysis } from "@/lib/vision/validateVisionAnalysis";
 import type { VisionImageSide } from "@/lib/vision/types";
 
@@ -52,6 +53,9 @@ const MAX_IMAGE_BYTES = IMAGE_RULES.maxBytes;
 // Content-Length before the body is even parsed -- the authoritative,
 // decoded-byte check happens in validateImageDataUrl below.
 const MAX_REQUEST_BODY_BYTES = Math.ceil(MAX_IMAGE_BYTES * 1.4) + 2048;
+
+const RATE_LIMIT_MESSAGE =
+  "You've reached the scanning limit for now. You can still add this card manually, or try scanning again shortly.";
 
 function buildPrompt(side: VisionImageSide): string {
   const sideLabel = side === "front" ? "FRONT" : "BACK";
@@ -161,25 +165,20 @@ function validateImageDataUrl(
   return { ok: true, approxBytes };
 }
 
-// Vision Engine V3, Phase V3.1B: rate-limit gap, audited and deliberately
-// left unimplemented this phase -- do not read this route's authentication
-// check above as a substitute for rate limiting; it only proves who is
-// calling, not how often. This project's routes run on Vercel-style
-// serverless infrastructure (see the repo's own Vercel-oriented deploy
-// setup): a request can land on any of several isolated instances, and
-// even a "warm" instance is not guaranteed to receive a given user's next
-// request. A naive in-process counter (e.g. a module-scope Map<userId,
-// timestamps[]>) would therefore be actively misleading here -- it would
-// silently under-count real usage (an attacker's requests spread across
-// instances each see their own empty counter) while still being fully
-// capable of unfairly throttling a legitimate user whose requests happen
-// to land repeatedly on the same warm instance. Shipping that would read
-// as "rate limited" without providing the actual protection the name
-// implies, which is worse than clearly having no limiter at all. A correct
-// fix needs state shared across instances -- a counter row in the existing
-// Supabase Postgres (reusing infrastructure already present, no new
-// dependency) or a managed store (e.g. Upstash Redis) -- and belongs in a
-// dedicated, durable rate-limiting phase, not bolted onto this one.
+// Vision Engine V3, Phase V3.1B identified a rate-limit gap here and
+// deliberately left it unimplemented, for exactly the reason a naive
+// in-process counter (e.g. a module-scope Map<userId, timestamps[]>) would
+// have been actively misleading on this project's Vercel-style serverless
+// infrastructure: a request can land on any of several isolated
+// instances, so per-instance memory can neither reliably stop an attacker
+// (whose requests spread across instances each see their own empty
+// counter) nor avoid unfairly throttling a legitimate user. TheBinder V1
+// finish-line roadmap, Phase 1 / Task #2 closes that gap below with
+// check_ai_rate_limit() -- a durable counter in the existing Supabase
+// Postgres (see supabase/migrations/202609150001_ai_api_rate_limits.sql),
+// shared correctly across every instance because it lives in the database,
+// not in process memory. This statement is no longer accurate: rate
+// limiting for this route is implemented, not deferred.
 export async function POST(req: Request) {
   const supabase = await createServerClient();
   const { data: userData, error: authError } = await supabase.auth.getUser();
@@ -227,6 +226,20 @@ export async function POST(req: Request) {
   const imageCheck = validateImageDataUrl(imageDataUrl);
   if (!imageCheck.ok) {
     return NextResponse.json({ error: imageCheck.reason }, { status: 400 });
+  }
+
+  // Rate limit last, after every input check has already passed, and
+  // shared with /api/ocr and /api/image-check as one combined "ai" budget
+  // -- see src/lib/aiRateLimit.ts.
+  const rateLimit = await checkAiRateLimit(supabase);
+  if (!rateLimit.allowed) {
+    if (rateLimit.reason === "error") {
+      return NextResponse.json({ error: "Vision analysis failed." }, { status: 500 });
+    }
+    return NextResponse.json(
+      { error: RATE_LIMIT_MESSAGE },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
