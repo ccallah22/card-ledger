@@ -141,6 +141,7 @@ function parseModelJson(rawOutput: string, side: OcrSide) {
     const cleaned = rawOutput.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
     parsed = JSON.parse(cleaned);
   } catch {
+    console.error("[ocr] stage=parse failed", { side, rawLength: rawOutput.length });
     return empty;
   }
 
@@ -165,14 +166,21 @@ function parseModelJson(rawOutput: string, side: OcrSide) {
 }
 
 export async function POST(req: Request) {
+  // TEMPORARY DIAGNOSTIC (see aiRateLimit.ts/image-check/vision routes for
+  // matching instrumentation) -- stage-tracking console output only, no
+  // behavior change. Safe to remove once the production 500s are diagnosed.
+  console.log("[ocr] request received");
+
   // Authentication first, before body parsing or anything else -- an
   // unauthenticated caller must never reach OCR, let alone OpenAI.
   const supabase = await createServerClient();
   const { data: userData, error: authError } = await supabase.auth.getUser();
   const user = userData?.user;
   if (authError || !user) {
+    console.error("[ocr] stage=auth failed", { reason: authError?.message ?? "no user" });
     return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
   }
+  console.log("[ocr] stage=auth ok", { userId: user.id });
 
   // Reject an oversized body before it is even parsed, when the client
   // reports Content-Length (not authoritative alone -- the decoded-byte
@@ -181,6 +189,7 @@ export async function POST(req: Request) {
   // all when the client is honest about its size).
   const contentLength = Number(req.headers.get("content-length") ?? "");
   if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BODY_BYTES) {
+    console.error("[ocr] stage=validation failed", { reason: "content-length", contentLength });
     return NextResponse.json({ message: "Request payload too large." }, { status: 413 });
   }
 
@@ -190,9 +199,11 @@ export async function POST(req: Request) {
     const side = isRecord(body) ? body.side : undefined;
 
     if (!imageDataUrl || typeof imageDataUrl !== "string") {
+      console.error("[ocr] stage=validation failed", { reason: "missing imageDataUrl" });
       return NextResponse.json({ message: "Missing image data." }, { status: 400 });
     }
     if (side !== "front" && side !== "back") {
+      console.error("[ocr] stage=validation failed", { reason: "missing or invalid side" });
       return NextResponse.json(
         { message: "Missing or invalid side; expected \"front\" or \"back\"." },
         { status: 400 },
@@ -201,8 +212,14 @@ export async function POST(req: Request) {
 
     const imageCheck = validateImageDataUrl(imageDataUrl);
     if (!imageCheck.ok) {
+      console.error("[ocr] stage=validation failed", {
+        side,
+        reason: imageCheck.reason,
+        status: imageCheck.status,
+      });
       return NextResponse.json({ message: imageCheck.reason }, { status: imageCheck.status });
     }
+    console.log("[ocr] stage=validation ok", { side, approxBytes: imageCheck.approxBytes });
 
     // Rate limit last, after every input check has already passed -- no
     // point consuming a unit of quota for a request that was going to be
@@ -211,16 +228,23 @@ export async function POST(req: Request) {
     const rateLimit = await checkAiRateLimit(supabase);
     if (!rateLimit.allowed) {
       if (rateLimit.reason === "error") {
+        console.error("[ocr] stage=rate-limit RPC error", { side });
         return NextResponse.json({ message: "OCR failed." }, { status: 500 });
       }
+      console.error("[ocr] stage=rate-limit rejected", {
+        side,
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      });
       return NextResponse.json(
         { message: RATE_LIMIT_MESSAGE },
         { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
       );
     }
+    console.log("[ocr] stage=rate-limit ok", { side });
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
+      console.error("[ocr] stage=config failed", { reason: "missing OPENAI_API_KEY" });
       return NextResponse.json({ message: "Missing OPENAI_API_KEY." }, { status: 500 });
     }
 
@@ -229,6 +253,7 @@ export async function POST(req: Request) {
 
     let json: unknown;
     try {
+      console.log("[ocr] stage=provider request start", { side, model: "gpt-4.1-mini" });
       const res = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
@@ -250,7 +275,24 @@ export async function POST(req: Request) {
         }),
         signal: controller.signal,
       });
+      if (!res.ok) {
+        console.error("[ocr] stage=provider non-2xx", {
+          side,
+          model: "gpt-4.1-mini",
+          status: res.status,
+          statusText: res.statusText,
+        });
+      } else {
+        console.log("[ocr] stage=provider response ok", { side, status: res.status });
+      }
       json = await res.json();
+    } catch (fetchErr) {
+      console.error("[ocr] stage=provider fetch error", {
+        side,
+        name: fetchErr instanceof Error ? fetchErr.name : "unknown",
+        isAbort: fetchErr instanceof Error && fetchErr.name === "AbortError",
+      });
+      throw fetchErr;
     } finally {
       clearTimeout(timeout);
     }
@@ -276,7 +318,11 @@ export async function POST(req: Request) {
       extracted,
       createdAt: new Date().toISOString(),
     });
-  } catch {
+  } catch (err) {
+    console.error("[ocr] stage=unhandled error", {
+      name: err instanceof Error ? err.name : "unknown",
+      isAbort: err instanceof Error && err.name === "AbortError",
+    });
     return NextResponse.json({ message: "OCR failed." }, { status: 500 });
   }
 }

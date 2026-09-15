@@ -114,14 +114,21 @@ function extractText(payload: ResponsesApiPayload | null | undefined) {
 }
 
 export async function POST(req: Request) {
+  // TEMPORARY DIAGNOSTIC (see ocr/vision routes for matching
+  // instrumentation) -- stage-tracking console output only, no behavior
+  // change. Safe to remove once the production 500s are diagnosed.
+  console.log("[image-check] request received");
+
   // Authentication first, before body parsing or anything else -- an
   // unauthenticated caller must never reach either provider call.
   const supabase = await createServerClient();
   const { data: userData, error: authError } = await supabase.auth.getUser();
   const user = userData?.user;
   if (authError || !user) {
+    console.error("[image-check] stage=auth failed", { reason: authError?.message ?? "no user" });
     return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
   }
+  console.log("[image-check] stage=auth ok", { userId: user.id });
 
   // Reject an oversized body before it is even parsed, when the client
   // reports Content-Length (not authoritative alone -- the decoded-byte
@@ -130,19 +137,26 @@ export async function POST(req: Request) {
   // all when the client is honest about its size).
   const contentLength = Number(req.headers.get("content-length") ?? "");
   if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BODY_BYTES) {
+    console.error("[image-check] stage=validation failed", { reason: "content-length", contentLength });
     return NextResponse.json({ message: "Request payload too large." }, { status: 413 });
   }
 
   try {
     const { imageDataUrl } = await req.json();
     if (!imageDataUrl || typeof imageDataUrl !== "string") {
+      console.error("[image-check] stage=validation failed", { reason: "missing imageDataUrl" });
       return NextResponse.json({ message: "Missing image data." }, { status: 400 });
     }
 
     const imageCheck = validateImageDataUrl(imageDataUrl);
     if (!imageCheck.ok) {
+      console.error("[image-check] stage=validation failed", {
+        reason: imageCheck.reason,
+        status: imageCheck.status,
+      });
       return NextResponse.json({ message: imageCheck.reason }, { status: imageCheck.status });
     }
+    console.log("[image-check] stage=validation ok", { approxBytes: imageCheck.approxBytes });
 
     // Rate limit last, after every input check has already passed -- this
     // one HTTP request consumes exactly ONE unit of the combined AI
@@ -152,38 +166,62 @@ export async function POST(req: Request) {
     const rateLimit = await checkAiRateLimit(supabase);
     if (!rateLimit.allowed) {
       if (rateLimit.reason === "error") {
+        console.error("[image-check] stage=rate-limit RPC error");
         return NextResponse.json({ message: "Image check failed." }, { status: 500 });
       }
+      console.error("[image-check] stage=rate-limit rejected", {
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      });
       return NextResponse.json(
         { message: RATE_LIMIT_MESSAGE },
         { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
       );
     }
+    console.log("[image-check] stage=rate-limit ok");
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
+      console.error("[image-check] stage=config failed", { reason: "missing OPENAI_API_KEY" });
       return NextResponse.json({ message: "Missing OPENAI_API_KEY." }, { status: 500 });
     }
 
     // 1) Safety moderation (block explicit content, offensive, etc.). Its
     // own timeout; if this throws (including via abort), the catch block
     // below returns immediately and the classification call never runs.
-    const modRes = await fetchWithTimeout("https://api.openai.com/v1/moderations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "omni-moderation-latest",
-        input: [
-          {
-            type: "image_url",
-            image_url: { url: imageDataUrl },
-          },
-        ],
-      }),
-    });
+    console.log("[image-check] stage=moderation request start");
+    let modRes: Response;
+    try {
+      modRes = await fetchWithTimeout("https://api.openai.com/v1/moderations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "omni-moderation-latest",
+          input: [
+            {
+              type: "image_url",
+              image_url: { url: imageDataUrl },
+            },
+          ],
+        }),
+      });
+    } catch (fetchErr) {
+      console.error("[image-check] stage=moderation fetch error", {
+        name: fetchErr instanceof Error ? fetchErr.name : "unknown",
+        isAbort: fetchErr instanceof Error && fetchErr.name === "AbortError",
+      });
+      throw fetchErr;
+    }
+    if (!modRes.ok) {
+      console.error("[image-check] stage=moderation non-2xx", {
+        status: modRes.status,
+        statusText: modRes.statusText,
+      });
+    } else {
+      console.log("[image-check] stage=moderation response ok", { status: modRes.status });
+    }
 
     const modJson = await modRes.json();
     const modResult = modJson?.results?.[0];
@@ -201,33 +239,51 @@ export async function POST(req: Request) {
 
     // 2) Card vs non-card classification -- only reached once the
     // moderation call above has actually completed successfully.
-    const classifyRes = await fetchWithTimeout("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        max_output_tokens: 200,
-        input: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: [
-                  "Classify whether this image is a sports trading card (or a photo of one).",
-                  "Return ONLY JSON: {\"label\":\"card|screenshot|meme|selfie|random_object|other\",\"confidence\":0-1}.",
-                  "If it's a screenshot of an online listing, label 'screenshot'.",
-                ].join("\n"),
-              },
-              { type: "input_image", image_url: imageDataUrl },
-            ],
-          },
-        ],
-      }),
-    });
+    console.log("[image-check] stage=classify request start");
+    let classifyRes: Response;
+    try {
+      classifyRes = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          max_output_tokens: 200,
+          input: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: [
+                    "Classify whether this image is a sports trading card (or a photo of one).",
+                    "Return ONLY JSON: {\"label\":\"card|screenshot|meme|selfie|random_object|other\",\"confidence\":0-1}.",
+                    "If it's a screenshot of an online listing, label 'screenshot'.",
+                  ].join("\n"),
+                },
+                { type: "input_image", image_url: imageDataUrl },
+              ],
+            },
+          ],
+        }),
+      });
+    } catch (fetchErr) {
+      console.error("[image-check] stage=classify fetch error", {
+        name: fetchErr instanceof Error ? fetchErr.name : "unknown",
+        isAbort: fetchErr instanceof Error && fetchErr.name === "AbortError",
+      });
+      throw fetchErr;
+    }
+    if (!classifyRes.ok) {
+      console.error("[image-check] stage=classify non-2xx", {
+        status: classifyRes.status,
+        statusText: classifyRes.statusText,
+      });
+    } else {
+      console.log("[image-check] stage=classify response ok", { status: classifyRes.status });
+    }
 
     const classifyJson = await classifyRes.json();
     const rawText = extractText(classifyJson);
@@ -239,6 +295,7 @@ export async function POST(req: Request) {
       if (typeof parsed?.label === "string") label = parsed.label;
       if (typeof parsed?.confidence === "number") confidence = parsed.confidence;
     } catch {
+      console.error("[image-check] stage=classify parse failed", { rawLength: rawText.length });
       // fall back to conservative review
     }
 
@@ -256,7 +313,11 @@ export async function POST(req: Request) {
     };
 
     return NextResponse.json(result);
-  } catch {
+  } catch (err) {
+    console.error("[image-check] stage=unhandled error", {
+      name: err instanceof Error ? err.name : "unknown",
+      isAbort: err instanceof Error && err.name === "AbortError",
+    });
     return NextResponse.json({ message: "Image check failed." }, { status: 500 });
   }
 }
