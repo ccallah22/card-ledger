@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 // Vision Engine V2, Phase 5B: narrowly-scoped Storage helper for the
@@ -119,6 +120,33 @@ export async function removeCardMediaImage(input: RemoveCardMediaImageInput): Pr
   const path = buildCardMediaObjectPath(input.profileId, input.userCardId, input.side);
 
   const { error } = await supabase.storage.from(BUCKET).remove([path]);
+
+  if (error && !isObjectNotFoundError(error)) {
+    throw error;
+  }
+}
+
+/**
+ * Removes an arbitrary batch of already-known object paths from this bucket
+ * -- used by account deletion, which already has the exact stored
+ * original_path/processed_path/thumbnail_path values for every one of a
+ * user's card_media rows (read from the database before those rows cascade-
+ * delete), so it has no need to reconstruct paths from the naming
+ * convention or walk the bucket with list(). Accepts an explicit client so
+ * a server-only caller can pass its service-role client; defaults to the
+ * browser client for parity with every other export in this file. A
+ * missing object is tolerated the same way removeCardMediaImage already
+ * tolerates one -- any other Storage error is rethrown so a caller (e.g.
+ * account deletion) can correctly treat a genuine failure as blocking.
+ */
+export async function removeCardMediaObjects(
+  paths: string[],
+  client: SupabaseClient = supabase,
+): Promise<void> {
+  const uniquePaths = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
+  if (uniquePaths.length === 0) return;
+
+  const { error } = await client.storage.from(BUCKET).remove(uniquePaths);
 
   if (error && !isObjectNotFoundError(error)) {
     throw error;
