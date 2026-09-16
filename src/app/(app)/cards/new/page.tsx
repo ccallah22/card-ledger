@@ -103,7 +103,7 @@ const RECOMMENDATION_LABELS: Record<
   safe_to_preselect: "Safe to preselect",
 };
 
-const IMPORTANT_CONFIDENCE_FIELDS = new Set(["player", "cardNumber", "set", "parallel"]);
+const IMPORTANT_CONFIDENCE_FIELDS = new Set(["player", "cardNumber", "set", "cardName", "parallel"]);
 
 const CONFIDENCE_FIELD_LABELS: Record<string, string> = {
   player: "Player",
@@ -112,7 +112,10 @@ const CONFIDENCE_FIELD_LABELS: Record<string, string> = {
   year: "Year",
   brand: "Brand",
   parallel: "Parallel",
-  misc: "Title",
+  // Catalog V2 checklist-section gap fix: renamed from "misc"/"Title" -- this
+  // reason now specifically compares OCR's cardName evidence against the
+  // candidate's canonical checklist-section (insert/subset) name.
+  cardName: "Section",
 };
 
 // Vision Engine V2, Phase 7C: pure, exported-for-testability helpers for
@@ -2502,6 +2505,17 @@ function NewCardPageInner() {
             <div className="mt-1">
               {[candidateResults[0].setName, candidateResults[0].year].filter(Boolean).join(" ")}
             </div>
+            {/* Catalog V2 checklist-section gap fix: the canonical insert/
+                subset identity (e.g. "Select Future"), one level below the
+                set line above -- never replaces it. Omitted for a "base"
+                section (redundant with the set/product name already shown)
+                or when no section is known for this card. */}
+            {candidateResults[0].checklistSectionName &&
+            candidateResults[0].checklistSectionCategory !== "base" ? (
+              <div className="font-medium text-zinc-800">
+                {candidateResults[0].checklistSectionName}
+              </div>
+            ) : null}
             <div>
               {candidateResults[0].playerName ?? candidateResults[0].cardTitle}
               {candidateResults[0].cardNumber ? ` #${candidateResults[0].cardNumber}` : ""}

@@ -229,6 +229,22 @@ async function cardIdsMatchingSetText(token: string): Promise<number[]> {
   return (data ?? []).map((row) => (row as { id: number }).id);
 }
 
+// Catalog V2 checklist-section gap fix: resolves structured OCR cardName
+// evidence (e.g. "Future", a visible insert name) against the canonical
+// checklist_sections.name Catalog V2 already models insert/subset identity
+// in (e.g. "Select Future") -- mirrors cardIdsMatchingSetText's join-and-
+// ilike shape one level down the identity hierarchy (set -> section).
+async function cardIdsMatchingChecklistSectionText(token: string): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("cards")
+    .select("id, checklist_sections!inner(name)")
+    .ilike("checklist_sections.name", `%${token}%`);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => (row as { id: number }).id);
+}
+
 async function cardIdsMatchingPlayerText(token: string): Promise<number[]> {
   const { data, error } = await supabase
     .from("cards")
@@ -357,6 +373,11 @@ function genericTextEvidencePromises(token: string): Promise<number[]>[] {
     cardIdsMatchingPlayerText(token),
     cardIdsMatchingVariantParallelName(token),
     cardIdsMatchingVariantSwatch(token),
+    // Catalog V2 checklist-section gap fix: a free-text token (e.g. typed
+    // or OCR-sourced "future") now also resolves through the canonical
+    // checklist_sections.name (e.g. "Select Future"), consistent with every
+    // other identity-hierarchy text evidence above.
+    cardIdsMatchingChecklistSectionText(token),
   ];
 }
 
@@ -647,11 +668,12 @@ export async function listCardsForChecklistSection(
 // per-field then intersects every token; this instead ANDs whichever
 // structured fields (player/year/set/card-number) are actually present,
 // with a fallback that progressively drops the least-recently-added field
-// (in Player -> Year -> Set -> Card Number priority order) if the
-// fully-narrowed combination returns nothing -- so one noisy OCR field
-// (e.g. a misread year) never zeroes out real candidates. This is a
-// deliberate simplification (drop-from-the-end-of-the-priority-list), not
-// an exhaustive search over every field subset.
+// (in Player -> Year -> Set -> Card Number -> Card Name/Section priority
+// order) if the fully-narrowed combination returns nothing -- so one noisy
+// OCR field (e.g. a misread year, or an unrelated cardName guess) never
+// zeroes out real candidates. This is a deliberate simplification
+// (drop-from-the-end-of-the-priority-list), not an exhaustive search over
+// every field subset.
 
 export type CandidateSearchFilters = {
   playerName?: string | null;
@@ -667,6 +689,15 @@ export type CandidateSearchFilters = {
   // even though it is never used for *scoring* set evidence.
   setName?: string | null;
   cardNumber?: string | null;
+  // Catalog V2 checklist-section gap fix: structured OCR "cardName"
+  // evidence (e.g. "Future") resolved against checklist_sections.name (e.g.
+  // "Select Future") -- the canonical insert/subset identity Catalog V2
+  // already models. Deliberately the LAST stage pushed in
+  // searchCandidateCards (lowest narrowing priority, first dropped on
+  // fallback): it should help retrieve the correct section when combined
+  // with other evidence, but must never be the sole requirement that blocks
+  // retrieval if OCR's cardName text is noisy or wrong.
+  cardName?: string | null;
 };
 
 // This is the OCR candidate engine's own final result-pool cap, unrelated
@@ -715,6 +746,10 @@ export async function searchCandidateCards(
   if (cardNumber) {
     const normalized = normalizeCardNumberForSearch(cardNumber);
     stages.push(() => cardIdsMatchingOwnFields(`card_number.ilike.%${normalized}%`));
+  }
+  const cardName = filters.cardName?.trim();
+  if (cardName) {
+    stages.push(() => cardIdsMatchingChecklistSectionText(cardName));
   }
 
   if (stages.length === 0) return [];

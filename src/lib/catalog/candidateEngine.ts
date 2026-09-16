@@ -61,6 +61,15 @@ export type CatalogCandidate = {
   cardNumber: string;
 
   parallel: string | null;
+
+  // Catalog V2 checklist-section gap fix: canonical insert/subset identity
+  // (e.g. "Select Future" / "insert"), carried forward from
+  // CardWithContext.checklistSection -- already fetched on every candidate
+  // via CARD_CONTEXT_SELECT, previously never surfaced past scoreCandidate.
+  // null for a card with no checklist section (still possible during the
+  // Catalog V2 backfill -- see CardRow's own comment).
+  checklistSectionName: string | null;
+  checklistSectionCategory: string | null;
 };
 
 const MAX_CANDIDATES = 25;
@@ -79,7 +88,18 @@ export const WEIGHTS = {
   year: 10,
   brand: 5,
   parallel: 10,
-  misc: 5,
+  // Catalog V2 checklist-section gap fix: renamed from "misc" now that this
+  // signal specifically compares OCR's cardName evidence (e.g. "Future")
+  // against the candidate's canonical checklist_sections.name (e.g.
+  // "Select Future") -- see scoreCandidate's "cardName" reason below.
+  // Raised from 5 to 15 (matching "set"): a checklist section is a more
+  // specific identity axis one level below "set" (many sections per set),
+  // so a confirmed section match deserves comparable weight, while staying
+  // well below player (30) and cardNumber (25) so it can never outweigh
+  // contradictory core identity evidence -- candidateConfidence.ts's
+  // HIGH_VALUE_FIELDS and safe-to-preselect structural gates don't include
+  // "cardName" and are unaffected by this weight change.
+  cardName: 15,
 } as const;
 
 function normalizeText(value: string | null | undefined): string {
@@ -286,19 +306,27 @@ async function scoreCandidate(
     weight: parallelMatched ? WEIGHTS.parallel : 0,
   });
 
-  // Misc: this phase's only auxiliary, lower-confidence signal -- OCR's
-  // card/subset name (cardName) against the catalog card's own title (e.g.
-  // an insert/subset name). Everything else useful (autograph/relic
-  // wording, etc.) is already reflected structurally on card_variants and
-  // isn't compared here to avoid inventing additional ad hoc rules.
-  const miscExpected = evidence.cardName.value;
-  const miscMatched = textMatches(miscExpected, card.title);
+  // Catalog V2 checklist-section identity: OCR's card/subset-name evidence
+  // (cardName, e.g. "Future") compared against this card's CANONICAL
+  // checklist section name (e.g. "Select Future") -- not cards.title, a
+  // legacy free-text column left null by the real Catalog V2 importer (see
+  // the checklist-section diagnosis this fixes). textMatches' substring-
+  // either-direction check already recognizes "Future" as contained in
+  // "Select Future". candidateConfidence.ts's classifyFreeText
+  // independently re-derives the finer exact/normalized/partial/mismatch
+  // ladder from these same expected/actual values for the UI's
+  // explainability summary -- this reason only decides the boolean
+  // match/no-match gate for the ranking score, consistent with every other
+  // field in this function.
+  const cardNameExpected = evidence.cardName.value;
+  const sectionNameActual = card.checklistSection?.name ?? null;
+  const cardNameMatched = textMatches(cardNameExpected, sectionNameActual);
   reasons.push({
-    field: "misc",
-    matched: miscMatched,
-    expected: miscExpected,
-    actual: card.title,
-    weight: miscMatched ? WEIGHTS.misc : 0,
+    field: "cardName",
+    matched: cardNameMatched,
+    expected: cardNameExpected,
+    actual: sectionNameActual,
+    weight: cardNameMatched ? WEIGHTS.cardName : 0,
   });
 
   const score = reasons.reduce((total, reason) => total + reason.weight, 0);
@@ -314,6 +342,8 @@ async function scoreCandidate(
     year: yearActual,
     cardNumber: card.cardNumber,
     parallel,
+    checklistSectionName: card.checklistSection?.name ?? null,
+    checklistSectionCategory: card.checklistSection?.section_category ?? null,
   };
 }
 
@@ -339,8 +369,9 @@ export async function findCatalogCandidates(
   const year = toYearNumber(evidence.year.value);
   const setName = resolveSetSearchText(evidence);
   const cardNumber = evidence.cardNumber.value;
+  const cardName = evidence.cardName.value;
 
-  const pool = await searchCandidateCards({ playerName, year, setName, cardNumber });
+  const pool = await searchCandidateCards({ playerName, year, setName, cardNumber, cardName });
   if (pool.length === 0) return [];
 
   const scored = await Promise.all(pool.map((card) => scoreCandidate(card, evidence)));

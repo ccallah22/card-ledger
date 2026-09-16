@@ -89,8 +89,12 @@ const EXACT_ONLY_FIELDS = new Set(["cardNumber", "year"]);
 
 // Core identity fields -- weighted more heavily both in the conflict
 // penalty (a front/back disagreement here is more damaging to trust than
-// e.g. a conflicting misc/parallel field) and in the safe-to-preselect
-// structural gates below.
+// e.g. a conflicting cardName/parallel field) and in the safe-to-preselect
+// structural gates below. Deliberately excludes "cardName" (checklist-
+// section identity) even at its raised weight -- see WEIGHTS.cardName's own
+// comment in candidateEngine.ts -- so a confirmed section match can never
+// by itself satisfy hasRequiredIdentityEvidence or bypass a core
+// player/cardNumber mismatch below.
 const HIGH_VALUE_FIELDS = new Set(["player", "cardNumber", "set", "year"]);
 
 function normalizeCase(value: string): string {
@@ -99,7 +103,7 @@ function normalizeCase(value: string): string {
 
 // Conservative punctuation/whitespace normalization only -- no synonym or
 // abbreviation expansion. Safe for free-text fields (player, set, brand,
-// parallel, misc); never applied to the exact-only numeric fields.
+// parallel, cardName); never applied to the exact-only numeric fields.
 function normalizePunctuationAndWhitespace(value: string): string {
   // Strips periods, commas, hyphens, and both straight/curly apostrophes
   // (e.g. "Panini, Inc." -> "panini inc", "O'Brien" == "O'Brien").
@@ -139,11 +143,13 @@ function classifyExactOnly(field: string, expected: string | null, actual: strin
   return "mismatch";
 }
 
-// Free-text fields (player, set, brand, parallel, misc): full ladder,
+// Free-text fields (player, set, brand, parallel, cardName): full ladder,
 // including a deliberately narrow "partial" tier -- substring containment
 // either direction, used only where semantically reasonable (a set name
 // inside a longer official title, a player name without a middle initial,
-// a short parallel label inside a longer descriptor).
+// a short parallel label inside a longer descriptor, or a visible insert
+// name like "Future" inside its canonical checklist section name "Select
+// Future").
 function classifyFreeText(expected: string | null, actual: string | null): MatchQuality {
   const e = expected?.trim();
   if (!e) return "missing";
@@ -212,7 +218,7 @@ type FieldDefinition = {
 //   evidence.year              -> candidate year                   (reasons "year")
 //   evidence.brand/manufacturer -> candidate brand/manufacturer     (reasons "brand")
 //   evidence.parallelText      -> candidate parallel                (reasons "parallel")
-//   evidence.cardName          -> candidate title/misc              (reasons "misc")
+//   evidence.cardName          -> candidate checklist-section name   (reasons "cardName")
 // Structured expected/actual values are read from candidate.reasons (already
 // computed by candidateEngine.ts against the real catalog columns) rather
 // than re-derived from candidate.cardTitle, which is a display string with
@@ -232,7 +238,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     evidenceField: (e) => (e.brand.value ? e.brand : e.manufacturer),
   },
   { field: "parallel", weight: WEIGHTS.parallel, reasonField: "parallel", evidenceField: (e) => e.parallelText },
-  { field: "misc", weight: WEIGHTS.misc, reasonField: "misc", evidenceField: (e) => e.cardName },
+  { field: "cardName", weight: WEIGHTS.cardName, reasonField: "cardName", evidenceField: (e) => e.cardName },
 ];
 
 function findReason(reasons: CandidateMatchReason[], field: string): CandidateMatchReason | undefined {
@@ -295,7 +301,7 @@ function computeEvidenceCoverage(fields: FieldConfidenceAssessment[]): number {
 // maximum possible weighted-conflict total if every field conflicted and
 // every field were high-value-weighted. This keeps the result in [0, 1]
 // while making a conflict on an identity field meaningfully worse than one
-// on a low-weight field like parallel/misc.
+// on a non-high-value field like parallel/cardName.
 function computeConflictPenalty(fields: FieldConfidenceAssessment[]): number {
   const conflicting = fields.filter((f) => f.conflict);
   if (conflicting.length === 0) return 0;
