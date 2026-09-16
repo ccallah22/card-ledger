@@ -1317,18 +1317,52 @@ function NewCardPageInner() {
     setSelectedCandidate(null);
   }
 
+  // Add Card scan UX simplification, Phase D: the ONE place that applies a
+  // chosen variant's canonical parallel/autograph/memorabilia identity onto
+  // the form -- shared by the existing manual "Parallel / Variant"
+  // search-box selection below and the new candidate-flow variant
+  // refinement UI further down, so the exact same three fields are set the
+  // exact same way regardless of which variant shape (CardVariantSummary
+  // from the manual lookup, or VariantCandidate from the candidate-aware
+  // ranking) triggered it -- both already carry these same three fields
+  // with the same types, so no adapter/union type is needed. Deliberately
+  // narrow: only the fields that already flow into buildCard()/save.
+  function applyVariantSelection(variant: {
+    parallelName: string | null;
+    hasAutograph: boolean;
+    hasMemorabilia: boolean;
+  }) {
+    setParallel(variant.parallelName ?? "");
+    setIsAutograph(variant.hasAutograph);
+    setIsPatch(variant.hasMemorabilia);
+  }
+
   // Vision Engine V2, Phase 8A: variant-aware candidate search. Read-only,
   // additive on top of the existing card-candidate pipeline above -- never
-  // reorders card candidates, never selects a variant, never writes a
-  // variant ID into any save/persistence path. Variants are only ever
-  // fetched for ONE card at a time (the selected candidate, or the top
-  // candidate when nothing is selected), never for every pooled search
-  // candidate.
+  // reorders card candidates, never writes a variant ID into any save/
+  // persistence path. Variants are only ever fetched for ONE card at a
+  // time (the selected candidate, or the top candidate when nothing is
+  // selected), never for every pooled search candidate.
+  //
+  // Add Card scan UX simplification, Phase D: this ranked list is still
+  // computed exactly as before (including its "top candidate when nothing
+  // is selected" fallback, left untouched so no internal data/caching
+  // timing changes) -- what changed is presentation only, see the JSX
+  // below. selectedVariantCandidate is NEW: unlike variantResults (a mere
+  // ranking, never a selection -- see this section's own long-standing
+  // comment above), this is set ONLY by an explicit user pick in the new
+  // variant-refinement disclosure, so "ranked first" is never confused
+  // with "selected" (ranked-but-unpicked variants are never treated as
+  // resolved). Reset alongside variantResults whenever the active exact
+  // card changes (see the effect below), so Variant A can never remain
+  // attached once Card B becomes active.
   const activeCandidateForVariants = selectedCandidate ?? candidateResults[0] ?? null;
 
   const [variantResults, setVariantResults] = useState<VariantCandidate[]>([]);
   const [variantsLoading, setVariantsLoading] = useState(false);
   const [variantsError, setVariantsError] = useState(false);
+  const [selectedVariantCandidate, setSelectedVariantCandidate] = useState<VariantCandidate | null>(null);
+  const [showVariantRefinement, setShowVariantRefinement] = useState(false);
 
   // Small in-memory, page-level cache of the RAW (unranked) variant list
   // per card ID -- a card's own catalog variants don't change while this
@@ -1350,9 +1384,25 @@ function NewCardPageInner() {
   }
 
   const activeVariantCardId = activeCandidateForVariants?.cardId ?? null;
+  // Phase D: distinguishes "the active exact card itself changed" from
+  // "the same card's variants are just being re-ranked against fresh
+  // evidence" (this effect's other dependency, displayEvidence, changes
+  // far more often -- e.g. every time Vision completes -- and must NOT
+  // clear an explicit variant selection each time that happens).
+  const prevActiveVariantCardIdRef = useRef(activeVariantCardId);
 
   useEffect(() => {
     let active = true;
+
+    if (prevActiveVariantCardIdRef.current !== activeVariantCardId) {
+      prevActiveVariantCardIdRef.current = activeVariantCardId;
+      // Phase D: a genuinely different exact card is now active -- an
+      // explicitly selected variant, and an open refinement disclosure,
+      // both belonged to the PREVIOUS card and must never carry over onto
+      // this one (Card A's Variant A must not remain attached to Card B).
+      setSelectedVariantCandidate(null);
+      setShowVariantRefinement(false);
+    }
 
     if (activeVariantCardId === null) {
       setVariantResults([]);
@@ -2475,7 +2525,14 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        {selectedCard ? (
+        {/* Add Card scan UX simplification, Phase D: unchanged manual
+            lookup box, but now also gated on !selectedCandidate -- an
+            earlier manual Card pick that's since been superseded by an
+            explicitly chosen scan candidate (selectedCandidate now
+            authoritative per Phase A/B) leaves selectedCard set to a
+            stale card; without this it would keep showing this box
+            underneath an unrelated "Card identified" candidate. */}
+        {selectedCard && !selectedCandidate ? (
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-zinc-900">
               Parallel / Variant (optional)
@@ -2524,9 +2581,11 @@ function NewCardPageInner() {
                           // already flow into buildCard()/save exactly as
                           // when filled by catalog match or checklist
                           // selection, so no save-logic change is needed.
-                          setParallel(v.parallelName ?? "");
-                          setIsAutograph(v.hasAutograph);
-                          setIsPatch(v.hasMemorabilia);
+                          // (Phase D: now via the shared applyVariantSelection
+                          // primitive, reused by the new candidate-flow
+                          // variant refinement below -- same fields, same
+                          // effect, no duplicated assignment logic.)
+                          applyVariantSelection(v);
                         }}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
                       >
@@ -2652,7 +2711,31 @@ function NewCardPageInner() {
                 <div className="mt-1">
                   <CandidateSummary candidate={selectedCandidate} />
                 </div>
-                <div className="mt-2">
+                {/* Add Card scan UX simplification, Phase D: only ever
+                    shows a GENUINELY selected variant (selectedVariantCandidate,
+                    set exclusively by an explicit pick below) -- never the
+                    merely top-ranked, unaccepted entry from variantResults.
+                    "ranked first" must never be presented as "identified". */}
+                {selectedVariantCandidate ? (
+                  <div className="mt-1 text-zinc-600">
+                    {[
+                      selectedVariantCandidate.parallelName ?? "Base (no parallel)",
+                      selectedVariantCandidate.printRun ? `/${selectedVariantCandidate.printRun}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    {selectedVariantCandidate.hasAutograph || selectedVariantCandidate.hasMemorabilia
+                      ? " • " +
+                        [
+                          selectedVariantCandidate.hasAutograph ? "Autograph" : "",
+                          selectedVariantCandidate.hasMemorabilia ? "Memorabilia" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")
+                      : ""}
+                  </div>
+                ) : null}
+                <div className="mt-2 flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => setShowCandidateAlternatives((prev) => !prev)}
@@ -2662,7 +2745,86 @@ function NewCardPageInner() {
                   >
                     Change card
                   </button>
+                  {/* Add Card scan UX simplification, Phase D: only offered
+                      when there is something meaningful to choose from
+                      (existing ranked variantResults data, no new query) --
+                      a card with no catalog variants gets no useless
+                      refinement control (Step 12). */}
+                  {variantResults.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowVariantRefinement((prev) => !prev)}
+                      aria-expanded={showVariantRefinement}
+                      aria-controls="variant-refinement"
+                      className="text-blue-700 underline"
+                    >
+                      Choose parallel / variant
+                    </button>
+                  ) : null}
                 </div>
+                {showVariantRefinement ? (
+                  <div
+                    id="variant-refinement"
+                    className="mt-3 max-h-80 space-y-2 overflow-y-auto border-t border-zinc-200 pt-3"
+                  >
+                    {variantsLoading ? (
+                      <div className="text-zinc-500">Loading variants…</div>
+                    ) : variantsError ? (
+                      <div className="text-red-600">Couldn&apos;t load variants for this card.</div>
+                    ) : (
+                      // Correction (Phase D review): ranking still determines
+                      // ORDER (variantResults is already sorted best-first by
+                      // rankCardVariants, untouched here), but once the user
+                      // has deliberately opened this correction flow, ranking
+                      // must not control ELIGIBILITY -- every real catalog
+                      // variant already present in variantResults is
+                      // rendered, not just the top 5. A card like 5095
+                      // (Select Future, 8 real variants) must let the
+                      // collector pick #6/#7/#8 if that's the one OCR/Vision
+                      // evidence under-ranked. No new cap, no pagination, no
+                      // auto-selection -- just no arbitrary truncation of an
+                      // already-complete, already-correctly-ordered list.
+                      variantResults.map((variant) => {
+                        const isActive = selectedVariantCandidate?.variantId === variant.variantId;
+                        return (
+                          <div
+                            key={variant.variantId}
+                            className={
+                              "rounded border bg-white p-2 " +
+                              (isActive ? "border-zinc-900" : "border-zinc-200")
+                            }
+                          >
+                            <div className="font-medium text-zinc-800">
+                              {variant.parallelName ?? "Base (no parallel)"}
+                              {variant.printRun ? ` • /${variant.printRun}` : ""}
+                            </div>
+                            <div className="text-zinc-500">
+                              {[
+                                variant.hasAutograph ? "Autograph" : null,
+                                variant.hasMemorabilia ? "Memorabilia" : null,
+                                variant.swatchDescriptor,
+                              ]
+                                .filter(Boolean)
+                                .join(" • ") || "No additional attributes"}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isActive}
+                              onClick={() => {
+                                applyVariantSelection(variant);
+                                setSelectedVariantCandidate(variant);
+                                setShowVariantRefinement(false);
+                              }}
+                              className="mt-1 text-blue-700 underline disabled:cursor-default disabled:text-zinc-400 disabled:no-underline"
+                            >
+                              {isActive ? "Currently selected" : "Select this variant"}
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
@@ -2719,47 +2881,18 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        {/* Vision Engine V2, Phase 8A: read-only "Possible Variants" for
-            the selected candidate (or the top candidate when nothing is
-            selected). Never selects a variant, never writes a variant ID
-            into save state, and never changes the manual card-candidate
-            selection above. */}
-        {!isWishlistCard && activeCandidateForVariants ? (
-          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
-            <div className="font-semibold text-zinc-900">Possible Variants</div>
-            {variantsLoading ? (
-              <div className="mt-1 text-zinc-500">Loading variants…</div>
-            ) : variantsError ? (
-              <div className="mt-1 text-red-600">Couldn&apos;t load variants for this card.</div>
-            ) : variantResults.length === 0 ? (
-              <div className="mt-1 text-zinc-500">No catalog variants found for this card.</div>
-            ) : (
-              <ul className="mt-1 space-y-2">
-                {variantResults.slice(0, 5).map((variant) => (
-                  <li key={variant.variantId} className="border-t border-zinc-200 pt-2 first:border-t-0 first:pt-0">
-                    <div className="font-medium text-zinc-800">
-                      {variant.parallelName ?? "Base (no parallel)"}
-                      {variant.printRun ? ` • /${variant.printRun}` : ""}
-                    </div>
-                    <div className="text-zinc-500">
-                      {[
-                        variant.hasAutograph ? "Autograph" : null,
-                        variant.hasMemorabilia ? "Memorabilia" : null,
-                        variant.swatchDescriptor,
-                      ]
-                        .filter(Boolean)
-                        .join(" • ") || "No additional attributes"}
-                    </div>
-                    <div className="text-zinc-500">Match score: {variant.rankingScore.toFixed(0)}</div>
-                    {variant.reasons.length > 0 ? (
-                      <div className="text-zinc-500">{variant.reasons.slice(0, 2).join(" / ")}</div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : null}
+        {/* Add Card scan UX simplification, Phase D: the always-visible,
+            read-only "Possible Variants" panel that used to render here
+            unconditionally (for the selected candidate, or the merely
+            top-ranked one when nothing was selected yet) was removed --
+            its exact same data (variantResults) and interaction is now
+            served by the "Choose parallel / variant" disclosure inside the
+            "Card identified" summary above, reachable only once an exact
+            card is actually selected (Step 13: no variant choices before
+            the card itself is resolved) and only deliberately (Step 6),
+            never permanently. variantResults/variantsLoading/variantsError
+            and their underlying fetch/ranking are entirely unchanged --
+            only this redundant, always-on rendering was deleted. */}
 
         {/* Vision Engine V3, Phase V3.1C: read-only visual-observation
             summary. Rendered only from frontVisionResult/backVisionResult,
