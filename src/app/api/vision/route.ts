@@ -180,20 +180,13 @@ function validateImageDataUrl(
 // not in process memory. This statement is no longer accurate: rate
 // limiting for this route is implemented, not deferred.
 export async function POST(req: Request) {
-  // TEMPORARY DIAGNOSTIC (see ocr/image-check routes for matching
-  // instrumentation) -- stage-tracking console output only, no behavior
-  // change. Safe to remove once the production 500s are diagnosed.
-  console.log("[vision] request received");
-
   const supabase = await createServerClient();
   const { data: userData, error: authError } = await supabase.auth.getUser();
   const user = userData?.user;
 
   if (authError || !user) {
-    console.error("[vision] stage=auth failed", { reason: authError?.message ?? "no user" });
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  console.log("[vision] stage=auth ok", { userId: user.id });
 
   // Reject an oversized body before it is even parsed, when the client
   // reports Content-Length (not authoritative on its own -- the decoded
@@ -202,7 +195,6 @@ export async function POST(req: Request) {
   // at all when the client is honest about its size).
   const contentLength = Number(req.headers.get("content-length") ?? "");
   if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BODY_BYTES) {
-    console.error("[vision] stage=validation failed", { reason: "content-length", contentLength });
     return NextResponse.json({ error: "Request payload too large." }, { status: 400 });
   }
 
@@ -210,37 +202,31 @@ export async function POST(req: Request) {
   try {
     rawBody = await req.json();
   } catch {
-    console.error("[vision] stage=validation failed", { reason: "invalid JSON body" });
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   // Narrow, allowlist-only read of the request body -- any other field the
   // caller sent (including an attempted apiKey override) is never read.
   if (!isRecord(rawBody)) {
-    console.error("[vision] stage=validation failed", { reason: "body not an object" });
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
   const side = rawBody.side;
   const imageDataUrl = rawBody.imageDataUrl;
 
   if (side !== "front" && side !== "back") {
-    console.error("[vision] stage=validation failed", { reason: "missing or invalid side" });
     return NextResponse.json(
       { error: "Missing or invalid side; expected \"front\" or \"back\"." },
       { status: 400 },
     );
   }
   if (typeof imageDataUrl !== "string" || !imageDataUrl) {
-    console.error("[vision] stage=validation failed", { side, reason: "missing imageDataUrl" });
     return NextResponse.json({ error: "Missing image data." }, { status: 400 });
   }
 
   const imageCheck = validateImageDataUrl(imageDataUrl);
   if (!imageCheck.ok) {
-    console.error("[vision] stage=validation failed", { side, reason: imageCheck.reason });
     return NextResponse.json({ error: imageCheck.reason }, { status: 400 });
   }
-  console.log("[vision] stage=validation ok", { side, approxBytes: imageCheck.approxBytes });
 
   // Rate limit last, after every input check has already passed, and
   // shared with /api/ocr and /api/image-check as one combined "ai" budget
@@ -251,16 +237,11 @@ export async function POST(req: Request) {
       console.error("[vision] stage=rate-limit RPC error", { side });
       return NextResponse.json({ error: "Vision analysis failed." }, { status: 500 });
     }
-    console.error("[vision] stage=rate-limit rejected", {
-      side,
-      retryAfterSeconds: rateLimit.retryAfterSeconds,
-    });
     return NextResponse.json(
       { error: RATE_LIMIT_MESSAGE },
       { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
     );
   }
-  console.log("[vision] stage=rate-limit ok", { side });
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -273,7 +254,6 @@ export async function POST(req: Request) {
 
   let json: unknown;
   try {
-    console.log("[vision] stage=provider request start", { side, model: MODEL });
     const res = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -305,17 +285,14 @@ export async function POST(req: Request) {
         model: MODEL,
         status: res.status,
         statusText: res.statusText,
-        userId: user.id,
       });
       return NextResponse.json({ error: "Vision analysis failed." }, { status: 502 });
     }
-    console.log("[vision] stage=provider response ok", { side, status: res.status });
 
     json = await res.json();
   } catch (err) {
     console.error("[vision] stage=provider fetch error", {
       side,
-      userId: user.id,
       name: err instanceof Error ? err.name : "unknown",
       isAbort: err instanceof Error && err.name === "AbortError",
     });
@@ -327,7 +304,7 @@ export async function POST(req: Request) {
   const rawOutput = extractText(json);
   const parsedJson = parseModelJson(rawOutput);
   if (parsedJson === null) {
-    console.error("[vision] stage=parse failed", { side, userId: user.id, rawLength: rawOutput.length });
+    console.error("[vision] stage=parse failed", { side, rawLength: rawOutput.length });
     return NextResponse.json({ error: "Vision analysis returned an invalid response." }, { status: 502 });
   }
 
@@ -340,12 +317,10 @@ export async function POST(req: Request) {
   if (!result.ok) {
     console.error("[vision] stage=schema validation failed", {
       side,
-      userId: user.id,
       errors: result.errors.join("; "),
     });
     return NextResponse.json({ error: "Vision analysis returned an invalid response." }, { status: 502 });
   }
 
-  console.log("[vision] stage=success", { side, userId: user.id });
   return NextResponse.json(result.analysis, { status: 200 });
 }
