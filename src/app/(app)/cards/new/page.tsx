@@ -66,7 +66,6 @@ import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
 import { applyManualOverrides, type ManualOverridesByField } from "@/lib/evidence/manualOverrides";
 import type { EvidenceFieldName, EvidenceValueForField } from "@/lib/evidence/types";
 import { replaceManualEvidenceOverrides } from "@/lib/repositories/manualEvidenceOverrides";
-import { EvidenceInspector } from "@/components/evidence/EvidenceInspector";
 import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCandidateEngine";
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
 import {
@@ -272,6 +271,40 @@ function CandidateSummary({ candidate }: { candidate: CatalogCandidate }) {
     </>
   );
 }
+
+// Add Card scan UX simplification, Phase F: the closed set of FusedEvidence
+// fields that actually drive card IDENTITY -- exactly the fields
+// candidateEngine.ts's WEIGHTS / candidateConfidence.ts's FIELD_DEFINITIONS
+// score when ranking/assessing a candidate card (player, cardNumber, set,
+// year, cardName, parallel, brand), restricted to code semantics rather
+// than the old Evidence Inspector's own field list. A conflict on any
+// OTHER field (teamName, manufacturer, autographPresent, memorabiliaPresent,
+// serialNumberText, serialAreaVisible, dominantColor, borderColor,
+// orientation) never appears in the identity-conflict prompt below --
+// resolving those never changes which catalog card this is, so they stay
+// purely internal (still fully available to variant ranking/future
+// reference work via displayEvidence, untouched by this phase). Typed as
+// a closed literal union (not the broader EvidenceFieldName) specifically
+// so every field here is guaranteed to be an EvidenceField<string> --
+// see applyIdentityConflictResolution below, which relies on that.
+type IdentityEvidenceFieldName =
+  | "playerName"
+  | "cardNumber"
+  | "setName"
+  | "year"
+  | "cardName"
+  | "parallelText"
+  | "brand";
+
+const IDENTITY_CONFLICT_FIELDS: { field: IdentityEvidenceFieldName; label: string }[] = [
+  { field: "playerName", label: "Player" },
+  { field: "cardNumber", label: "Card Number" },
+  { field: "setName", label: "Set" },
+  { field: "year", label: "Year" },
+  { field: "cardName", label: "Card Name" },
+  { field: "parallelText", label: "Parallel" },
+  { field: "brand", label: "Brand" },
+];
 
 function NewCardPageInner() {
   const router = useRouter();
@@ -1081,12 +1114,84 @@ function NewCardPageInner() {
     }));
   }
 
+  // Add Card scan UX simplification, Phase F: no longer called from this
+  // component's JSX now that the full override-editor UI (EvidenceInspector/
+  // EvidenceFieldCard's per-field "Remove Override" button) is no longer
+  // rendered -- the new minimal identity-conflict prompt only ever adds an
+  // override (applyIdentityConflictResolution above), it never removes one.
+  // Left in place, unchanged and still fully functional against
+  // manualOverrides/displayEvidence exactly as before, as internal capability
+  // preserved for a future phase's UI (matching this file's existing
+  // precedent for candidateAutoSelected in Phase C).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleRemoveEvidenceOverride(field: EvidenceFieldName) {
     setManualOverrides((prev) => {
       const next = { ...prev };
       delete next[field];
       return next;
     });
+  }
+
+  // Add Card scan UX simplification, Phase F: derives the ONLY evidence
+  // conflicts ever shown to the collector -- identity-relevant fields
+  // (IDENTITY_CONFLICT_FIELDS above) that are genuinely in FusedEvidence's
+  // own "conflicted" state, each reduced to its distinct disputed values.
+  // Purely a read of the already-computed displayEvidence -- no new fusion,
+  // no new conflict detection, nothing recomputed that wasn't already
+  // computed before this phase. Rendering (see the JSX below) additionally
+  // gates this on !selectedCandidate && candidateResults.length === 0, so
+  // this list can be non-empty (e.g. a dominant-color-only conflict is
+  // never in it, but a genuine year conflict on an already-identified card
+  // can be) without ever actually being shown -- Case A/B/C in this phase's
+  // spec take priority over any identity conflict that happens to exist.
+  const identityFieldConflicts = useMemo(
+    () =>
+      IDENTITY_CONFLICT_FIELDS.flatMap(({ field, label }) => {
+        const evidenceField = displayEvidence[field];
+        if (evidenceField.state !== "conflicted") return [];
+        const values = new Set<string>();
+        for (const conflict of evidenceField.conflicts) {
+          for (const observation of conflict.observations) {
+            if (observation.value) values.add(observation.value);
+          }
+        }
+        return values.size > 0 ? [{ field, label, values: [...values] }] : [];
+      }),
+    [displayEvidence],
+  );
+
+  // Applies the collector's answer through the exact same write-back path
+  // as the (now-internal) full override editor -- handleEvidenceOverride ->
+  // manualOverrides -> displayEvidence -> candidate search/confidence/
+  // variant ranking. A switch over literal field names (rather than passing
+  // the IdentityEvidenceFieldName-typed `field` straight through) so each
+  // call site keeps handleEvidenceOverride's own generic fully and
+  // unambiguously inferred, with no type assertion required.
+  function applyIdentityConflictResolution(field: IdentityEvidenceFieldName, value: string) {
+    const explanation = "Manually resolved from conflicting evidence.";
+    switch (field) {
+      case "playerName":
+        handleEvidenceOverride("playerName", value, explanation);
+        return;
+      case "cardNumber":
+        handleEvidenceOverride("cardNumber", value, explanation);
+        return;
+      case "setName":
+        handleEvidenceOverride("setName", value, explanation);
+        return;
+      case "year":
+        handleEvidenceOverride("year", value, explanation);
+        return;
+      case "cardName":
+        handleEvidenceOverride("cardName", value, explanation);
+        return;
+      case "parallelText":
+        handleEvidenceOverride("parallelText", value, explanation);
+        return;
+      case "brand":
+        handleEvidenceOverride("brand", value, explanation);
+        return;
+    }
   }
 
   // Vision Engine V2, Phase 7C: a stable identity for the current
@@ -2666,14 +2771,19 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        {!isWishlistCard && (mergedOcr.frontAvailable || mergedOcr.backAvailable) ? (
-          <div className="sm:col-span-2 text-xs text-zinc-500">
-            Combined OCR ready
-            {mergedOcr.conflictCount > 0
-              ? ` • ${mergedOcr.conflictCount} field conflict${mergedOcr.conflictCount === 1 ? "" : "s"}`
-              : ""}
-          </div>
-        ) : null}
+        {/* Add Card scan UX simplification, Phase F: the routine
+            "Combined OCR ready — N field conflict(s)" line that used to
+            render here unconditionally (once either side's OCR completed)
+            was removed -- it exposed an internal fusion diagnostic
+            (mergedOcr.conflictCount) that a collector has no use for and
+            that never, by itself, meant the card couldn't be identified
+            (see the real Select Future production example: 1 field
+            conflict, exact card still identified correctly). Per-side
+            progress/failure text (ocrStatusLabel, rendered under each
+            uploader above) already covers genuinely useful OCR status
+            (reading/detected/no text/failed) and is unchanged. mergedOcr
+            itself is untouched -- still the sole input to searchCycleKey
+            and the candidate-search effect's early-return gate above. */}
 
         {/* Add Card scan UX simplification, Phase C: the normal path shows
             a concise "Card identified" summary (canonical identity only --
@@ -2893,19 +3003,65 @@ function NewCardPageInner() {
             uploader instead of in a separate combined technical panel;
             see getImageRetakeGuidance. */}
 
-        {/* Vision Engine V3, Phase V3.3A/V3.3B: Evidence Inspector. Renders
-            displayEvidence -- fullFusedEvidence with any local manual
-            overrides applied (see applyManualOverrides above) -- never the
-            other way around; fullFusedEvidence itself is never mutated, and
-            manual overrides never reach candidateEngine/candidateConfidence/
-            variantCandidateEngine or any save path. */}
-        {!isWishlistCard ? (
-          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3">
-            <EvidenceInspector
-              evidence={displayEvidence}
-              onOverride={handleEvidenceOverride}
-              onRemoveOverride={handleRemoveEvidenceOverride}
-            />
+        {/* Add Card scan UX simplification, Phase F: the always-visible,
+            full field-by-field "Evidence Inspector" (state/confidence/
+            source badges, raw supporting observations, every conflict --
+            identity and purely visual alike -- and a free-text override
+            editor for every field) no longer renders during the normal
+            path. displayEvidence/fullFusedEvidence/manualOverrides remain
+            exactly as before -- still the single evidence object driving
+            candidate search, candidate confidence, and variant ranking --
+            only this routine, always-on UI surface was removed (the
+            EvidenceInspector/EvidenceFieldCard components themselves are
+            untouched and still available, just no longer rendered here).
+            The only evidence-conflict surface a collector can now see is
+            the minimal prompt directly below, and only when TheBinder
+            genuinely cannot identify the card without their help. */}
+
+        {/* Add Card scan UX simplification, Phase F: minimal, targeted
+            "we need one detail" intervention -- Case D from this phase's
+            spec. Gated on ALL of: an exact card is not already selected
+            (!selectedCandidate -- Case A/B stay silent regardless of any
+            conflict), there is no candidate list for Phase C's "Choose the
+            matching card" chooser to show instead (candidateResults.length
+            === 0 -- Case C's own chooser is preferred whenever it exists),
+            and at least one genuinely identity-relevant field is actually
+            conflicted (identityFieldConflicts.length > 0, computed above --
+            Case E's non-identity conflicts, e.g. dominant color, can never
+            appear here). Reuses handleEvidenceOverride's existing write-back
+            path unchanged -- no new state system -- so answering here can
+            itself surface new candidates (displayEvidence changes ->
+            candidate search re-runs), at which point this prompt
+            disappears on its own (candidateResults.length becomes > 0) in
+            favor of Phase C's normal identified/choose-a-card UI. If no
+            identity-relevant field is actually conflicted, nothing renders
+            here at all and the manual form fields below remain the
+            fallback (Step 14). */}
+        {!isWishlistCard && !selectedCandidate && candidateResults.length === 0 && identityFieldConflicts.length > 0 ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
+            <div className="font-semibold text-zinc-900">Confirm a card detail</div>
+            <div className="mt-1 text-zinc-500">
+              TheBinder found conflicting information and needs your help identifying this card.
+            </div>
+            <div className="mt-3 space-y-3">
+              {identityFieldConflicts.map(({ field, label, values }) => (
+                <div key={field}>
+                  <div className="font-medium text-zinc-800">{label}</div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {values.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => applyIdentityConflictResolution(field, value)}
+                        className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-zinc-700 hover:bg-zinc-100"
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
             {manualOverridesError ? (
               <div className="mt-2 text-xs text-red-600">{manualOverridesError}</div>
             ) : null}
