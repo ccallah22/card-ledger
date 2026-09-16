@@ -76,7 +76,6 @@ import { rankCardVariants, type VariantCandidate } from "@/lib/catalog/variantCa
 import { listCardVariantsForCard, type CardVariantSummary } from "@/lib/repositories/cardVariants";
 import {
   assessCandidateConfidence,
-  getTopConfidenceAssessment,
   type CandidateConfidenceAssessment,
 } from "@/lib/catalog/candidateConfidence";
 import { buildCatalogQuery } from "@/lib/catalog/queryBuilder";
@@ -89,34 +88,17 @@ async function requireProfileId(): Promise<string> {
   return profile.id;
 }
 
-// Vision Engine V2, Phase 7B: display-only labels for the confidence
-// summary below -- never exposes internal formulas/raw JSON, just a
-// concise recommendation word and a handful of the most important
-// per-field match qualities.
-const RECOMMENDATION_LABELS: Record<
-  "insufficient_evidence" | "review" | "strong_match" | "safe_to_preselect",
-  string
-> = {
-  insufficient_evidence: "Insufficient evidence",
-  review: "Review required",
-  strong_match: "Strong match",
-  safe_to_preselect: "Safe to preselect",
-};
-
-const IMPORTANT_CONFIDENCE_FIELDS = new Set(["player", "cardNumber", "set", "cardName", "parallel"]);
-
-const CONFIDENCE_FIELD_LABELS: Record<string, string> = {
-  player: "Player",
-  cardNumber: "Card number",
-  set: "Set",
-  year: "Year",
-  brand: "Brand",
-  parallel: "Parallel",
-  // Catalog V2 checklist-section gap fix: renamed from "misc"/"Title" -- this
-  // reason now specifically compares OCR's cardName evidence against the
-  // candidate's canonical checklist-section (insert/subset) name.
-  cardName: "Section",
-};
+// Add Card scan UX simplification, Phase C: the display-only label maps
+// that used to render the Top Candidate panel's recommendation word and
+// per-field quality summary (RECOMMENDATION_LABELS, IMPORTANT_CONFIDENCE_
+// FIELDS, CONFIDENCE_FIELD_LABELS) were removed here -- the normal-path
+// "Card identified" summary no longer surfaces score/confidence/
+// recommendation/field-quality at all (see CandidateSummary below). The
+// underlying data these labels used to format (confidenceAssessments,
+// computed via assessCandidateConfidence) is untouched and still fully
+// computed; only its normal-UI rendering and these now-unused label maps
+// were deleted, consistent with this phase's "hide, don't duplicate"
+// principle.
 
 // Vision Engine V2, Phase 7C: pure, exported-for-testability helpers for
 // safe candidate preselection. Kept outside the component so they can be
@@ -290,6 +272,33 @@ function VisualAnalysisSide({ label, result }: { label: string; result: CardVisi
       {uncertain ? <p className="mt-1 text-zinc-400">Some details were unclear.</p> : null}
       {warnings.length > 0 ? <p className="mt-1 text-zinc-400">{warnings.join(" • ")}</p> : null}
     </div>
+  );
+}
+
+/**
+ * Add Card scan UX simplification, Phase C: concise, collector-facing
+ * canonical-identity line for one candidate -- set/year, checklist section
+ * (when present and non-base), player/card number, and parallel (when the
+ * candidate actually has one). Deliberately never renders score,
+ * confidence, recommendation, or per-field quality -- those remain
+ * internal (still fully computed; see confidenceAssessments in
+ * NewCardPageInner) and are not part of this normal-path summary. Shared
+ * by the "Card identified" summary and each row in the alternatives
+ * chooser so both present identical fields/formatting.
+ */
+function CandidateSummary({ candidate }: { candidate: CatalogCandidate }) {
+  return (
+    <>
+      <div>{[candidate.setName, candidate.year].filter(Boolean).join(" ")}</div>
+      {candidate.checklistSectionName && candidate.checklistSectionCategory !== "base" ? (
+        <div className="font-medium text-zinc-800">{candidate.checklistSectionName}</div>
+      ) : null}
+      <div>
+        {candidate.playerName ?? candidate.cardTitle}
+        {candidate.cardNumber ? ` #${candidate.cardNumber}` : ""}
+        {candidate.parallel ? ` • ${candidate.parallel}` : ""}
+      </div>
+    </>
   );
 }
 
@@ -1187,17 +1196,37 @@ function NewCardPageInner() {
     () => assessCandidateConfidence(displayEvidence, candidateResults),
     [displayEvidence, candidateResults],
   );
-  const topConfidenceAssessment = getTopConfidenceAssessment(confidenceAssessments);
+  // Add Card scan UX simplification, Phase C: confidenceAssessments (and
+  // its [0]/top entry, read directly where needed -- e.g. the auto-select
+  // effect below) remains the full internal engine output; only the
+  // separate named topConfidenceAssessment display convenience and its
+  // rendering were removed, since the normal Card-identified summary no
+  // longer surfaces score/confidence/recommendation/field-quality.
 
   // Vision Engine V2, Phase 7C: safe candidate preselection. selectedCandidate
   // is the one, shared source of truth for "is a candidate selected" --
   // used both by manual selection (selectCandidateManually/
   // clearSelectedCandidate below) and by automatic preselection, so there
   // is exactly one field-population code path for both
-  // (applyCandidateSelection). candidateAutoSelected only affects the
-  // read-only notice text; it never gates any behavior.
+  // (applyCandidateSelection). candidateAutoSelected never gates any
+  // behavior -- Phase C removed the one place that read it (a "selected
+  // automatically" notice showing the confidence percentage, which the
+  // normal-path summary no longer surfaces); the setter calls below are
+  // left exactly as they were, so this stays available internally should
+  // a later phase want it again.
   const [selectedCandidate, setSelectedCandidate] = useState<CatalogCandidate | null>(null);
+  // Read intentionally unused for now (see comment above); setter is still used.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [candidateAutoSelected, setCandidateAutoSelected] = useState(false);
+  // Add Card scan UX simplification, Phase C: local-only disclosure state
+  // for the candidate-alternatives chooser -- never read by save/identity
+  // logic (Phase A/B), never gates candidate retrieval/ranking/confidence.
+  // Default false: a normal successful identification shows the concise
+  // summary + "Change card" control, not the full candidate list. Reset at
+  // the same search-cycle boundary as the other candidate-interaction refs
+  // below, so a stale "open" chooser from a previous identification can't
+  // linger once new scan evidence starts a genuinely new cycle.
+  const [showCandidateAlternatives, setShowCandidateAlternatives] = useState(false);
 
   // Tracks whether the user has manually selected, switched, or
   // cleared/rejected a candidate during the CURRENT search cycle -- refs,
@@ -1219,6 +1248,11 @@ function NewCardPageInner() {
     lastSearchCycleKeyRef.current = searchCycleKey;
     hasManualCandidateInteractionRef.current = false;
     autoSelectedCandidateCycleKeyRef.current = null;
+    // Phase C: a genuinely new search cycle (retaken/re-cropped image, new
+    // OCR evidence, a fresh scan) makes whatever the alternatives chooser
+    // was open/closed for no longer relevant -- collapse it so it can't
+    // stay open over an unrelated new set of candidates.
+    setShowCandidateAlternatives(false);
   }, [searchCycleKey]);
 
   // Shared selection/field-population code path -- the ONE place that
@@ -2595,75 +2629,93 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        {/* Vision Engine V2, Phase 7A/7B/7C: candidate summary plus
-            confidence/explainability, with a manual select/clear control
-            and (Phase 7C) automatic preselection for a "safe_to_preselect"
-            top candidate. Ranking score and confidence are shown as two
-            distinct numbers on purpose (confidence is not a rescale of
-            score). Selecting -- manually or automatically -- only fills
-            player/year/set/cardNumber/parallel; it never saves, never
-            touches catalogQuery, and never creates/mutates a catalog row. */}
-        {!isWishlistCard && candidateResults.length > 0 && topConfidenceAssessment ? (
+        {/* Add Card scan UX simplification, Phase C: the normal path shows
+            a concise "Card identified" summary (canonical identity only --
+            no score/confidence/recommendation/field-quality, which remain
+            internal-only, still fully computed via confidenceAssessments/
+            candidateAutoSelected, just not rendered here) plus a "Change
+            card" disclosure. When nothing has been safely selected yet
+            (selectedCandidate === null -- candidate confidence/
+            safe-preselection policy is untouched by this phase and is
+            never second-guessed here), this shows an explicit
+            choose-a-card state and the candidate list directly instead,
+            so the UI never claims a card was identified when it wasn't.
+            Selecting an alternative reuses selectCandidateManually /
+            applyCandidateSelection unchanged -- Phase A/B still own save
+            identity and form population; this phase only changes what's
+            visible and when. */}
+        {!isWishlistCard && candidateResults.length > 0 ? (
           <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
-            <div className="font-semibold text-zinc-900">Top Candidate</div>
-            <div className="mt-1">
-              {[candidateResults[0].setName, candidateResults[0].year].filter(Boolean).join(" ")}
-            </div>
-            {/* Catalog V2 checklist-section gap fix: the canonical insert/
-                subset identity (e.g. "Select Future"), one level below the
-                set line above -- never replaces it. Omitted for a "base"
-                section (redundant with the set/product name already shown)
-                or when no section is known for this card. */}
-            {candidateResults[0].checklistSectionName &&
-            candidateResults[0].checklistSectionCategory !== "base" ? (
-              <div className="font-medium text-zinc-800">
-                {candidateResults[0].checklistSectionName}
+            {selectedCandidate ? (
+              <>
+                <div className="font-semibold text-zinc-900">Card identified</div>
+                <div className="mt-1">
+                  <CandidateSummary candidate={selectedCandidate} />
+                </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCandidateAlternatives((prev) => !prev)}
+                    aria-expanded={showCandidateAlternatives}
+                    aria-controls="candidate-alternatives"
+                    className="text-blue-700 underline"
+                  >
+                    Change card
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-semibold text-zinc-900">Choose the matching card</div>
+                <div className="mt-1 text-zinc-500">
+                  TheBinder found {candidateResults.length} possible match
+                  {candidateResults.length === 1 ? "" : "es"} but couldn&apos;t confirm one
+                  automatically.
+                </div>
+              </>
+            )}
+
+            {showCandidateAlternatives || !selectedCandidate ? (
+              <div id="candidate-alternatives" className="mt-3 space-y-2 border-t border-zinc-200 pt-3">
+                {candidateResults.map((candidate) => {
+                  const isActive = selectedCandidate?.cardId === candidate.cardId;
+                  return (
+                    <div
+                      key={candidate.cardId}
+                      className={
+                        "rounded border bg-white p-2 " +
+                        (isActive ? "border-zinc-900" : "border-zinc-200")
+                      }
+                    >
+                      <CandidateSummary candidate={candidate} />
+                      <button
+                        type="button"
+                        disabled={isActive}
+                        onClick={() => {
+                          selectCandidateManually(candidate);
+                          setShowCandidateAlternatives(false);
+                        }}
+                        className="mt-1 text-blue-700 underline disabled:cursor-default disabled:text-zinc-400 disabled:no-underline"
+                      >
+                        {isActive ? "Currently selected" : "Select this card"}
+                      </button>
+                    </div>
+                  );
+                })}
+                {selectedCandidate ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearSelectedCandidate();
+                      setShowCandidateAlternatives(false);
+                    }}
+                    className="text-zinc-600 underline"
+                  >
+                    Clear selection
+                  </button>
+                ) : null}
               </div>
             ) : null}
-            <div>
-              {candidateResults[0].playerName ?? candidateResults[0].cardTitle}
-              {candidateResults[0].cardNumber ? ` #${candidateResults[0].cardNumber}` : ""}
-            </div>
-            <div className="mt-1 text-zinc-500">
-              Ranking score: {candidateResults[0].score.toFixed(1)} • Confidence:{" "}
-              {topConfidenceAssessment.confidence.toFixed(1)}%
-            </div>
-            <div className="mt-1 font-medium text-zinc-700">
-              {RECOMMENDATION_LABELS[topConfidenceAssessment.recommendation]}
-            </div>
-            <div className="mt-1 text-zinc-500">
-              {topConfidenceAssessment.fieldAssessments
-                .filter((f) => IMPORTANT_CONFIDENCE_FIELDS.has(f.field))
-                .map((f) => `${CONFIDENCE_FIELD_LABELS[f.field] ?? f.field}: ${f.quality}`)
-                .join(" / ")}
-            </div>
-            <div className="mt-2 text-zinc-500">
-              Top {candidateResults.length} candidate{candidateResults.length === 1 ? "" : "s"} found
-            </div>
-            {selectedCandidate && selectedCandidate.cardId === candidateResults[0].cardId && candidateAutoSelected ? (
-              <div className="mt-2 text-emerald-700">
-                High-confidence catalog match selected automatically ({topConfidenceAssessment.confidence.toFixed(0)}%).
-              </div>
-            ) : null}
-            <div className="mt-2">
-              {selectedCandidate && selectedCandidate.cardId === candidateResults[0].cardId ? (
-                <button
-                  type="button"
-                  onClick={clearSelectedCandidate}
-                  className="text-zinc-600 underline"
-                >
-                  Clear selection
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => selectCandidateManually(candidateResults[0])}
-                  className="text-blue-700 underline"
-                >
-                  Use this candidate
-                </button>
-              )}
-            </div>
           </div>
         ) : null}
 
