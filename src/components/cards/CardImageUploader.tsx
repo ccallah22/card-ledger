@@ -5,6 +5,16 @@ import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 
 export type CardImageUploaderProps = {
   label?: string;
+  // Radio-group identity only -- this component is rendered once per image
+  // slot (front/back), each with its own independent imageType state, but
+  // HTML radio grouping is name-scoped across the whole DOM, not per
+  // component instance. Without a per-instance name, both instances' radio
+  // inputs shared the literal name="imageType" and were treated as ONE
+  // native radio group, so selecting an option on one instance could
+  // visibly un-select the other's. `side` (already returned by
+  // useCardImageSlot, e.g. frontImage.side/backImage.side) makes the
+  // group name unique per instance without inventing new identity state.
+  side: "front" | "back";
   imageUrl: string | null;
   setImageUrl: (v: string | null) => void;
   imageType: "front" | "back" | "slab_front" | "slab_back";
@@ -33,6 +43,7 @@ export type CardImageUploaderProps = {
 
 export function CardImageUploader({
   label,
+  side,
   imageUrl,
   setImageUrl,
   imageType,
@@ -140,7 +151,7 @@ export function CardImageUploader({
             <label className="inline-flex items-center gap-2">
               <input
                 type="radio"
-                name="imageType"
+                name={`imageType-${side}`}
                 value="front"
                 checked={imageType === "front"}
                 onChange={() => {
@@ -154,7 +165,7 @@ export function CardImageUploader({
             <label className="inline-flex items-center gap-2">
               <input
                 type="radio"
-                name="imageType"
+                name={`imageType-${side}`}
                 value="back"
                 checked={imageType === "back"}
                 onChange={() => {
@@ -168,7 +179,7 @@ export function CardImageUploader({
             <label className="inline-flex items-center gap-2">
               <input
                 type="radio"
-                name="imageType"
+                name={`imageType-${side}`}
                 value="slab_front"
                 checked={imageType === "slab_front"}
                 onChange={() => {
@@ -182,7 +193,7 @@ export function CardImageUploader({
             <label className="inline-flex items-center gap-2">
               <input
                 type="radio"
-                name="imageType"
+                name={`imageType-${side}`}
                 value="slab_back"
                 checked={imageType === "slab_back"}
                 onChange={() => {

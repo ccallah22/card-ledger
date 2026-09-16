@@ -2416,6 +2416,7 @@ function NewCardPageInner() {
             <div>
               <CardImageUploader
                 label="Front Image"
+                side={frontImage.side}
                 imageUrl={frontImage.imageUrl}
                 setImageUrl={frontImage.setImageUrl}
                 imageType={frontImage.imageType}
@@ -2451,6 +2452,7 @@ function NewCardPageInner() {
             <div>
               <CardImageUploader
                 label="Back Image"
+                side={backImage.side}
                 imageUrl={backImage.imageUrl}
                 setImageUrl={backImage.setImageUrl}
                 imageType={backImage.imageType}
