@@ -59,12 +59,7 @@ import { mergeCardOcrResults, type MergedCardOcrResult } from "@/lib/ocr/merge";
 import { runVisionAnalysis, type CardVisionAnalysis, type VisionImageSide } from "@/lib/vision";
 import { isCardVisionAnalysis } from "@/lib/vision/validateVisionAnalysis";
 import { VISION_ANALYSIS_VERSION } from "@/lib/vision/types";
-import {
-  buildObservationList,
-  hasSignificantUncertainty,
-  qualitySummaryLabel,
-  summarizeImageQuality,
-} from "@/lib/vision/formatObservations";
+import { getImageRetakeGuidance } from "@/lib/vision/formatObservations";
 import { takePendingScanImage, PENDING_SCAN_IMAGE_EVENT } from "@/lib/pendingScanImage";
 import { findCatalogCandidates, type CatalogCandidate } from "@/lib/catalog/candidateEngine";
 import { buildFusedEvidence } from "@/lib/evidence/buildFusedEvidence";
@@ -238,42 +233,18 @@ function ocrStatusLabel(
   return "";
 }
 
-// Vision Engine V3, Phase V3.1C: presentation-only cap on how many
-// warnings are ever shown for one side, per the requirement to keep this
-// compact and to never surface internal parser/provider detail wholesale.
-const MAX_VISIBLE_WARNINGS = 2;
-
-/**
- * Read-only display for one side's completed CardVisionAnalysis. Every
- * derived value comes from the pure helpers in
- * src/lib/vision/formatObservations.ts -- this component itself contains
- * no observation logic, no confidence math, and no field-name knowledge.
- * Never fills a form field, never selects a candidate/variant, never calls
- * the vision endpoint. Rendering this component cannot trigger a new
- * analysis -- it only reads the already-resolved `result` prop.
- */
-function VisualAnalysisSide({ label, result }: { label: string; result: CardVisionAnalysis }) {
-  const items = buildObservationList(result);
-  const quality = qualitySummaryLabel(summarizeImageQuality(result.imageQuality));
-  const uncertain = hasSignificantUncertainty(result);
-  const warnings = (result.warnings ?? []).slice(0, MAX_VISIBLE_WARNINGS);
-
-  return (
-    <div className="mt-2 first:mt-0">
-      <h4 className="font-medium text-zinc-800">{label}</h4>
-      <p className="text-zinc-500">{quality}</p>
-      {items.length > 0 ? (
-        <ul className="mt-1 list-disc space-y-0.5 pl-4">
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      ) : null}
-      {uncertain ? <p className="mt-1 text-zinc-400">Some details were unclear.</p> : null}
-      {warnings.length > 0 ? <p className="mt-1 text-zinc-400">{warnings.join(" • ")}</p> : null}
-    </div>
-  );
-}
+// Add Card scan UX simplification, Phase E: the technical, always-visible
+// "Visual Analysis" report (dominant/border color, glare, lighting,
+// orientation, a raw quality summary, warnings) that used to render here
+// via a VisualAnalysisSide component was removed -- collectors don't need
+// a technical image-quality report; TheBinder does, internally (see
+// getImageRetakeGuidance in src/lib/vision/formatObservations.ts, and
+// displayEvidence/rankCardVariants, both of which still consume
+// frontVisionResult/backVisionResult exactly as before). Only the one
+// user-facing signal worth surfacing -- a concise retake instruction when
+// the photo genuinely can't be scanned reliably -- is now shown, directly
+// under each side's own uploader (see the JSX below), never as a
+// separate combined panel.
 
 /**
  * Add Card scan UX simplification, Phase C: concise, collector-facing
@@ -2639,6 +2610,17 @@ function NewCardPageInner() {
               {frontOcrError ? (
                 <div className="mt-1 text-xs text-red-600">{frontOcrError}</div>
               ) : null}
+              {/* Add Card scan UX simplification, Phase E: the ONE
+                  concise, actionable line shown when this side's photo
+                  genuinely prevents a reliable scan -- see
+                  getImageRetakeGuidance's own doc comment for exactly what
+                  does/doesn't trigger it. Independent of the back side's
+                  own message below; never affects OCR/candidate/save. */}
+              {frontVisionResult && getImageRetakeGuidance("front", frontVisionResult) ? (
+                <div className="mt-1 text-xs text-amber-700">
+                  {getImageRetakeGuidance("front", frontVisionResult)}
+                </div>
+              ) : null}
             </div>
 
             {/* Back Image: independent slot. No community-image lookup
@@ -2674,6 +2656,11 @@ function NewCardPageInner() {
               ) : null}
               {backOcrError ? (
                 <div className="mt-1 text-xs text-red-600">{backOcrError}</div>
+              ) : null}
+              {backVisionResult && getImageRetakeGuidance("back", backVisionResult) ? (
+                <div className="mt-1 text-xs text-amber-700">
+                  {getImageRetakeGuidance("back", backVisionResult)}
+                </div>
               ) : null}
             </div>
           </div>
@@ -2894,26 +2881,17 @@ function NewCardPageInner() {
             and their underlying fetch/ranking are entirely unchanged --
             only this redundant, always-on rendering was deleted. */}
 
-        {/* Vision Engine V3, Phase V3.1C: read-only visual-observation
-            summary. Rendered only from frontVisionResult/backVisionResult,
-            which already exist as state (see the vision effects above) and
-            are never mutated by this section -- rendering it cannot trigger
-            a new /api/vision call, cannot fill a form field, and cannot
-            select a candidate or variant. Shown only when at least one side
-            has a completed result; a failed or missing side is simply
-            absent here (no failure banner in this phase -- see the vision
-            effects' own comments on failure handling). */}
-        {!isWishlistCard && (frontVisionResult || backVisionResult) ? (
-          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
-            <h3 className="font-semibold text-zinc-900">Visual Analysis</h3>
-            {frontVisionResult ? (
-              <VisualAnalysisSide label="Front" result={frontVisionResult} />
-            ) : null}
-            {backVisionResult ? (
-              <VisualAnalysisSide label="Back" result={backVisionResult} />
-            ) : null}
-          </div>
-        ) : null}
+        {/* Add Card scan UX simplification, Phase E: the always-visible
+            "Visual Analysis" panel (dominant/border color, glare,
+            lighting, orientation, warnings) that used to render here for
+            both sides was removed. frontVisionResult/backVisionResult are
+            unchanged as state -- still populated by the unmodified vision
+            effects, still fed into displayEvidence/rankCardVariants
+            exactly as before -- and their one collector-facing signal
+            (a retake instruction when a side's photo genuinely prevents a
+            reliable scan) now renders directly under that side's own
+            uploader instead of in a separate combined technical panel;
+            see getImageRetakeGuidance. */}
 
         {/* Vision Engine V3, Phase V3.3A/V3.3B: Evidence Inspector. Renders
             displayEvidence -- fullFusedEvidence with any local manual

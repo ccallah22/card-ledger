@@ -14,6 +14,7 @@ import type {
   LightingQuality,
   Orientation,
   VisionImageQuality,
+  VisionImageSide,
 } from "./types";
 
 export type ConfidenceBucket = "high" | "medium" | "low";
@@ -196,4 +197,57 @@ export function hasSignificantUncertainty(analysis: CardVisionAnalysis): boolean
   ];
   const uncertainCount = categoricals.filter((c) => c.value === "uncertain").length;
   return uncertainCount >= UNCERTAINTY_NOTE_THRESHOLD;
+}
+
+// Add Card scan UX simplification, Phase E: the ONE user-facing bridge
+// between Vision's technical image-quality analysis and a collector-facing
+// retake instruction. Gated exclusively on usableForAnalysis (via
+// summarizeImageQuality's existing "retake" tier) -- the model's own single
+// holistic judgment of "the photo is too unreliable to trust the other
+// observations on this side" (see VisionImageQuality's own doc comment in
+// ./types), not a new quality model invented here. Every other Vision
+// signal (dominant/border color, orientation, foil, autograph/memorabilia,
+// serial-area visibility, mild/moderate glare, "usable"-but-imperfect
+// quality) stays purely internal -- a sideways-but-clear photo, for
+// example, is explicitly usable=true per the model's own prompt
+// instructions and never produces guidance here, matching orientation's
+// existing "informational only" treatment throughout this module.
+//
+// Priority (checked in this order, first match wins -- deliberately NOT a
+// list of every problem at once): full card visible, then sharp enough,
+// then severe glare, then poor lighting, then a generic fallback for the
+// (expected-rare) case where usableForAnalysis is false without any of
+// these four specific sub-signals reflecting why. This mirrors the
+// relative ordering suggested by the product spec (out-of-frame before
+// blur before glare before other) remapped onto the real fields this API
+// actually returns -- not an invented severity model.
+//
+// Deliberately has no knowledge of OCR, image-check, or provider/network
+// failures: it only ever receives an already-successful CardVisionAnalysis
+// (a failed/missing Vision call has no result to pass in at all), so a
+// poor-OCR-but-fine-photo case and a genuine API failure can never be
+// mislabeled as a photo problem by this function -- that distinction is
+// structural, not a judgment call made here.
+export function getImageRetakeGuidance(
+  side: VisionImageSide,
+  analysis: CardVisionAnalysis,
+): string | null {
+  if (summarizeImageQuality(analysis.imageQuality) !== "retake") return null;
+
+  const sideLabel = side === "front" ? "front" : "back";
+  const q = analysis.imageQuality;
+
+  if (!q.fullCardVisible.value) {
+    return `Retake the ${sideLabel} photo — make sure the full card is visible in the frame.`;
+  }
+  if (!q.sharpEnough.value) {
+    return `Retake the ${sideLabel} photo — the card is too blurry to read clearly.`;
+  }
+  if (q.glare.value === "severe") {
+    return `Retake the ${sideLabel} photo — glare is covering important card details.`;
+  }
+  if (q.lighting.value === "poor") {
+    return `Retake the ${sideLabel} photo — the lighting is too poor to read the card clearly.`;
+  }
+  return `Retake the ${sideLabel} photo — the image quality isn't reliable enough to scan.`;
 }
