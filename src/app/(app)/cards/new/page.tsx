@@ -1440,16 +1440,25 @@ function NewCardPageInner() {
       cardNumber: cardNumber.trim() || undefined,
       team: team.trim() || undefined,
 
-      // "Search -> Add to Collection" / manual catalog lookup: selectedCard
-      // is the same state both the URL bootstrap and manual Set/Section/
-      // Card lookup write to, so reading it here (rather than the original
-      // ?catalogCardId= query param) always reflects the collector's most
-      // recent explicit choice -- a manual override after bootstrap, or a
-      // clear/change of the hierarchy, is picked up automatically. undefined
-      // when nothing has ever been explicitly selected, in which case
+      // Save-identity precedence fix (Add Card scan UX audit, Phase A): a
+      // scan-selected candidate (selectedCandidate, from the OCR/candidate-
+      // engine Top Candidate flow -- auto- or manually accepted) already
+      // names an EXACT cards.id, and per the audit's finding, saving used to
+      // ignore it entirely, falling through to legacy (set_id, card_number)
+      // text resolution even when the on-screen Top Candidate named a
+      // specific, already-resolved checklist-section card. selectedCandidate
+      // now takes priority whenever it's set, since it represents the most
+      // recently, most-precisely confirmed identity; selectedCard (the
+      // separate manual Set/Section/Card lookup's own state, or the
+      // ?catalogCardId= URL bootstrap) is the fallback -- both preserved
+      // exactly as before for every caller that never touches a scan
+      // candidate. undefined when neither exists, in which case
       // resolveCatalogIds() falls through to its existing free-text
-      // resolution, exactly as before this field existed.
-      catalogCardId: selectedCard?.id,
+      // resolution, exactly as before this field existed. Selecting a
+      // manual catalog card explicitly (see its onMouseDown handler below)
+      // clears selectedCandidate so a stale scan candidate can never
+      // outrank a more recent, explicit manual choice.
+      catalogCardId: selectedCandidate?.cardId ?? selectedCard?.id,
 
       // Catalog v2: only set when a section has been picked (see
       // useChecklistSectionLookup) -- undefined here means
@@ -2318,6 +2327,15 @@ function NewCardPageInner() {
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
+                        // Save-identity precedence fix (Phase A): an
+                        // explicit manual card pick is a more recent,
+                        // equally-exact identity choice than any earlier
+                        // scan candidate -- clear it (same helper the
+                        // candidate panel's own "Clear selection" button
+                        // uses) so buildCard()'s precedence correctly falls
+                        // through to this selection instead of continuing
+                        // to save a stale candidate's cardId.
+                        clearSelectedCandidate();
                         setSelectedCard(c);
                         setCatalogCardQuery(`#${c.card_number}${c.title ? ` - ${c.title}` : ""}`);
                         setShowCatalogCardResults(false);
