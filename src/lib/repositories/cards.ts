@@ -176,6 +176,66 @@ export async function searchCardsWithContext(query: string): Promise<CardWithCon
   return ((data ?? []) as unknown as CardWithContextRow[]).map(toCardWithContext);
 }
 
+// Correctness fix ("candidate-evidence truncation"): every per-field id
+// lookup below is written to be logically unbounded (no application
+// .limit()), but PostgREST enforces its OWN server-side response cap
+// regardless -- confirmed live at exactly 1000 rows (Content-Range:
+// 0-999/1721 for a single real year's worth of cards), which silently
+// dropped genuine matches (including the "Select Future" card used to
+// verify f8af58d) with no error, no warning, and no indication in the
+// returned data that anything was cut off.
+//
+// PAGE_SIZE is deliberately smaller than the observed 1000-row cap, not
+// equal to it: if this project's actual server-side cap is ever lower than
+// 1000 (a different Supabase project config, a future platform default
+// change), a page request AT the cap would itself be silently clamped, and
+// "fewer rows than requested" would then incorrectly look like "the last
+// page" one level down -- the exact same bug, just relocated. Requesting
+// comfortably below any plausible cap means a short page is always a
+// trustworthy, unambiguous signal that no more rows exist, regardless of
+// where the true server-side cap actually sits or how large the catalog
+// grows -- this is a page CHUNK size for looping, not a result cap.
+const CANDIDATE_EVIDENCE_PAGE_SIZE = 500;
+
+// Generic accumulator: repeatedly calls runPage with successive, disjoint
+// [from, to] ranges (via .range()) until a page comes back shorter than
+// CANDIDATE_EVIDENCE_PAGE_SIZE, which can only happen at the true final
+// page -- never stops early just because one page happened to be full.
+// Every caller below orders by a column that is genuinely unique per row
+// (cards.id, or card_variants.id for the card_variants-based helpers,
+// never card_id alone) so row order is stable and total across separate
+// page requests: no row can fall through a gap between pages, and the
+// worst a tie can do (multiple rows sharing one order-by value, e.g. two
+// card_players rows for the same card id) is return that id from more than
+// one page -- harmless, since every caller already collapses ids into a
+// Set. The loop is bounded by construction (it only continues after a full
+// page), not by an arbitrary safety ceiling, so it remains correct at any
+// catalog size without ever needing to change.
+async function paginateIds<Row>(
+  runPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
+  extractId: (row: Row) => number,
+): Promise<number[]> {
+  const ids: number[] = [];
+  let from = 0;
+
+  for (;;) {
+    const to = from + CANDIDATE_EVIDENCE_PAGE_SIZE - 1;
+    const { data, error } = await runPage(from, to);
+    if (error) throw error;
+
+    const rows = data ?? [];
+    for (const row of rows) ids.push(extractId(row));
+
+    if (rows.length < CANDIDATE_EVIDENCE_PAGE_SIZE) break;
+    from += CANDIDATE_EVIDENCE_PAGE_SIZE;
+  }
+
+  return ids;
+}
+
 // PostgREST cannot OR across multiple tables in a single query (the
 // supabase-js `.or()` docs call this out explicitly), so a token that should
 // match "title OR set name OR player name" can't be one query. Instead, each
@@ -197,36 +257,37 @@ export async function searchCardsWithContext(query: string): Promise<CardWithCon
 // final fetch (its own .limit(25) below), which runs AFTER intersection
 // against each token's complete matching population.
 async function cardIdsMatchingOwnFields(orClause: string): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("cards")
-    .select("id")
-    .or(orClause);
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { id: number }).id);
+  return paginateIds(
+    (from, to) =>
+      supabase.from("cards").select("id").or(orClause).order("id", { ascending: true }).range(from, to),
+    (row) => (row as { id: number }).id,
+  );
 }
 
 async function cardIdsMatchingSetYear(year: number): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("cards")
-    .select("id, sets!inner(release_year)")
-    .eq("sets.release_year", year);
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { id: number }).id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("cards")
+        .select("id, sets!inner(release_year)")
+        .eq("sets.release_year", year)
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { id: number }).id,
+  );
 }
 
 async function cardIdsMatchingSetText(token: string): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("cards")
-    .select("id, sets!inner(name, search_text)")
-    .or(`name.ilike.%${token}%,search_text.ilike.%${token}%`, { referencedTable: "sets" });
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { id: number }).id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("cards")
+        .select("id, sets!inner(name, search_text)")
+        .or(`name.ilike.%${token}%,search_text.ilike.%${token}%`, { referencedTable: "sets" })
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { id: number }).id,
+  );
 }
 
 // Catalog V2 checklist-section gap fix: resolves structured OCR cardName
@@ -235,27 +296,31 @@ async function cardIdsMatchingSetText(token: string): Promise<number[]> {
 // in (e.g. "Select Future") -- mirrors cardIdsMatchingSetText's join-and-
 // ilike shape one level down the identity hierarchy (set -> section).
 async function cardIdsMatchingChecklistSectionText(token: string): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("cards")
-    .select("id, checklist_sections!inner(name)")
-    .ilike("checklist_sections.name", `%${token}%`);
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { id: number }).id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("cards")
+        .select("id, checklist_sections!inner(name)")
+        .ilike("checklist_sections.name", `%${token}%`)
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { id: number }).id,
+  );
 }
 
 async function cardIdsMatchingPlayerText(token: string): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("cards")
-    .select("id, card_players!inner(players!inner(full_name, search_text))")
-    .or(`full_name.ilike.%${token}%,search_text.ilike.%${token}%`, {
-      referencedTable: "card_players.players",
-    });
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { id: number }).id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("cards")
+        .select("id, card_players!inner(players!inner(full_name, search_text))")
+        .or(`full_name.ilike.%${token}%,search_text.ilike.%${token}%`, {
+          referencedTable: "card_players.players",
+        })
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { id: number }).id,
+  );
 }
 
 // ---- Variant evidence (Phase "Variant-Aware Catalog Search") ----
@@ -292,26 +357,35 @@ async function cardIdsMatchingPlayerText(token: string): Promise<number[]> {
 // memorabilia were), and adding one isn't a small, defensible mapping the
 // same way AUTOGRAPH_SEARCH_TERMS/MEMORABILIA_SEARCH_TERMS below are.
 
+// card_variants' own primary key (id) is what these order/page by -- never
+// card_id alone, which is NOT unique per row here (one card can have many
+// variants), so ordering by it alone could leave pagination's row order
+// ambiguous across separate page requests. id is selected purely to drive
+// .range() correctly; only card_id is ever read back out.
 async function cardIdsMatchingVariantParallelName(token: string): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("card_variants")
-    .select("card_id, parallel_types!inner(name)")
-    .ilike("parallel_types.name", `%${token}%`);
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("card_variants")
+        .select("id, card_id, parallel_types!inner(name)")
+        .ilike("parallel_types.name", `%${token}%`)
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { card_id: number }).card_id,
+  );
 }
 
 async function cardIdsMatchingVariantSwatch(token: string): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("card_variants")
-    .select("card_id")
-    .ilike("swatch_descriptor", `%${token}%`);
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("card_variants")
+        .select("id, card_id")
+        .ilike("swatch_descriptor", `%${token}%`)
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { card_id: number }).card_id,
+  );
 }
 
 // Explicit collector notation only (see the "/NN" token check in
@@ -319,27 +393,31 @@ async function cardIdsMatchingVariantSwatch(token: string): Promise<number[]> {
 // token, so a card-number search like "25" can't accidentally turn into an
 // unrelated /25-parallel search.
 async function cardIdsMatchingVariantPrintRun(printRun: number): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("card_variants")
-    .select("card_id")
-    .eq("print_run", printRun);
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("card_variants")
+        .select("id, card_id")
+        .eq("print_run", printRun)
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { card_id: number }).card_id,
+  );
 }
 
 async function cardIdsMatchingVariantFlag(
   column: "has_autograph" | "has_memorabilia",
 ): Promise<number[]> {
-  const { data, error } = await supabase
-    .from("card_variants")
-    .select("card_id")
-    .eq(column, true);
-
-  if (error) throw error;
-
-  return (data ?? []).map((row) => (row as { card_id: number }).card_id);
+  return paginateIds(
+    (from, to) =>
+      supabase
+        .from("card_variants")
+        .select("id, card_id")
+        .eq(column, true)
+        .order("id", { ascending: true })
+        .range(from, to),
+    (row) => (row as { card_id: number }).card_id,
+  );
 }
 
 // Small, explicit collector-vocabulary mapping only -- deliberately not
