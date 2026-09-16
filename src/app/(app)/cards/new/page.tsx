@@ -437,10 +437,16 @@ function NewCardPageInner() {
   // is evaluated at render time and referencing a not-yet-initialized
   // const there -- unlike inside a closure body that only runs later --
   // would throw.
+  // Identity-ownership fix (Phase B): year/setName used to only ever be SET
+  // (if result.X), never cleared -- a stale value from whatever the field
+  // held before this match (a prior candidate, a prior legacy match, or a
+  // manual edit) could silently survive if this particular result happened
+  // to lack that field. Unconditional now, matching playerName/cardNumber's
+  // existing (already-correct) unconditional assignment just below.
   const fillFieldsFromCatalogMatch = useCallback((result: CardWithContext) => {
     setPlayerName(result.playerNames.join(" / "));
-    if (result.releaseYear != null) setYear(String(result.releaseYear));
-    if (result.setName) setSetName(result.setName);
+    setYear(result.releaseYear != null ? String(result.releaseYear) : "");
+    setSetName(result.setName ?? "");
     setCardNumber(result.cardNumber);
     setIsRookie(result.rookieCard);
     setIsAutograph(result.isAutograph);
@@ -482,7 +488,19 @@ function NewCardPageInner() {
           // only fills fields -- it deliberately leaves catalogQuery and
           // the dropdown untouched, so the user can still see and pick a
           // different result if this guessed wrong.
-          if (shouldAutoSelect(trimmed, ranked)) {
+          //
+          // Identity-ownership fix (Phase B): also only when no exact
+          // identity (a scan candidate or a manually selected catalog card)
+          // is already active. This effect can re-run after a candidate has
+          // already been accepted -- e.g. a re-cropped front image producing
+          // a new OCR-derived catalogQuery -- and without this guard it
+          // could silently overwrite an already-accepted exact identity's
+          // fields with an unrelated legacy free-text guess. An already-
+          // active exact identity takes precedence over this OCR-adjacent
+          // auto-fill; an explicit manual pick (selectCatalogMatch below)
+          // is unaffected by this guard, since an explicit user action
+          // should always be able to replace whatever was active before.
+          if (!selectedCandidate && !selectedCard && shouldAutoSelect(trimmed, ranked)) {
             fillFieldsFromCatalogMatch(ranked[0]);
           }
         }
@@ -499,9 +517,23 @@ function NewCardPageInner() {
     return () => {
       active = false;
     };
+    // selectedCandidate/selectedCard are deliberately read but not listed:
+    // they only gate what an already-triggered search is allowed to do once
+    // it resolves, and must never themselves cause this effect to re-run a
+    // fresh searchCatalog() fetch (that would refetch/re-show the dropdown
+    // every time a candidate is selected/cleared, with no query change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedCatalogQuery, fillFieldsFromCatalogMatch]);
 
   function selectCatalogMatch(result: CardWithContext) {
+    // Identity-ownership fix (Phase B): an explicit legacy free-text pick is
+    // itself a fresh exact-identity choice (same principle as the manual
+    // Set/Section/Card dropdown) -- demote any active scan candidate or
+    // manual card selection first, so buildCard()'s Phase A precedence
+    // can't keep pointing at a stale exact id while these text fields now
+    // show a different match.
+    clearSelectedCandidate();
+    setSelectedCard(null);
     fillFieldsFromCatalogMatch(result);
     suppressNextDropdownOpenRef.current = true;
     setCatalogQuery(`${result.cardNumber} ${result.playerNames.join(" / ")}`.trim());
@@ -1191,16 +1223,51 @@ function NewCardPageInner() {
 
   // Shared selection/field-population code path -- the ONE place that
   // writes candidate fields onto the form, used identically by manual
-  // selection and by automatic preselection below. Only fills the fields
-  // CatalogCandidate actually carries (playerName/year/setName/cardNumber/
-  // parallel); never touches catalogQuery, never saves, never mutates the
-  // catalog.
+  // selection and by automatic preselection below.
+  //
+  // Identity-ownership fix (Phase B): every field CatalogCandidate actually
+  // carries trustworthy canonical data for (playerName/year/setName/
+  // cardNumber/parallel/checklist-section) is now unconditionally
+  // recalculated from the given candidate, INCLUDING clearing it to empty
+  // when this candidate has no value -- e.g. Candidate A's parallel
+  // ("Silver") must not keep displaying once Candidate B (parallel: null)
+  // is selected. Previously only playerName/cardNumber did this
+  // unconditionally; year/setName/parallel used `if (candidate.X)`, which
+  // left a stale prior value in place whenever the new candidate happened
+  // to lack that field -- a real, reproducible bug, not a hypothetical one.
+  //
+  // Fields CatalogCandidate does NOT carry any signal for -- manufacturer/
+  // brand (no such form field exists at all), team, rookie -- are
+  // deliberately left untouched here: a candidate switch has no canonical
+  // opinion on them, so touching them would be inventing data, not applying
+  // canonical identity. See src/lib/catalog/candidateEngine.ts's
+  // CatalogCandidate type for the exact fields available.
+  //
+  // isAutograph/isPatch ARE reset here even though the candidate itself
+  // carries no autograph/memorabilia signal: those two fields are only ever
+  // populated by a VARIANT pick (the manual "Parallel / Variant" search box,
+  // gated on selectedCard), which is scoped to a specific exact card --
+  // Variant A's autograph/memorabilia flags must not silently remain
+  // attached once a *different* exact card (Candidate B) becomes active.
+  // Resetting them to a clean baseline on every exact-identity change (here
+  // and in the manual Card-pick handler below) is the smallest correctness
+  // fix that doesn't require per-field manual-edit dirty tracking (out of
+  // scope for this phase) -- the tradeoff is that a checkbox the user
+  // ticked by hand before a candidate/auto-select landed does not survive
+  // it either, consistent with this phase's chosen "selecting a different
+  // exact catalog card is itself an explicit instruction to use that
+  // card's identity" rule.
   function applyCandidateSelection(candidate: CatalogCandidate) {
     setPlayerName(candidate.playerName ?? "");
-    if (candidate.year) setYear(candidate.year);
-    if (candidate.setName) setSetName(candidate.setName);
+    setYear(candidate.year ?? "");
+    setSetName(candidate.setName ?? "");
     setCardNumber(candidate.cardNumber);
-    if (candidate.parallel) setParallel(candidate.parallel);
+    setParallel(candidate.parallel ?? "");
+    setInsert(
+      candidate.checklistSectionCategory !== "base" ? candidate.checklistSectionName ?? "" : "",
+    );
+    setIsAutograph(false);
+    setIsPatch(false);
     setSelectedCandidate(candidate);
   }
 
@@ -2337,6 +2404,23 @@ function NewCardPageInner() {
                         // to save a stale candidate's cardId.
                         clearSelectedCandidate();
                         setSelectedCard(c);
+                        // Identity-ownership fix (Phase B): c (CardSummary)
+                        // carries only id/card_number/title -- no player/
+                        // year/set -- so those three can't be corrected
+                        // here (left exactly as the user already typed them
+                        // to reach this section/card). card_number IS
+                        // trustworthy exact data this handler wasn't
+                        // previously applying at all. parallel/autograph/
+                        // patch are reset to a clean baseline for the same
+                        // reason applyCandidateSelection resets them: a
+                        // previously selected variant's flags belong to
+                        // whatever card was active before and must not
+                        // silently carry over onto this different exact
+                        // card.
+                        setCardNumber(c.card_number);
+                        setParallel("");
+                        setIsAutograph(false);
+                        setIsPatch(false);
                         setCatalogCardQuery(`#${c.card_number}${c.title ? ` - ${c.title}` : ""}`);
                         setShowCatalogCardResults(false);
                       }}
