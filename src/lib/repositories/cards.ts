@@ -91,6 +91,15 @@ export type CardWithContext = {
   setBrand: string | null;
   setManufacturer: string | null;
   playerNames: string[];
+  // Canonical per-card Team architecture: this card's own card_players ->
+  // teams relationship (never players.team_id), reduced to a single safe
+  // display value -- see deriveCardTeamName's own comment for exactly what
+  // "safe" means for a multi-player card. null both when no card_players
+  // row has a resolved team_id (including the Multiverse Jerseys-style
+  // same-player/multiple-team case, deliberately left unresolved by the
+  // importer) and when a genuine multi-player card's players belong to
+  // different teams -- never guessed in either case.
+  teamName: string | null;
   // Full section row (not just the id) so a caller can pass this straight
   // into useChecklistSectionLookup's setSelectedSection without a second
   // fetch. null when this card has no checklist section -- checklist_
@@ -111,12 +120,44 @@ type CardWithContextRow = {
   is_autograph: boolean;
   is_memorabilia: boolean;
   sets: { name: string | null; release_year: number | null; brand: string | null; manufacturer: string | null } | null;
-  card_players: { players: { full_name: string } | null }[] | null;
+  card_players: { players: { full_name: string } | null; teams: { name: string } | null }[] | null;
   checklist_sections: ChecklistSectionRow | null;
 };
 
 const CARD_CONTEXT_SELECT =
-  "id, set_id, checklist_section_id, card_number, title, rookie_card, is_insert, is_autograph, is_memorabilia, sets(name, release_year, brand, manufacturer), card_players(players(full_name)), checklist_sections(*)";
+  "id, set_id, checklist_section_id, card_number, title, rookie_card, is_insert, is_autograph, is_memorabilia, sets(name, release_year, brand, manufacturer), card_players(players(full_name), teams(name)), checklist_sections(*)";
+
+/**
+ * Canonical per-card Team architecture: the ONE safe way to reduce a
+ * card's `card_players` rows (each optionally carrying its own
+ * `team_id -> teams.name`) to a single display value, without ever
+ * guessing which player a candidate/search result "really" represents.
+ *
+ * - Single-player card: that player's team (or null if unresolved).
+ * - Multi-player card where every player who HAS a resolved team agrees
+ *   on the same one (e.g. a 3-player "Summit Autographs" card where all
+ *   three played for the same team): that team -- safe, because the
+ *   answer doesn't depend on which specific player is "the" match.
+ * - Multi-player card where resolved teams genuinely differ (e.g.
+ *   "Select Pairings": Player A -> Team A, Player B -> Team B): null.
+ *   Attaching either team to the card as a whole would misattribute the
+ *   other player's team, and nothing in this shape (or in
+ *   CatalogCandidate downstream) identifies a single "matched" player to
+ *   disambiguate by -- see candidateEngine.ts's playerName, which already
+ *   joins every player on the card into one display string for exactly
+ *   this reason.
+ * - No card_players row has a resolved team_id at all (including the
+ *   Panini "Multiverse Jerseys" same-player/multiple-team case, which the
+ *   importer deliberately leaves team_id null rather than guessing): null.
+ */
+export function deriveCardTeamName(
+  cardPlayers: { teams: { name: string } | null }[] | null | undefined,
+): string | null {
+  const distinctTeamNames = new Set(
+    (cardPlayers ?? []).map((cp) => cp.teams?.name).filter((name): name is string => !!name),
+  );
+  return distinctTeamNames.size === 1 ? [...distinctTeamNames][0] : null;
+}
 
 function toCardWithContext(row: CardWithContextRow): CardWithContext {
   return {
@@ -136,6 +177,7 @@ function toCardWithContext(row: CardWithContextRow): CardWithContext {
     playerNames: (row.card_players ?? [])
       .map((cp) => cp.players?.full_name)
       .filter((name): name is string => !!name),
+    teamName: deriveCardTeamName(row.card_players),
     checklistSection: row.checklist_sections ?? null,
   };
 }

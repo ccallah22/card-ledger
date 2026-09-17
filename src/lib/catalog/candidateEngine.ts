@@ -70,6 +70,16 @@ export type CatalogCandidate = {
   // Catalog V2 backfill -- see CardRow's own comment).
   checklistSectionName: string | null;
   checklistSectionCategory: string | null;
+
+  // Canonical per-card Team architecture: carried forward unchanged from
+  // CardWithContext.teamName (see deriveCardTeamName's own comment in
+  // cards.ts for exactly how a multi-player card's team is safely reduced
+  // to one value, or left null). Sourced exclusively from this card's own
+  // card_players.team_id -> teams.name relationship -- never
+  // players.team_id, and never used as a ranking/scoring signal here
+  // (no WEIGHTS entry, no reasons[] contribution) -- purely additional
+  // candidate context for display/application once a card is identified.
+  teamName: string | null;
 };
 
 const MAX_CANDIDATES = 25;
@@ -344,6 +354,7 @@ async function scoreCandidate(
     parallel,
     checklistSectionName: card.checklistSection?.name ?? null,
     checklistSectionCategory: card.checklistSection?.section_category ?? null,
+    teamName: card.teamName,
   };
 }
 

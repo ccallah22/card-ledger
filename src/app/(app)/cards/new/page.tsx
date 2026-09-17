@@ -1415,7 +1415,7 @@ function NewCardPageInner() {
   //
   // Identity-ownership fix (Phase B): every field CatalogCandidate actually
   // carries trustworthy canonical data for (playerName/year/setName/
-  // cardNumber/parallel/checklist-section) is now unconditionally
+  // cardNumber/parallel/checklist-section/team) is now unconditionally
   // recalculated from the given candidate, INCLUDING clearing it to empty
   // when this candidate has no value -- e.g. Candidate A's parallel
   // ("Silver") must not keep displaying once Candidate B (parallel: null)
@@ -1424,12 +1424,26 @@ function NewCardPageInner() {
   // left a stale prior value in place whenever the new candidate happened
   // to lack that field -- a real, reproducible bug, not a hypothetical one.
   //
+  // Canonical per-card Team architecture: candidate.teamName is sourced
+  // exclusively from this exact card's own card_players.team_id ->
+  // teams.name relationship (see deriveCardTeamName in cards.ts) --
+  // NEVER players.team_id, and unconditional here for the same
+  // stale-value reason as every other field above: Candidate A's team
+  // must not survive a switch to Candidate B, whether B has a different
+  // team or none at all (null -> ""). A null teamName already correctly
+  // covers both "no card_players row has a resolved team" (including the
+  // Panini "Multiverse Jerseys" same-player/multiple-team case, left
+  // unresolved on purpose) and "this card's players belong to genuinely
+  // different teams" (e.g. a "Select Pairings" dual-player card) -- in
+  // both cases the safe, non-guessing answer is an empty Team field, not
+  // a fallback to any other data source.
+  //
   // Fields CatalogCandidate does NOT carry any signal for -- manufacturer/
-  // brand (no such form field exists at all), team, rookie -- are
-  // deliberately left untouched here: a candidate switch has no canonical
-  // opinion on them, so touching them would be inventing data, not applying
-  // canonical identity. See src/lib/catalog/candidateEngine.ts's
-  // CatalogCandidate type for the exact fields available.
+  // brand (no such form field exists at all), rookie -- are deliberately
+  // left untouched here: a candidate switch has no canonical opinion on
+  // them, so touching them would be inventing data, not applying canonical
+  // identity. See src/lib/catalog/candidateEngine.ts's CatalogCandidate
+  // type for the exact fields available.
   //
   // isAutograph/isPatch ARE reset here even though the candidate itself
   // carries no autograph/memorabilia signal: those two fields are only ever
@@ -1454,6 +1468,7 @@ function NewCardPageInner() {
     setInsert(
       candidate.checklistSectionCategory !== "base" ? candidate.checklistSectionName ?? "" : "",
     );
+    setTeam(candidate.teamName ?? "");
     setIsAutograph(false);
     setIsPatch(false);
     setSelectedCandidate(candidate);
