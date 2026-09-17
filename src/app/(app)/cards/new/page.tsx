@@ -533,7 +533,20 @@ function NewCardPageInner() {
         if (!active) return;
         const ranked = rankCatalogMatches(trimmed, results);
         setCatalogResults(ranked);
-        if (!suppressOpen) {
+        // Add Card scan UX simplification: this legacy free-text search is
+        // still triggered programmatically from raw OCR text regardless of
+        // whether a scan candidate has already been identified (see the
+        // OCR-completion effect that calls setCatalogQuery), but once
+        // selectedCandidate exists, TheBinder already has a confirmed exact
+        // identity -- this superseded search's own dropdown (including its
+        // "No cards found." empty state) must not reveal itself underneath
+        // an already-successful "Card identified" result and contradict it.
+        // Gated here, at the one place that reveals the dropdown, rather
+        // than by touching searchCatalog/rankCatalogMatches themselves.
+        // Deliberately does NOT gate the input's own onFocus/onChange
+        // handlers below -- the user can still deliberately click into this
+        // box and search it manually at any time, candidate or not.
+        if (!suppressOpen && !selectedCandidate) {
           // Reveal the dropdown once a search actually completes, not just
           // on manual focus/typing -- otherwise a programmatically-set
           // query (e.g. from OCR) fetches/ranks results correctly but
@@ -546,18 +559,13 @@ function NewCardPageInner() {
           // the dropdown untouched, so the user can still see and pick a
           // different result if this guessed wrong.
           //
-          // Identity-ownership fix (Phase B): also only when no exact
-          // identity (a scan candidate or a manually selected catalog card)
-          // is already active. This effect can re-run after a candidate has
-          // already been accepted -- e.g. a re-cropped front image producing
-          // a new OCR-derived catalogQuery -- and without this guard it
-          // could silently overwrite an already-accepted exact identity's
-          // fields with an unrelated legacy free-text guess. An already-
-          // active exact identity takes precedence over this OCR-adjacent
-          // auto-fill; an explicit manual pick (selectCatalogMatch below)
-          // is unaffected by this guard, since an explicit user action
-          // should always be able to replace whatever was active before.
-          if (!selectedCandidate && !selectedCard && shouldAutoSelect(trimmed, ranked)) {
+          // Identity-ownership fix (Phase B): also only when no manually
+          // selected catalog card is already active (selectedCandidate is
+          // already excluded by the outer guard above). An explicit manual
+          // pick (selectCatalogMatch below) is unaffected by this guard,
+          // since an explicit user action should always be able to replace
+          // whatever was active before.
+          if (!selectedCard && shouldAutoSelect(trimmed, ranked)) {
             fillFieldsFromCatalogMatch(ranked[0]);
           }
         }
@@ -565,7 +573,7 @@ function NewCardPageInner() {
       .catch(() => {
         if (!active) return;
         setCatalogResults([]);
-        if (!suppressOpen) setShowCatalogResults(true);
+        if (!suppressOpen && !selectedCandidate) setShowCatalogResults(true);
       })
       .finally(() => {
         if (active) setCatalogLoading(false);
@@ -607,13 +615,14 @@ function NewCardPageInner() {
   // save) and the existing useChecklistSectionLookup/useCatalogCardLookup/
   // useCatalogVariantLookup hooks for the rest (selectedSection/
   // selectedCard themselves are UI-tracking/variant-lookup-triggering
-  // state today -- see this page's own "Catalog v2 preview: picking a
-  // [section/card] doesn't change what gets saved yet" copy above --
-  // setting them here is what makes the variant lookup fetch/become
-  // available and what shows the right section/card as already-selected,
-  // not something the save pipeline itself needs). Absent entirely when
-  // catalogCardId isn't in the URL: normal manual /cards/new behavior is
-  // unchanged.
+  // state that also makes the variant lookup fetch/become available and
+  // shows the right section/card as already-selected -- setting them here
+  // reproduces exactly what the manual dropdowns below already do.
+  // selectedCard additionally feeds Phase A's catalogCardId precedence
+  // (selectedCandidate?.cardId ?? selectedCard?.id) once no scan candidate
+  // is active, same as a manual pick from those dropdowns. Absent entirely
+  // when catalogCardId isn't in the URL: normal manual /cards/new behavior
+  // is unchanged.
   const [catalogPreselectStatus, setCatalogPreselectStatus] = useState<
     "idle" | "loading" | "error" | "applied"
   >("idle");
@@ -2588,9 +2597,6 @@ function NewCardPageInner() {
                 ),
               ]}
             />
-            <p className="mt-1 text-xs text-zinc-900">
-              Catalog v2 preview: picking a section doesn&apos;t change what gets saved yet.
-            </p>
           </div>
         ) : null}
 
@@ -2663,9 +2669,6 @@ function NewCardPageInner() {
                 </div>
               ) : null}
             </div>
-            <p className="mt-1 text-xs text-zinc-900">
-              Catalog v2 preview: picking a card doesn&apos;t change what gets saved yet.
-            </p>
           </div>
         ) : null}
 

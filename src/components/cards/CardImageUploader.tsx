@@ -60,6 +60,16 @@ export function CardImageUploader({
   imageCheckStatus,
   sharedImage,
   reportInfo,
+  // Add Card scan UX simplification: the debug "Fingerprint: <value>" line
+  // this component used to render for the front slot was removed -- it
+  // exposed useSharedImageLookup's internal community-image lookup key to
+  // collectors with no explanation or action attached to it. The prop
+  // itself, and the underlying fingerprint/community-image mechanism in
+  // the parent (useSharedImageLookup, buildCardFingerprint, sharedImage/
+  // reportInfo above), are unchanged -- only this one rendering was
+  // deleted, so the prop is left in place (still passed by both callers in
+  // cards/new/page.tsx) rather than reworking the component's contract.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fingerprint,
   onFileSelected,
 }: CardImageUploaderProps) {
@@ -255,12 +265,6 @@ export function CardImageUploader({
           ) : null}
           {imageCheckStatus === "accept" ? (
             <div className="text-xs text-emerald-600">Image looks like a card.</div>
-          ) : null}
-
-          {fingerprint ? (
-            <div className="mt-2 rounded-md border bg-zinc-50 p-2 text-[10px] text-zinc-600">
-              Fingerprint: <span className="break-all">{fingerprint}</span>
-            </div>
           ) : null}
         </div>
       </div>
