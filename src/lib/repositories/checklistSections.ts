@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { slugify } from "@/lib/slug";
 
@@ -27,8 +28,9 @@ export async function listChecklistSections(setId: number): Promise<ChecklistSec
 export async function findChecklistSectionBySlug(
   setId: number,
   slug: string,
+  client: SupabaseClient = supabase,
 ): Promise<ChecklistSectionRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("checklist_sections")
     .select("*")
     .eq("set_id", setId)
@@ -49,10 +51,11 @@ export type CreateChecklistSectionInput = {
 
 export async function createChecklistSection(
   input: CreateChecklistSectionInput,
+  client: SupabaseClient = supabase,
 ): Promise<ChecklistSectionRow> {
   const slug = slugify(input.name);
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("checklist_sections")
     .insert({
       set_id: input.set_id,
@@ -71,9 +74,10 @@ export async function createChecklistSection(
 
 export async function findOrCreateChecklistSection(
   input: CreateChecklistSectionInput,
+  client: SupabaseClient = supabase,
 ): Promise<ChecklistSectionRow> {
   const slug = slugify(input.name);
-  const existing = await findChecklistSectionBySlug(input.set_id, slug);
+  const existing = await findChecklistSectionBySlug(input.set_id, slug, client);
   if (existing) return existing;
-  return createChecklistSection(input);
+  return createChecklistSection(input, client);
 }

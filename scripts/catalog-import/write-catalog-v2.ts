@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   loadChecklistRows,
   mapHeaders,
@@ -406,36 +407,75 @@ function makeProgressLogger(label: string, total: number): () => void {
 }
 
 /**
- * Dynamically imports the repository functions this writer reuses. See the
- * file header comment for why this is a dynamic import scoped to the write
- * path, not a static top-level one, and why it's expected to fail under
- * plain Node in this environment.
+ * Dynamically imports the repository functions this writer reuses, PLUS
+ * (administrative-authorization task) the server-only service-role client
+ * factory (src/lib/supabase/serviceRole.ts) this writer now requires for
+ * every privileged operation -- see the file header comment for why this
+ * is a dynamic import scoped to the write path, not a static top-level
+ * one, and why it's expected to fail under plain Node in this environment.
+ *
+ * serviceRole.ts itself begins with `import "server-only"`, a marker
+ * package whose default (non-bundler) export unconditionally throws --
+ * intentional, so an accidental import from a Next.js client bundle is a
+ * build-time error. Next.js's own bundler resolves that package's
+ * "react-server" conditional export (a no-op) when compiling Server
+ * Components; a bare Node/tsx process does not set that condition by
+ * default, so this script's own documented invocation now also requires
+ * `--conditions=react-server` (in addition to the already-required
+ * `--env-file=.env.local`) for exactly this one import to succeed. No
+ * application code (serviceRole.ts included) is changed to accommodate
+ * this -- it is an invocation-only requirement, verified to work as-is.
  */
 async function loadWriteRepositories() {
-  const [sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes, sports, leagues, teams] =
-    await Promise.all([
-      import("@/lib/repositories/sets"),
-      import("@/lib/repositories/checklistSections"),
-      import("@/lib/repositories/players"),
-      import("@/lib/repositories/cards"),
-      import("@/lib/repositories/cardVariants"),
-      import("@/lib/repositories/cardPlayers"),
-      import("@/lib/repositories/parallelTypes"),
-      import("@/lib/repositories/sports"),
-      import("@/lib/repositories/leagues"),
-      import("@/lib/repositories/teams"),
-    ]);
-  return { sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes, sports, leagues, teams };
+  const [
+    sets,
+    checklistSections,
+    players,
+    cards,
+    cardVariants,
+    cardPlayers,
+    parallelTypes,
+    sports,
+    leagues,
+    teams,
+    serviceRole,
+  ] = await Promise.all([
+    import("@/lib/repositories/sets"),
+    import("@/lib/repositories/checklistSections"),
+    import("@/lib/repositories/players"),
+    import("@/lib/repositories/cards"),
+    import("@/lib/repositories/cardVariants"),
+    import("@/lib/repositories/cardPlayers"),
+    import("@/lib/repositories/parallelTypes"),
+    import("@/lib/repositories/sports"),
+    import("@/lib/repositories/leagues"),
+    import("@/lib/repositories/teams"),
+    import("@/lib/supabase/serviceRole"),
+  ]);
+  return {
+    sets,
+    checklistSections,
+    players,
+    cards,
+    cardVariants,
+    cardPlayers,
+    parallelTypes,
+    sports,
+    leagues,
+    teams,
+    serviceRole,
+  };
 }
 
 type WriteRepositories = Awaited<ReturnType<typeof loadWriteRepositories>>;
 
 /**
  * Writes every entity to Supabase via the existing repository
- * find-or-create functions, in dependency order. Every call is
- * find-or-create, so re-running against the same input is idempotent by
- * construction -- see the transaction note below for what that does and
- * doesn't guarantee.
+ * find-or-create functions, in dependency order, all through ONE explicit
+ * administrative (service-role) client -- see loadWriteRepositories'/
+ * main()'s own comments for why. Every call is find-or-create, so
+ * re-running against the same input is idempotent by construction -- see
+ * the transaction note below for what that does and doesn't guarantee.
  *
  * No database transaction wraps this, and none is invented here. The
  * repository layer (sets.ts, cards.ts, cardVariants.ts, etc.) is built
@@ -450,10 +490,24 @@ type WriteRepositories = Awaited<ReturnType<typeof loadWriteRepositories>>;
  * bypassing PostgREST entirely -- both are new infrastructure, not
  * something to invent inside this task. This function stops at that
  * repository boundary instead: idempotency comes from find-or-create
- * semantics (safe to re-run), not from rollback-on-failure. If a write
- * fails partway through, rows already written by earlier steps are NOT
- * rolled back -- each entity's outcome is caught and counted individually
- * so one bad row doesn't abort the rest of the run.
+ * semantics (safe to re-run), not from rollback-on-failure. If a stage
+ * fails partway through, rows already written by earlier stages are NOT
+ * rolled back.
+ *
+ * Failure semantics (administrative-authorization task): within one
+ * entity-type stage, every item is still attempted and its own outcome
+ * caught/counted individually (a single bad row -- e.g. one malformed
+ * card_variant -- never aborts the rest of that same stage's items, exactly
+ * as before this task). BETWEEN stages, assertStageSucceeded() below is
+ * called once each stage's loop/runWithConcurrency finishes; if that stage
+ * recorded ANY error, it throws immediately, so no later stage in
+ * DEPENDENCY_ORDER is ever attempted -- e.g. a failed "sports" write means
+ * this function never even starts "leagues", "teams", or the 27,870
+ * card_variants. The throw propagates out of runWrite() uncaught, is
+ * caught by main()'s own top-level `main().catch(...)` at the bottom of
+ * this file (already existing, unchanged), and results in a non-zero
+ * process exit -- a real database error can therefore never be silently
+ * swallowed into a "successful" (exit 0) run.
  */
 // Caps how many error messages get printed per entity type, so a systemic
 // failure affecting thousands of rows doesn't flood the console -- the
@@ -470,10 +524,28 @@ function logEntityError(label: string, err: unknown): void {
   console.error(`  [${label} error] ${message}`);
 }
 
+/**
+ * The one fail-fast gate between stages (see runWrite()'s own doc comment
+ * above). Deliberately checks only `.errors` -- never `.skipped`, which is
+ * the normal, legitimate outcome for a row whose dependency stage simply
+ * hasn't produced an id yet (already reported under its own label) and
+ * must never itself be escalated into a fabricated error.
+ */
+function assertStageSucceeded(label: (typeof DEPENDENCY_ORDER)[number], counts: WriteCounts): void {
+  if (counts.errors > 0) {
+    throw new Error(
+      `Write aborted after "${label}": ${counts.errors} error(s) recorded for this entity type ` +
+        `(see the [${label} error] message(s) above for details). No later stage in the ` +
+        `dependency order was attempted.`,
+    );
+  }
+}
+
 export async function runWrite(
   entities: EntityCollections,
   parallelTypesLocal: Map<string, ParallelTypeEntity>,
-  repos: WriteRepositories
+  repos: WriteRepositories,
+  client: SupabaseClient,
 ): Promise<WriteSummary> {
   const summary = emptyWriteSummary();
   loggedErrorCounts.clear();
@@ -482,8 +554,8 @@ export async function runWrite(
   const manufacturerIdByTemp = new Map<string, number>();
   for (const [tempId, m] of entities.manufacturers) {
     try {
-      const existing = await repos.sets.findManufacturerBySlug(slugify(m.name));
-      const row = existing ?? (await repos.sets.findOrCreateManufacturer({ name: m.name }));
+      const existing = await repos.sets.findManufacturerBySlug(slugify(m.name), client);
+      const row = existing ?? (await repos.sets.findOrCreateManufacturer({ name: m.name }, client));
       manufacturerIdByTemp.set(tempId, row.id);
       if (existing) summary.manufacturers.existing++;
       else summary.manufacturers.created++;
@@ -492,6 +564,7 @@ export async function runWrite(
       summary.manufacturers.errors++;
     }
   }
+  assertStageSucceeded("manufacturers", summary.manufacturers);
 
   console.log(`\nWriting brands (${entities.brands.size})...`);
   const brandIdByTemp = new Map<string, number>();
@@ -502,9 +575,10 @@ export async function runWrite(
       continue;
     }
     try {
-      const existing = await repos.sets.findBrandBySlug(manufacturerId, slugify(b.name));
+      const existing = await repos.sets.findBrandBySlug(manufacturerId, slugify(b.name), client);
       const row =
-        existing ?? (await repos.sets.findOrCreateBrand({ manufacturer_id: manufacturerId, name: b.name }));
+        existing ??
+        (await repos.sets.findOrCreateBrand({ manufacturer_id: manufacturerId, name: b.name }, client));
       brandIdByTemp.set(tempId, row.id);
       if (existing) summary.brands.existing++;
       else summary.brands.created++;
@@ -513,6 +587,7 @@ export async function runWrite(
       summary.brands.errors++;
     }
   }
+  assertStageSucceeded("brands", summary.brands);
 
   // Canonical Team import (Phase 2): Sport -> League -> Team, in that
   // dependency order (DEPENDENCY_ORDER above already listed them here;
@@ -527,8 +602,8 @@ export async function runWrite(
   const sportIdByTemp = new Map<string, number>();
   for (const [tempId, sp] of entities.sports) {
     try {
-      const existing = await repos.sports.findSportBySlug(slugify(sp.name));
-      const row = existing ?? (await repos.sports.findOrCreateSport({ name: sp.name }));
+      const existing = await repos.sports.findSportBySlug(slugify(sp.name), client);
+      const row = existing ?? (await repos.sports.findOrCreateSport({ name: sp.name }, client));
       sportIdByTemp.set(tempId, row.id);
       if (existing) summary.sports.existing++;
       else summary.sports.created++;
@@ -537,6 +612,7 @@ export async function runWrite(
       summary.sports.errors++;
     }
   }
+  assertStageSucceeded("sports", summary.sports);
 
   console.log(`\nWriting leagues (${entities.leagues.size})...`);
   const leagueIdByTemp = new Map<string, number>();
@@ -547,9 +623,10 @@ export async function runWrite(
       continue;
     }
     try {
-      const existing = await repos.leagues.findLeagueBySlug(sportId, slugify(lg.name));
+      const existing = await repos.leagues.findLeagueBySlug(sportId, slugify(lg.name), client);
       const row =
-        existing ?? (await repos.leagues.findOrCreateLeague({ sport_id: sportId, name: lg.name }));
+        existing ??
+        (await repos.leagues.findOrCreateLeague({ sport_id: sportId, name: lg.name }, client));
       leagueIdByTemp.set(tempId, row.id);
       if (existing) summary.leagues.existing++;
       else summary.leagues.created++;
@@ -558,6 +635,7 @@ export async function runWrite(
       summary.leagues.errors++;
     }
   }
+  assertStageSucceeded("leagues", summary.leagues);
 
   console.log(`\nWriting teams (${entities.teams.size})...`);
   const teamIdByTemp = new Map<string, number>();
@@ -568,9 +646,10 @@ export async function runWrite(
       continue;
     }
     try {
-      const existing = await repos.teams.findTeamBySlug(leagueId, slugify(tm.name));
+      const existing = await repos.teams.findTeamBySlug(leagueId, slugify(tm.name), client);
       const row =
-        existing ?? (await repos.teams.findOrCreateTeam({ league_id: leagueId, name: tm.name }));
+        existing ??
+        (await repos.teams.findOrCreateTeam({ league_id: leagueId, name: tm.name }, client));
       teamIdByTemp.set(tempId, row.id);
       if (existing) summary.teams.existing++;
       else summary.teams.created++;
@@ -579,6 +658,7 @@ export async function runWrite(
       summary.teams.errors++;
     }
   }
+  assertStageSucceeded("teams", summary.teams);
 
   console.log(`\nWriting sets (${entities.sets.size})...`);
   const setIdByTemp = new Map<string, number>();
@@ -590,15 +670,18 @@ export async function runWrite(
     // exactly, so this pre-check finds the same row findOrCreateSet would.
     const slug = slugify(`${s.name}-${s.releaseYear}`);
     try {
-      const existing = await repos.sets.findSetBySlug(slug);
+      const existing = await repos.sets.findSetBySlug(slug, client);
       const row =
         existing ??
-        (await repos.sets.findOrCreateSet({
-          name: s.name,
-          manufacturer,
-          brand,
-          release_year: Number.isFinite(releaseYear) ? releaseYear : null,
-        }));
+        (await repos.sets.findOrCreateSet(
+          {
+            name: s.name,
+            manufacturer,
+            brand,
+            release_year: Number.isFinite(releaseYear) ? releaseYear : null,
+          },
+          client,
+        ));
       setIdByTemp.set(tempId, row.id);
       if (existing) summary.sets.existing++;
       else summary.sets.created++;
@@ -607,6 +690,7 @@ export async function runWrite(
       summary.sets.errors++;
     }
   }
+  assertStageSucceeded("sets", summary.sets);
 
   console.log(`\nWriting checklist_sections (${entities.checklistSections.size})...`);
   const sectionIdByTemp = new Map<string, number>();
@@ -619,15 +703,19 @@ export async function runWrite(
     try {
       const existing = await repos.checklistSections.findChecklistSectionBySlug(
         setId,
-        slugify(section.name)
+        slugify(section.name),
+        client,
       );
       const row =
         existing ??
-        (await repos.checklistSections.findOrCreateChecklistSection({
-          set_id: setId,
-          name: section.name,
-          section_category: deriveSectionCategory(section),
-        }));
+        (await repos.checklistSections.findOrCreateChecklistSection(
+          {
+            set_id: setId,
+            name: section.name,
+            section_category: deriveSectionCategory(section),
+          },
+          client,
+        ));
       sectionIdByTemp.set(tempId, row.id);
       if (existing) summary.checklist_sections.existing++;
       else summary.checklist_sections.created++;
@@ -636,6 +724,7 @@ export async function runWrite(
       summary.checklist_sections.errors++;
     }
   }
+  assertStageSucceeded("checklist_sections", summary.checklist_sections);
 
   console.log(`\nWriting players (${entities.players.size})...`);
   const playerIdByTemp = new Map<string, number>();
@@ -649,8 +738,8 @@ export async function runWrite(
           // The entity builder doesn't resolve a league for players,
           // matching findOrCreatePlayer's own `input.league_id ?? null`
           // fallback.
-          const existing = await repos.players.findPlayerBySlug(slugify(p.name), null);
-          const row = existing ?? (await repos.players.findOrCreatePlayer({ full_name: p.name }));
+          const existing = await repos.players.findPlayerBySlug(slugify(p.name), null, client);
+          const row = existing ?? (await repos.players.findOrCreatePlayer({ full_name: p.name }, client));
           playerIdByTemp.set(tempId, row.id);
           if (existing) summary.players.existing++;
           else summary.players.created++;
@@ -663,6 +752,7 @@ export async function runWrite(
       }
     );
   }
+  assertStageSucceeded("players", summary.players);
 
   console.log(`\nWriting cards (${entities.cards.size})...`);
   const cardIdByTemp = new Map<string, number>();
@@ -680,14 +770,17 @@ export async function runWrite(
           return;
         }
         try {
-          const existing = await repos.cards.findCardBySectionAndNumber(sectionId, c.cardNumber);
+          const existing = await repos.cards.findCardBySectionAndNumber(sectionId, c.cardNumber, client);
           const row =
             existing ??
-            (await repos.cards.findOrCreateCardV2({
-              checklistSectionId: sectionId,
-              setId,
-              cardNumber: c.cardNumber,
-            }));
+            (await repos.cards.findOrCreateCardV2(
+              {
+                checklistSectionId: sectionId,
+                setId,
+                cardNumber: c.cardNumber,
+              },
+              client,
+            ));
           cardIdByTemp.set(tempId, row.id);
           if (existing) summary.cards.existing++;
           else summary.cards.created++;
@@ -700,13 +793,14 @@ export async function runWrite(
       }
     );
   }
+  assertStageSucceeded("cards", summary.cards);
 
   console.log(`\nWriting parallel_types (${parallelTypesLocal.size})...`);
   const parallelTypeIdByTemp = new Map<string, number>();
   for (const [tempId, pt] of parallelTypesLocal) {
     try {
-      const existing = await repos.parallelTypes.findParallelTypeByName(pt.name);
-      const row = existing ?? (await repos.parallelTypes.findOrCreateParallelType(pt.name));
+      const existing = await repos.parallelTypes.findParallelTypeByName(pt.name, client);
+      const row = existing ?? (await repos.parallelTypes.findOrCreateParallelType(pt.name, client));
       parallelTypeIdByTemp.set(tempId, row.id);
       if (existing) summary.parallel_types.existing++;
       else summary.parallel_types.created++;
@@ -715,6 +809,7 @@ export async function runWrite(
       summary.parallel_types.errors++;
     }
   }
+  assertStageSucceeded("parallel_types", summary.parallel_types);
 
   console.log(`\nWriting card_variants (${entities.cardVariants.size})...`);
   {
@@ -742,11 +837,11 @@ export async function runWrite(
           isMemorabilia: v.isMemorabilia,
         };
         try {
-          const existing = await repos.cardVariants.findCardVariantV2(variantInput);
+          const existing = await repos.cardVariants.findCardVariantV2(variantInput, client);
           if (existing) {
             summary.card_variants.existing++;
           } else {
-            await repos.cardVariants.findOrCreateCardVariantV2(variantInput);
+            await repos.cardVariants.findOrCreateCardVariantV2(variantInput, client);
             summary.card_variants.created++;
           }
         } catch (err) {
@@ -758,6 +853,7 @@ export async function runWrite(
       }
     );
   }
+  assertStageSucceeded("card_variants", summary.card_variants);
 
   // card_players has no standalone find export -- see the comment above
   // recordHeuristicOutcome() for why this one type uses the timestamp
@@ -795,7 +891,7 @@ export async function runWrite(
             cardId,
             playerId,
             "primary",
-            undefined,
+            client,
             teamId,
           );
           recordHeuristicOutcome(summary.card_players, row, cardPlayersRunStartedAt);
@@ -808,6 +904,7 @@ export async function runWrite(
       }
     );
   }
+  assertStageSucceeded("card_players", summary.card_players);
 
   return summary;
 }
@@ -835,21 +932,36 @@ async function main() {
     console.log("Mode: WRITE (--write supplied). This will insert rows into Supabase.\n");
 
     let repos: WriteRepositories;
+    let adminClient: SupabaseClient;
     try {
       repos = await loadWriteRepositories();
+      // Administrative catalog imports must use a server-only service-role
+      // client, never the browser/anon default -- see runWrite()'s own doc
+      // comment. Constructed exactly once, here, only in --write mode;
+      // dry-run mode never reaches this line and never imports/constructs
+      // this client at all.
+      adminClient = repos.serviceRole.createServiceRoleClient();
     } catch (err) {
       console.error(
-        "FAILED: could not load repository modules for write mode.\n\n" +
-          'This is a known environment limitation, not a bug in this script\'s logic: ' +
-          'every src/lib/repositories/*.ts file is imported elsewhere in the app using ' +
-          'the "@/lib/..." tsconfig path alias, which Next.js\'s bundler understands ' +
-          "but Node's native module resolver (used by `node --experimental-strip-types`) " +
-          'does not. `npx tsc --noEmit` reports no error for these imports because ' +
-          'TypeScript resolves "@/" via tsconfig.json\'s `paths` mapping at the ' +
-          "type-check level -- but that mapping has no effect on actual module " +
-          "resolution outside a bundler. Fixing this needs either a Node loader / " +
-          "tsconfig-paths registration, or converting the repository layer to relative " +
-          "imports -- both are changes outside this file, so neither is attempted here.\n\n" +
+        "FAILED: could not initialize the administrative write path.\n\n" +
+          'This can fail for three different reasons, none of which are bugs in this ' +
+          "script's logic:\n\n" +
+          '  1. Path-alias resolution: every src/lib/*.ts file is imported elsewhere in ' +
+          'the app using the "@/..." tsconfig path alias, which Next.js\'s bundler ' +
+          "understands but Node's native module resolver does not. `npx tsc --noEmit` " +
+          'reports no error because TypeScript resolves "@/" via tsconfig.json\'s `paths` ' +
+          "mapping at the type-check level only. Run this script with `tsx` (already a " +
+          "project devDependency), which does resolve it.\n\n" +
+          "  2. The service-role client factory (src/lib/supabase/serviceRole.ts) begins " +
+          'with `import "server-only"` -- a marker package whose non-bundler export ' +
+          "unconditionally throws, so an accidental import from browser code is a " +
+          "build-time error. A bare tsx/Node process must add Node's own " +
+          "`--conditions=react-server` flag (the same condition Next.js's bundler sets " +
+          "when compiling Server Components) for this one import to succeed.\n\n" +
+          "  3. Missing configuration: createServiceRoleClient() itself throws a plain " +
+          '"Missing NEXT_PUBLIC_SUPABASE_URL" or "Missing SUPABASE_SERVICE_ROLE_KEY" ' +
+          "error (never a value) if the required environment variable isn't loaded -- " +
+          "supply it via `--env-file=.env.local` at the CLI, not by hardcoding it here.\n\n" +
           `Underlying error: ${err instanceof Error ? err.message : String(err)}`
       );
       process.exitCode = 1;
@@ -886,7 +998,7 @@ async function main() {
     console.log("Dependency order:");
     DEPENDENCY_ORDER.forEach((label, i) => console.log(`  ${i + 1}. ${label}`));
 
-    const summary = await runWrite(writeEntities, writeParallelTypes, repos);
+    const summary = await runWrite(writeEntities, writeParallelTypes, repos, adminClient);
 
     console.log("\n=== Write Summary ===");
     for (const label of DEPENDENCY_ORDER) {
