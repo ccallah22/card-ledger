@@ -1970,11 +1970,28 @@ function NewCardPageInner() {
     // uploaded. A cached CardOcrResult from the crop-time effect is reused
     // as-is (whether or not it found text -- both are valid completed
     // results); otherwise OCR is (re-)run right here, giving a prior OCR
-    // failure a genuine second chance on retry. A genuine failure (runOcr
-    // throws, or the update itself fails) DOES set anyFailed now -- per the
-    // corrected contract, an OCR failure blocks navigation/reset the same
-    // way a media failure does, so the user can retry it, and leaves the
-    // row at "cropped" (the OCR-persist call is simply never made).
+    // failure a genuine second chance on retry.
+    //
+    // Production-blocking regression fix: a genuine failure here (runOcr
+    // throws, or the update itself fails) does NOT set anyFailed -- this is
+    // the ONE thing this block must never do, and a prior "corrected
+    // contract" briefly made it do exactly that. Root-caused via a live,
+    // authenticated, browser-driven reproduction: the user_cards row and
+    // the front image itself are already fully committed by this point in
+    // the cycle (createUserCard + the media-upload block above both already
+    // succeeded), but re-persisting the OCR text is a purely best-effort,
+    // non-essential metadata write (this text was never shown to the user
+    // anywhere -- see "successful OCR should be silent"). Letting it set
+    // anyFailed made onSave() skip router.push("/cards") and made
+    // onSaveAndAddAnother() refuse to advance, leaving the collector stuck
+    // on /cards/new looking at a small red retry line while their
+    // already-saved card sat, fully visible, one click away on /cards --
+    // exactly the "I press Save, the card does not appear in my Binder"
+    // report. This now matches the Vision persistence block immediately
+    // below, which was already correctly best-effort and never blocked
+    // anything -- OCR failing here leaves the row at "cropped" and
+    // frontOcrPending true for a later opportunistic retry, precisely like
+    // that block's own comment already describes, without blocking save.
     if (needsFrontOcr && frontImage.imageUrl) {
       try {
         if (!frontMediaRow) {
@@ -1994,7 +2011,6 @@ function NewCardPageInner() {
           setFrontOcrError("");
         }
       } catch {
-        anyFailed = true;
         setFrontOcrStatus("failed");
         setFrontOcrError(
           "Card saved, but front text recognition failed. Press Save again to retry.",
@@ -2006,8 +2022,9 @@ function NewCardPageInner() {
     // Deliberately independent of the OCR block above and never
     // contributes to anyFailed -- a missing/invalid/timed-out visual
     // analysis is fully best-effort at save time and must never block
-    // save or gate "Save + Add Another"'s full-success check (unlike OCR,
-    // which does set anyFailed on failure). There is intentionally no
+    // save or gate "Save + Add Another"'s full-success check. OCR
+    // persistence above now follows this exact same never-blocks-anyFailed
+    // contract (see its comment). There is intentionally no
     // pending/retry flag for vision -- a later Save click simply
     // re-attempts this same best-effort block against whatever
     // frontVisionResult/frontVisionRequestRef currently hold, which is
@@ -2089,7 +2106,9 @@ function NewCardPageInner() {
     }
 
     // OCR persistence for the back side -- mirrors the front block above
-    // exactly, independently.
+    // exactly, independently, including the same production-blocking-
+    // regression fix: a failure here must never set anyFailed (see the
+    // front block's comment for the full root-cause explanation).
     if (needsBackOcr && backImage.imageUrl) {
       try {
         if (!backMediaRow) {
@@ -2109,7 +2128,6 @@ function NewCardPageInner() {
           setBackOcrError("");
         }
       } catch {
-        anyFailed = true;
         setBackOcrStatus("failed");
         setBackOcrError(
           "Card saved, but back text recognition failed. Press Save again to retry.",
