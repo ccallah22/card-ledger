@@ -757,6 +757,16 @@ function NewCardPageInner() {
 
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  // Production-blocking regression follow-up: runSaveCycle() can throw
+  // before it ever reaches its own internal try/catch blocks (e.g.
+  // requireProfileId()'s "Not logged in", or createMyCard() itself
+  // failing) -- every other save-related error state above is scoped to
+  // one specific post-creation step and only ever gets set from inside
+  // runSaveCycle()'s own catch blocks, so none of them can represent this
+  // case. This is the one generic fallback: cleared at the start of every
+  // save attempt, set only by onSave()/onSaveAndAddAnother()'s outer catch
+  // (see below) when runSaveCycle() itself throws.
+  const [saveFailureMessage, setSaveFailureMessage] = useState("");
 
   // Vision Engine V2, Phase 5B correction: once createMyCard() succeeds for
   // this form submission, its id is retained here so a later retry (after a
@@ -2198,9 +2208,50 @@ function NewCardPageInner() {
     return { cardId, succeeded: !anyFailed };
   }
 
+  // Observability fix: runSaveCycle() can throw before it ever reaches its
+  // own internal try/catch blocks -- requireProfileId() throwing "Not
+  // logged in", a raw Supabase AuthError propagating unwrapped out of
+  // getCurrentProfile() (see src/lib/repositories/profiles.ts), or
+  // createMyCard() itself failing. Until now neither onSave() nor
+  // onSaveAndAddAnother() had a catch around that await at all, so any of
+  // these left the collector looking at a save that silently did nothing --
+  // no error, no navigation, no console output. These two small helpers
+  // only classify/format whatever the outer catch below already caught;
+  // they never change what runSaveCycle() itself does or returns.
+  //
+  // Supabase's auth-js errors (AuthError and every subclass -- AuthApiError,
+  // AuthSessionMissingError, etc.) all set `__isAuthError: true` on the
+  // instance; this is the same duck-type check auth-js's own exported
+  // isAuthError() uses, reproduced locally instead of adding a new import
+  // for one boolean check. requireProfileId()'s own thrown message ("Not
+  // logged in") is checked explicitly since that's a plain Error, not an
+  // AuthError instance.
+  function isLikelySessionError(err: unknown): boolean {
+    if (err instanceof Error && err.message === "Not logged in") return true;
+    return typeof err === "object" && err !== null && "__isAuthError" in err;
+  }
+
+  // Only name/message/code -- never the raw error object (which, for some
+  // SDK error shapes, can carry nested request/response detail). None of
+  // these three properties ever carry auth tokens, keys, image data, or
+  // signed URLs for any error this app throws or that Supabase/PostgREST
+  // return.
+  function safeErrorInfo(err: unknown): { name?: string; message?: string; code?: string } {
+    if (err instanceof Error) {
+      const code = (err as { code?: unknown }).code;
+      return {
+        name: err.name,
+        message: err.message,
+        code: typeof code === "string" ? code : undefined,
+      };
+    }
+    return { message: typeof err === "string" ? err : "Unknown error" };
+  }
+
   async function onSave() {
     if (isSaving) return;
     setIsSaving(true);
+    setSaveFailureMessage("");
     try {
       const result = await runSaveCycle();
       // Only navigate away once everything pending has synced cleanly --
@@ -2211,6 +2262,24 @@ function NewCardPageInner() {
       if (result?.succeeded) {
         router.push("/cards");
       }
+    } catch (err) {
+      // createdCardId (component state) is read AFTER the throw, not
+      // captured before -- if runSaveCycle() got far enough to create the
+      // card before failing (only reachable today via the one post-create
+      // call that isn't wrapped in its own try/catch, saveSharedImage()),
+      // setCreatedCardId(cardId) already ran, so this distinguishes
+      // "failed before any card existed" from "failed after" without
+      // runSaveCycle() needing to report a stage itself.
+      console.error("[Add Card] Save failed before completion", {
+        stage: createdCardId ? "after-card-created" : "before-card-created",
+        likelySessionIssue: isLikelySessionError(err),
+        error: safeErrorInfo(err),
+      });
+      setSaveFailureMessage(
+        isLikelySessionError(err)
+          ? "Your session has expired. Please sign in again, then try saving the card."
+          : "We couldn't save this card. Please try again.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -2219,6 +2288,7 @@ function NewCardPageInner() {
   async function onSaveAndAddAnother() {
     if (isSaving) return;
     setIsSaving(true);
+    setSaveFailureMessage("");
     try {
       const result = await runSaveCycle();
       if (!result?.succeeded) {
@@ -2327,6 +2397,21 @@ function NewCardPageInner() {
       setManualOverridesPending(false);
       setManualOverridesError("");
       lastPersistedManualOverridesRef.current = null;
+    } catch (err) {
+      // See onSave()'s identical catch for the full explanation -- same
+      // classification/logging, same fallback message. The form-reset
+      // block above already only runs once result.succeeded is true, so a
+      // thrown exception here can never leave the form partially reset.
+      console.error("[Add Card] Save failed before completion", {
+        stage: createdCardId ? "after-card-created" : "before-card-created",
+        likelySessionIssue: isLikelySessionError(err),
+        error: safeErrorInfo(err),
+      });
+      setSaveFailureMessage(
+        isLikelySessionError(err)
+          ? "Your session has expired. Please sign in again, then try saving the card."
+          : "We couldn't save this card. Please try again.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -3347,6 +3432,16 @@ function NewCardPageInner() {
               </label>
             </div>
           </div>
+        ) : null}
+
+        {/* Observability fix: the one generic fallback for a save that
+            threw before runSaveCycle() reached any of its own per-step
+            error states (see onSave()/onSaveAndAddAnother()'s outer catch)
+            -- only ever set right before this render, only ever shown
+            after a real failed attempt, never a permanent/instructional
+            message. */}
+        {saveFailureMessage ? (
+          <div className="sm:col-span-2 text-sm text-red-600">{saveFailureMessage}</div>
         ) : null}
 
         {/* Vision Engine V3 responsive fix (Phase 1C): stacked full-width
