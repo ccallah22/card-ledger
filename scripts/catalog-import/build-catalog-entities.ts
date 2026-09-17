@@ -92,7 +92,47 @@ export type CardVariant = {
   isAutograph: boolean;
   isMemorabilia: boolean;
 };
-export type CardPlayer = { id: string; cardId: string; playerId: string };
+// Canonical Team import, Phase 2: teamId references an entry in this same
+// EntityCollections' `teams` map (e.g. "team:las-vegas-raiders") -- never a
+// raw team-name string duplicated here -- so the writer resolves it to a
+// real teams.id the exact same way it already resolves cardId/playerId.
+// null means "no trustworthy per-player Team relationship for this row"
+// (no team text at all, a player/team segment-count mismatch, or the
+// Panini "Multiverse Jerseys" same-player/multiple-team case) -- see
+// buildEntities()'s own comment for exactly which of those applies and how
+// each is counted in TeamResolutionStats, never guessed.
+export type CardPlayer = { id: string; cardId: string; playerId: string; teamId: string | null };
+
+// Canonical Team import, Phase 2: counts why some CardPlayer relationships
+// do NOT get a team_id, so a caller (write-catalog-v2.ts's dry-run/write
+// summaries) can show this explicitly rather than folding it into a
+// generic count. Every category here is mutually exclusive per row/player
+// -- see buildEntities().
+export type TeamResolutionStats = {
+  /** Rows with non-empty TEAM source text (before any splitting). */
+  rowsWithTeamText: number;
+  /**
+   * Rows where TEAM had text but the number of "/"-split team segments
+   * didn't match the number of "/"-split player segments -- positional
+   * pairing would be a guess, so NO player on that row gets a team_id from
+   * it (Step 3's explicit "do not guess" requirement).
+   */
+  segmentMismatchRows: number;
+  /**
+   * Distinct CardPlayer relationships affected by the same player's name
+   * appearing more than once in one row's ATHLETE text (Panini "Multiverse
+   * Jerseys"-style dual/multi-team swatch cards, e.g. "James Conner/James
+   * Conner" + "Arizona Cardinals/Pittsburgh Steelers"). The single
+   * CardPlayer entity card_players' (card_id, player_id) primary key
+   * allows for that player-on-that-card is left team_id = null rather than
+   * arbitrarily picking one of the multiple teams -- see the Team
+   * architecture audit for why this is a real, not-yet-solved schema
+   * limitation, intentionally not redesigned in this phase.
+   */
+  multiversePlayers: number;
+  /** CardPlayer relationships that DID get a resolved, non-null teamId. */
+  cardPlayerTeamsResolved: number;
+};
 
 const KNOWN_MANUFACTURERS = ["Panini", "Topps", "Upper Deck", "Bowman", "Donruss", "Leaf"];
 
@@ -146,7 +186,21 @@ export type EntityCollections = {
   cards: Map<string, Card>;
   cardVariants: Map<string, CardVariant>;
   cardPlayers: Map<string, CardPlayer>;
+  // Canonical Team import, Phase 2: not an entity collection itself --
+  // diagnostic counters accumulated while resolving CardPlayer.teamId
+  // below, exposed here (rather than a second return value) so every
+  // existing buildEntities() caller keeps compiling unchanged.
+  teamResolutionStats: TeamResolutionStats;
 };
+
+function emptyTeamResolutionStats(): TeamResolutionStats {
+  return {
+    rowsWithTeamText: 0,
+    segmentMismatchRows: 0,
+    multiversePlayers: 0,
+    cardPlayerTeamsResolved: 0,
+  };
+}
 
 function createCollections(): EntityCollections {
   return {
@@ -161,6 +215,7 @@ function createCollections(): EntityCollections {
     cards: new Map(),
     cardVariants: new Map(),
     cardPlayers: new Map(),
+    teamResolutionStats: emptyTeamResolutionStats(),
   };
 }
 
@@ -266,32 +321,44 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
       });
     }
 
-    // Bug-fix-phase audit note (requirement #4, not changed by this fix):
-    // row.team_name and row.position use the exact same "/"-combined
-    // convention as row.player_name for a Multiverse-Jerseys-style row
-    // (e.g. TEAM "Philadelphia Eagles/Tennessee Titans", POSITION
-    // "WR/WR" alongside ATHLETE "A.J. Brown/A.J. Brown"), but this
-    // codebase has no player-team relationship at all today -- `players`
-    // has a `team_id` column, but nothing in this pipeline ever sets it
-    // (Player here is `{ id, name }` only), and `teams` is built as a
-    // standalone, unlinked-to-player entity purely to derive sport/league.
-    // Splitting team_name/position and zipping them positionally against
-    // parsePlayerNames()'s output would be guessing at a source
-    // convention I haven't verified holds for every row (e.g. it isn't
-    // guaranteed team[i] always corresponds to playerName[i] for every
-    // checklist format/subset), and inventing a player-team link here
-    // would mean designing schema this phase is explicitly scoped not to
-    // touch. Left as-is: a combined team_name still becomes one team
-    // entity with the raw combined string (e.g. "Philadelphia Eagles/
-    // Tennessee Titans") -- functionally the same pre-existing behavior
-    // as before this fix, and no worse than it already was, since no
-    // player row is ever linked to it either way. Player identity (the
-    // actual reported bug) is fully fixed above; this is a known,
-    // reported limitation, not a regression introduced by this phase.
-    if (row.team_name) {
+    // Canonical Team import, Phase 2: row.team_name uses the same
+    // "/"-combined convention as row.player_name, for two different real
+    // reasons -- a genuine multi-player card ("Ashton Jeanty/Omarion
+    // Hampton" + "Las Vegas Raiders/Los Angeles Chargers") or the SAME
+    // player shown across two team jerseys on one physical card (Panini's
+    // "Multiverse Jerseys" insert, e.g. "James Conner/James Conner" +
+    // "Arizona Cardinals/Pittsburgh Steelers"). Confirmed against the real
+    // 2025 Select Football file (Team-import audit): 100% of rows have
+    // team text, 0 rows have a player/team segment-count mismatch, and
+    // player[i] always corresponds to team[i] positionally -- but that is
+    // confirmed for THIS file/format, not guaranteed for every future
+    // source, so both defensive cases below (mismatch, same-player-repeat)
+    // are handled rather than assumed away.
+    //
+    // Sport/League/Team entities are now created per DISTINCT team
+    // segment (not per raw, possibly-combined row.team_name string as
+    // before this phase) -- "Arizona Cardinals" and "Pittsburgh Steelers"
+    // become two real, separately-named Team entities, never one bogus
+    // "Arizona Cardinals/Pittsburgh Steelers" entity.
+    const rawTeamSegments = (row.team_name ?? "")
+      .split("/")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (rawTeamSegments.length > 0) {
+      c.teamResolutionStats.rowsWithTeamText++;
+    }
+
+    // teamIdBySegmentIndex[i] is the resolved in-memory Team entity id for
+    // rawTeamSegments[i], in the same order -- computed once per row,
+    // referenced (never duplicated) by whichever CardPlayer(s) below the
+    // positional-pairing logic assigns them to.
+    const teamIdBySegmentIndex: string[] = [];
+    for (const teamSegment of rawTeamSegments) {
       // SPORT is a real column on Beckett's XLSX "Master Checklist" format
-      // -- prefer it over the team-name heuristic when present.
-      const sport = row.sport || resolveSportFromTeam(row.team_name);
+      // -- prefer it over the team-name heuristic when present. Unchanged
+      // from before this phase.
+      const sport = row.sport || resolveSportFromTeam(teamSegment);
       const league = resolveLeagueForSport(sport);
 
       const sportId = `sport:${slugify(sport)}`;
@@ -302,10 +369,11 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
         c.leagues.set(leagueId, { id: leagueId, name: league, sportId });
       }
 
-      const teamId = `team:${slugify(row.team_name)}`;
+      const teamId = `team:${slugify(teamSegment)}`;
       if (!c.teams.has(teamId)) {
-        c.teams.set(teamId, { id: teamId, name: row.team_name, leagueId });
+        c.teams.set(teamId, { id: teamId, name: teamSegment, leagueId });
       }
+      teamIdBySegmentIndex.push(teamId);
     }
 
     // Bug fix: row.player_name is the raw ATHLETE cell, which Beckett's
@@ -320,6 +388,35 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
     // each linked to this same card, instead of one bogus combined-name
     // player entity.
     if (row.player_name) {
+      // Raw (pre-dedup) segments, in original order and casing -- needed
+      // for positional pairing against rawTeamSegments (parsePlayerNames'
+      // own output below is deduplicated, which would misalign indices),
+      // and for detecting a repeated name (the Multiverse case) via its
+      // own count in this array.
+      const rawPlayerSegments = row.player_name
+        .split("/")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      // Positional pairing is only safe when both sides split into the
+      // same number of segments -- Step 3's explicit "do not guess"
+      // requirement. A present-but-mismatched segment count means NO
+      // player parsed from this row gets a team relationship from it.
+      const segmentsMatch =
+        rawTeamSegments.length > 0 && rawPlayerSegments.length === rawTeamSegments.length;
+      if (rawTeamSegments.length > 0 && !segmentsMatch) {
+        c.teamResolutionStats.segmentMismatchRows++;
+      }
+
+      // Case-insensitive occurrence count per raw segment -- exactly how
+      // parsePlayerNames.ts's own dedup rule identifies "the same player,"
+      // applied here to detect a Multiverse-style repeated name instead.
+      const lowerCaseCounts = new Map<string, number>();
+      for (const segment of rawPlayerSegments) {
+        const key = segment.toLowerCase();
+        lowerCaseCounts.set(key, (lowerCaseCounts.get(key) ?? 0) + 1);
+      }
+
       for (const playerName of parsePlayerNames(row.player_name)) {
         const playerId = `player:${slugify(playerName)}`;
         if (!c.players.has(playerId)) {
@@ -328,7 +425,25 @@ export function buildEntities(rows: NormalizedBeckettRow[]): EntityCollections {
 
         const cardPlayerId = `cardplayer:${cardId}-${slugify(playerName)}`;
         if (!c.cardPlayers.has(cardPlayerId)) {
-          c.cardPlayers.set(cardPlayerId, { id: cardPlayerId, cardId, playerId });
+          const isRepeatedName = (lowerCaseCounts.get(playerName.toLowerCase()) ?? 0) > 1;
+
+          let teamId: string | null = null;
+          if (isRepeatedName) {
+            // Panini "Multiverse Jerseys"-style same-player/multi-team row
+            // -- never guess which of the multiple teams belongs to the
+            // ONE card_players row this player-on-this-card can have (see
+            // CardPlayer's own type comment / the Team architecture
+            // audit). Counted, never silently dropped.
+            c.teamResolutionStats.multiversePlayers++;
+          } else if (segmentsMatch) {
+            const index = rawPlayerSegments.findIndex(
+              (segment) => segment.toLowerCase() === playerName.toLowerCase(),
+            );
+            teamId = index >= 0 ? (teamIdBySegmentIndex[index] ?? null) : null;
+            if (teamId) c.teamResolutionStats.cardPlayerTeamsResolved++;
+          }
+
+          c.cardPlayers.set(cardPlayerId, { id: cardPlayerId, cardId, playerId, teamId });
         }
       }
     }

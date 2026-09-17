@@ -21,6 +21,7 @@ import {
   type Card,
   type CardVariant,
   type CardPlayer,
+  type TeamResolutionStats,
 } from "./build-catalog-entities.ts";
 
 /**
@@ -59,14 +60,20 @@ import {
  * corrected below; write mode inserts them as real rows via
  * findOrCreateManufacturer/findOrCreateBrand like everything else.
  *
- * Sports/Leagues/Teams are NOT written by --write: sports.ts/leagues.ts/
- * teams.ts currently only export list* functions, no find-or-create --
- * adding one would mean modifying those repository files, which is out of
- * scope for this task (scoped to write-catalog-v2.ts only). They're
- * counted as "Skipped" in the write summary, not silently dropped. Nothing
- * downstream actually depends on them existing first: Sets' sport_id/
- * league_id are optional and unpopulated by this pipeline already, and
- * Player has no team/league reference in the current entity model.
+ * Canonical Team import (Phase 2): Sports/Leagues/Teams ARE now written by
+ * --write, via the findOrCreateSport/findOrCreateLeague/findOrCreateTeam
+ * repository functions the canonical-per-card-Team architecture task
+ * added to sports.ts/leagues.ts/teams.ts. Each CardPlayer's resolved
+ * in-memory Team reference (CardPlayer.teamId, set by
+ * build-catalog-entities.ts's positional player<->team pairing -- see its
+ * own header comment) is resolved to a real teams.id here and passed
+ * through to findOrCreateCardPlayer's existing optional teamId argument.
+ * A CardPlayer with no resolvable team relationship (no team text, a
+ * player/team segment-count mismatch, or the Panini "Multiverse Jerseys"
+ * same-player/multi-team case -- see TeamResolutionStats) is written with
+ * team_id left null, exactly like before this row had any team data at
+ * all -- never guessed. Sets' sport_id/league_id remain optional and
+ * unpopulated by this pipeline, unchanged.
  *
  * IMPORTANT -- confirmed environment limitation, not a bug in this file's
  * logic: every src/lib/repositories/*.ts file is imported elsewhere in the
@@ -201,7 +208,24 @@ export function shapeCardVariant(v: CardVariant) {
   };
 }
 export function shapeCardPlayer(cp: CardPlayer) {
-  return { card_ref: cp.cardId, player_ref: cp.playerId, role: "primary" };
+  return { card_ref: cp.cardId, player_ref: cp.playerId, role: "primary", team_ref: cp.teamId };
+}
+
+/**
+ * Canonical Team import (Phase 2): formats TeamResolutionStats into the
+ * same "planned/summary" style the rest of this CLI already uses, shown in
+ * both dry-run and write-mode output. Never folds the unresolved
+ * categories into resolvedCardPlayerTeamsResolved or omits them --
+ * Step 9's explicit "do not hide skipped/unresolved relationships inside a
+ * generic count" requirement.
+ */
+export function formatTeamResolutionStats(stats: TeamResolutionStats): string[] {
+  return [
+    `Rows with TEAM source text: ${stats.rowsWithTeamText}`,
+    `CardPlayer relationships with a resolved team_id: ${stats.cardPlayerTeamsResolved}`,
+    `Rows skipped for team pairing (player/team segment-count mismatch): ${stats.segmentMismatchRows}`,
+    `CardPlayer relationships left unresolved (Multiverse Jerseys-style same-player/multi-team): ${stats.multiversePlayers}`,
+  ];
 }
 
 export type PlanSection = {
@@ -388,7 +412,7 @@ function makeProgressLogger(label: string, total: number): () => void {
  * plain Node in this environment.
  */
 async function loadWriteRepositories() {
-  const [sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes] =
+  const [sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes, sports, leagues, teams] =
     await Promise.all([
       import("@/lib/repositories/sets"),
       import("@/lib/repositories/checklistSections"),
@@ -397,8 +421,11 @@ async function loadWriteRepositories() {
       import("@/lib/repositories/cardVariants"),
       import("@/lib/repositories/cardPlayers"),
       import("@/lib/repositories/parallelTypes"),
+      import("@/lib/repositories/sports"),
+      import("@/lib/repositories/leagues"),
+      import("@/lib/repositories/teams"),
     ]);
-  return { sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes };
+  return { sets, checklistSections, players, cards, cardVariants, cardPlayers, parallelTypes, sports, leagues, teams };
 }
 
 type WriteRepositories = Awaited<ReturnType<typeof loadWriteRepositories>>;
@@ -451,13 +478,6 @@ export async function runWrite(
   const summary = emptyWriteSummary();
   loggedErrorCounts.clear();
 
-  // Sports/Leagues/Teams: no find-or-create repository function exists yet
-  // -- see the file header comment. Skipped and counted, not silently
-  // dropped.
-  summary.sports.skipped = entities.sports.size;
-  summary.leagues.skipped = entities.leagues.size;
-  summary.teams.skipped = entities.teams.size;
-
   console.log(`\nWriting manufacturers (${entities.manufacturers.size})...`);
   const manufacturerIdByTemp = new Map<string, number>();
   for (const [tempId, m] of entities.manufacturers) {
@@ -491,6 +511,72 @@ export async function runWrite(
     } catch (err) {
       logEntityError("brands", err);
       summary.brands.errors++;
+    }
+  }
+
+  // Canonical Team import (Phase 2): Sport -> League -> Team, in that
+  // dependency order (DEPENDENCY_ORDER above already listed them here;
+  // this is the first phase that actually writes them). Each uses the
+  // same find-by-slug-then-find-or-create pattern as manufacturers/brands
+  // above, via the repository functions the canonical-per-card-Team
+  // architecture task added (sports.ts/leagues.ts/teams.ts) -- no
+  // NFL-specific behavior lives in those generic functions; the Sport/
+  // League *names* themselves (e.g. "Football" -> "NFL") were already
+  // resolved upstream in build-catalog-entities.ts's row loop.
+  console.log(`\nWriting sports (${entities.sports.size})...`);
+  const sportIdByTemp = new Map<string, number>();
+  for (const [tempId, sp] of entities.sports) {
+    try {
+      const existing = await repos.sports.findSportBySlug(slugify(sp.name));
+      const row = existing ?? (await repos.sports.findOrCreateSport({ name: sp.name }));
+      sportIdByTemp.set(tempId, row.id);
+      if (existing) summary.sports.existing++;
+      else summary.sports.created++;
+    } catch (err) {
+      logEntityError("sports", err);
+      summary.sports.errors++;
+    }
+  }
+
+  console.log(`\nWriting leagues (${entities.leagues.size})...`);
+  const leagueIdByTemp = new Map<string, number>();
+  for (const [tempId, lg] of entities.leagues) {
+    const sportId = sportIdByTemp.get(lg.sportId);
+    if (sportId === undefined) {
+      summary.leagues.skipped++;
+      continue;
+    }
+    try {
+      const existing = await repos.leagues.findLeagueBySlug(sportId, slugify(lg.name));
+      const row =
+        existing ?? (await repos.leagues.findOrCreateLeague({ sport_id: sportId, name: lg.name }));
+      leagueIdByTemp.set(tempId, row.id);
+      if (existing) summary.leagues.existing++;
+      else summary.leagues.created++;
+    } catch (err) {
+      logEntityError("leagues", err);
+      summary.leagues.errors++;
+    }
+  }
+
+  console.log(`\nWriting teams (${entities.teams.size})...`);
+  const teamIdByTemp = new Map<string, number>();
+  for (const [tempId, tm] of entities.teams) {
+    const leagueId = leagueIdByTemp.get(tm.leagueId);
+    if (leagueId === undefined) {
+      summary.teams.skipped++;
+      continue;
+    }
+    try {
+      const existing = await repos.teams.findTeamBySlug(leagueId, slugify(tm.name));
+      const row =
+        existing ?? (await repos.teams.findOrCreateTeam({ league_id: leagueId, name: tm.name }));
+      teamIdByTemp.set(tempId, row.id);
+      if (existing) summary.teams.existing++;
+      else summary.teams.created++;
+    } catch (err) {
+      logEntityError("teams", err);
+      summary.teams.errors++;
     }
   }
 
@@ -691,8 +777,27 @@ export async function runWrite(
           logProgress();
           return;
         }
+        // Canonical Team import (Phase 2): cp.teamId is null whenever
+        // build-catalog-entities.ts couldn't safely resolve a per-player
+        // team relationship for this row (no team text, a segment-count
+        // mismatch, or a Multiverse Jerseys-style same-player/multi-team
+        // row -- see TeamResolutionStats) -- in every one of those cases
+        // this simply passes null through, identical to card_players'
+        // pre-Phase-2 behavior. A resolved cp.teamId that this run somehow
+        // failed to write (teamIdByTemp miss, e.g. that team's own write
+        // errored) also degrades to null here rather than guessing --
+        // never a wrong team, only ever a missing one, and
+        // findOrCreateCardPlayer's own null-safe enrichment behavior means
+        // a later, successful run can still fill it in.
+        const teamId = cp.teamId ? (teamIdByTemp.get(cp.teamId) ?? null) : null;
         try {
-          const row = await repos.cardPlayers.findOrCreateCardPlayer(cardId, playerId);
+          const row = await repos.cardPlayers.findOrCreateCardPlayer(
+            cardId,
+            playerId,
+            "primary",
+            undefined,
+            teamId,
+          );
           recordHeuristicOutcome(summary.card_players, row, cardPlayersRunStartedAt);
         } catch (err) {
           logEntityError("card_players", err);
@@ -780,10 +885,6 @@ async function main() {
 
     console.log("Dependency order:");
     DEPENDENCY_ORDER.forEach((label, i) => console.log(`  ${i + 1}. ${label}`));
-    console.log(
-      "\nSports/Leagues/Teams are skipped (no find-or-create repository function exists " +
-        "yet -- see this file's header comment)."
-    );
 
     const summary = await runWrite(writeEntities, writeParallelTypes, repos);
 
@@ -796,6 +897,12 @@ async function main() {
       console.log(`  Skipped: ${c.skipped}`);
       console.log(`  Errors: ${c.errors}`);
     }
+
+    console.log("\n=== Team Resolution ===");
+    formatTeamResolutionStats(writeEntities.teamResolutionStats).forEach((line) =>
+      console.log(`  ${line}`),
+    );
+
     console.log("\nWrite complete.");
     return;
   }
@@ -867,7 +974,11 @@ async function main() {
   }
   console.log(`Total planned inserts: ${totalPlanned}`);
   console.log(`Dependency order: ${sections.map((s) => s.label).join(" -> ")}`);
-  console.log("Dry-run complete. No database writes occurred.");
+
+  console.log("\n=== Team Resolution ===");
+  formatTeamResolutionStats(entities.teamResolutionStats).forEach((line) => console.log(`  ${line}`));
+
+  console.log("\nDry-run complete. No database writes occurred.");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
