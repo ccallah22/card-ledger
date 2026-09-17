@@ -466,6 +466,16 @@ function CardsPageInner() {
   // to `cards` does. Same shared hook Player Hub and Card Detail already
   // use -- no second image resolver.
   const { imagesByUserCardId } = useUserCardDisplayImages(baseList.map((c) => c.id));
+  // Binder Card Flip, Phase 1: the same batched resolver, same id list,
+  // just the "back" side -- one additional card_media query + one
+  // additional signed-URL request for the whole grid (never per-tile; see
+  // listCardMediaForUserCardsBySide/getCardMediaImageUrls). A card with no
+  // back image simply never appears in this map, which CardTile already
+  // treats as "not flippable," not an error.
+  const { imagesByUserCardId: backImagesByUserCardId } = useUserCardDisplayImages(
+    baseList.map((c) => c.id),
+    "back",
+  );
 
   const afterSport = useMemo(() => {
     if (sportFilter === "ALL") return baseList;
@@ -1547,6 +1557,7 @@ function CardsPageInner() {
                           selected={selectedIds.has(c.id)}
                           onToggleSelected={toggleSelected}
                           imageUrl={imagesByUserCardId.get(c.id) ?? null}
+                          backImageUrl={backImagesByUserCardId.get(c.id) ?? null}
                           sharedImage={sharedImage}
                           report={report}
                           isMenuOpen={openMenuId === c.id}

@@ -4,6 +4,7 @@ import type { MyCard } from "@/lib/repositories/myCards";
 import { getDataQualitySignals } from "@/lib/repositories/dataQualitySignals";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 import type { SharedImage } from "@/lib/db/sharedImages";
+import { FlippableCardImage } from "@/components/cards/FlippableCardImage";
 
 function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
@@ -52,6 +53,16 @@ export type CardTileProps = {
   // component no longer queries storage/localStorage itself. See that
   // hook's own comment for the exact priority order.
   imageUrl: string | null;
+  // Binder Card Flip, Phase 1: the user's own persisted back-side
+  // card_media image, resolved by the caller via
+  // useUserCardDisplayImages(ids, "back") -- batched at the grid/page
+  // level (see cards/page.tsx), never fetched per-tile. Deliberately a
+  // separate prop from sharedImage below: community-reference images are
+  // never an acceptable substitute for a back image, so this must only
+  // ever be threaded from the "back" media resolver, never from
+  // sharedImage. null (still resolving, or genuinely no back image) means
+  // this card is not flippable -- a normal state, not an error.
+  backImageUrl?: string | null;
   sharedImage?: SharedImage | null;
   report?: { reports: number; status?: string };
   onOpenMenu: (e: React.MouseEvent<HTMLButtonElement>, id: string) => void;
@@ -67,6 +78,7 @@ export function CardTile({
   selected,
   onToggleSelected,
   imageUrl,
+  backImageUrl,
   sharedImage,
   report,
   onOpenMenu,
@@ -106,6 +118,12 @@ export function CardTile({
     (report.status === "blocked" || (report.reports ?? 0) >= REPORT_HIDE_THRESHOLD);
 
   const displayImage = hideImage ? "" : imageUrl ?? sharedImage?.dataUrl ?? "";
+  // Binder Card Flip: never offer flipping a moderation-hidden image, and
+  // never accept a community-reference image as a back -- backImageUrl is
+  // already guaranteed (by every caller) to come only from the user's own
+  // persisted back card_media, but this still gates it on hideImage for
+  // the same reason displayImage above is blanked out when hidden.
+  const flipBackUrl = hideImage ? null : backImageUrl ?? null;
 
   const rowHref = `/cards/${c.id}`;
 
@@ -120,7 +138,7 @@ export function CardTile({
       : "—";
 
   return (
-    <div className="relative">
+    <div className="group relative">
       <div className="absolute left-2 top-2 z-20">
         <label
           className="flex h-11 w-11 items-center justify-center"
@@ -136,24 +154,57 @@ export function CardTile({
           />
         </label>
       </div>
+
+      {/* Binder Card Flip: the real navigating <a> is now this separate,
+          invisible, full-tile overlay rather than the element that visually
+          contains the image/text below -- so the flip button the image
+          region can render (once a back image exists) is never a DOM
+          descendant of an <a> (invalid nested interactive content; also see
+          FlippableCardImage.tsx). z-10 keeps it beneath the checkbox/kebab
+          (z-20, unchanged) and beneath the flip button once one exists, so
+          those keep intercepting clicks exactly as before. */}
       <Link
         href={rowHref}
-        className="block h-full rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-      >
+        aria-label={identity}
+        className="absolute inset-0 z-10 rounded-lg"
+      />
+
+      {/* Plain, non-interactive visual content -- byte-identical markup to
+          the old <Link>'s children, just no longer the click target itself.
+          pointer-events-none lets a click anywhere in here (padding,
+          background, text, the plain "no back image" <img>) fall through to
+          the stretched Link above; only FlippableCardImage's own flip
+          <button>, once a back image exists, re-enables pointer-events on
+          itself to intercept its own clicks (see its own comment).
+          hover:-translate-y-0.5/hover:shadow-md became group-hover: variants
+          of the same classes (group lives on the outer wrapper) since this
+          div itself no longer receives pointer events to hover on directly
+          -- :hover on an ancestor still tracks cursor position within its
+          box regardless of a descendant's pointer-events, so the
+          lift/shadow effect is pixel-identical to before. */}
+      <div className="pointer-events-none block h-full rounded-lg border border-zinc-200 bg-white shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
         <div className="p-3 h-full flex flex-col">
           <div className="flex flex-1 min-h-0 flex-col gap-2 rounded-md border border-zinc-200 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 p-2 sm:aspect-[2.5/3.5] overflow-hidden">
-            <div className="flex-1 min-h-0 w-full rounded-md border border-zinc-200 bg-white/70 flex items-center justify-center overflow-hidden sm:aspect-[2.5/3.5]">
+            {/* No pointer-events override here: FlippableCardImage's own
+                flip <button> (rendered only once backImageUrl exists)
+                re-enables pointer-events on itself directly, which works
+                regardless of this ancestor's pointer-events-none -- see its
+                own comment. When there's no back image, this box must stay
+                click-through (pointer-events-none, inherited) so the plain
+                <img> lets clicks fall to the stretched Link below exactly
+                like every other non-interactive part of this tile. */}
+            <div className="relative flex-1 min-h-0 w-full rounded-md border border-zinc-200 bg-white/70 flex items-center justify-center overflow-hidden sm:aspect-[2.5/3.5]">
               {displayImage ? (
                 // displayImage is either imageUrl (a signed Supabase Storage
-                // URL) or a community-shared image's data URL; next/image is
-                // intentionally not used here.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={displayImage}
+                // URL) or a community-shared image's data URL; flipBackUrl
+                // (see above) comes only from the user's own persisted back
+                // card_media, never from sharedImage -- FlippableCardImage
+                // itself enforces nothing here, this call site does.
+                <FlippableCardImage
+                  frontUrl={displayImage}
+                  backUrl={flipBackUrl}
                   alt={`${c.playerName} ${c.cardNumber ?? ""}`.trim()}
-                  className="h-full w-full object-contain"
-                  loading="lazy"
-                  decoding="async"
+                  imgClassName="h-full w-full object-contain"
                 />
               ) : hideImage ? (
                 <div className="text-[10px] text-zinc-500 text-center px-2">
@@ -208,7 +259,7 @@ export function CardTile({
             <span className="tabular-nums text-zinc-600">{priceLabel}</span>
           </div>
         </div>
-      </Link>
+      </div>
 
       {/* Kebab button (does NOT navigate) */}
       <div className="absolute right-2 top-2 z-20" data-row-menu>

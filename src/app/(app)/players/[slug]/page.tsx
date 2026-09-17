@@ -216,6 +216,16 @@ export default function PlayerDetailPage({
   const { imagesByUserCardId, loading: imagesLoading } = useUserCardDisplayImages(
     allDisplayedUserCardIds,
   );
+  // Binder Card Flip, Phase 1: same combined id list, same batching
+  // rationale as above, just the "back" side -- one additional card_media
+  // query + one additional signed-URL request for the whole page, never
+  // per-tile. Every id here already comes from an owned user_card (see the
+  // comment above on topCardUserCardIds/ownedCollectionCards), so this can
+  // never make a non-owned catalog card flippable.
+  const { imagesByUserCardId: backImagesByUserCardId } = useUserCardDisplayImages(
+    allDisplayedUserCardIds,
+    "back",
+  );
 
   if (missing) {
     notFound();
@@ -387,6 +397,7 @@ export default function PlayerDetailPage({
                         card={card}
                         imageUrl={imagesByUserCardId.get(card.userCardId) ?? null}
                         imageLoading={imagesLoading && !imagesByUserCardId.has(card.userCardId)}
+                        backUrl={backImagesByUserCardId.get(card.userCardId) ?? null}
                       />
                     ))}
                   </div>
@@ -415,6 +426,7 @@ export default function PlayerDetailPage({
                     card={card}
                     imageUrl={imagesByUserCardId.get(card.userCardId) ?? null}
                     imageLoading={imagesLoading && !imagesByUserCardId.has(card.userCardId)}
+                    backUrl={backImagesByUserCardId.get(card.userCardId) ?? null}
                     featured={index === 0}
                   />
                 ))}
@@ -435,6 +447,7 @@ export default function PlayerDetailPage({
               cards={ownedCollectionCards.map(mapMyCardToTileCard)}
               imagesByUserCardId={imagesByUserCardId}
               imagesLoading={imagesLoading}
+              backImagesByUserCardId={backImagesByUserCardId}
             />
           ) : null}
 
@@ -482,6 +495,7 @@ export default function PlayerDetailPage({
                 card={mapMyCardToTileCard(card)}
                 imageUrl={imagesByUserCardId.get(card.id) ?? null}
                 imageLoading={imagesLoading && !imagesByUserCardId.has(card.id)}
+                backUrl={backImagesByUserCardId.get(card.id) ?? null}
               />
             ))}
           </div>

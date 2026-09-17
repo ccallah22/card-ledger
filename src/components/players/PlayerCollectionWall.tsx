@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { PlayerOwnedCardTileCard } from "@/components/players/PlayerOwnedCardTile";
+import { FlippableCardImage } from "@/components/cards/FlippableCardImage";
 
 // Initial render cap -- "View all N cards" appears below the wall once the
 // pool exceeds this, but expansion itself is a future phase (not built
@@ -16,6 +17,13 @@ export type PlayerCollectionWallProps = {
   cards: PlayerOwnedCardTileCard[];
   imagesByUserCardId: Map<string, string | null>;
   imagesLoading: boolean;
+  // Binder Card Flip, Phase 1: same shape as imagesByUserCardId, just the
+  // user's own persisted back-side card_media, resolved by the caller via
+  // useUserCardDisplayImages(ids, "back") -- batched at the page level,
+  // never per-tile. A card absent from (or null in) this map is simply not
+  // flippable, a normal state, not an error. Optional so a future caller
+  // that never wants flipping doesn't have to pass an empty map.
+  backImagesByUserCardId?: Map<string, string | null>;
 };
 
 /**
@@ -41,6 +49,7 @@ export function PlayerCollectionWall({
   cards,
   imagesByUserCardId,
   imagesLoading,
+  backImagesByUserCardId,
 }: PlayerCollectionWallProps) {
   if (cards.length === 0) return null;
 
@@ -54,41 +63,64 @@ export function PlayerCollectionWall({
         {visible.map((card) => {
           const imageUrl = imagesByUserCardId.get(card.userCardId) ?? null;
           const loading = imagesLoading && !imagesByUserCardId.has(card.userCardId);
+          const backUrl = backImagesByUserCardId?.get(card.userCardId) ?? null;
           const label = card.title
             ? `${card.title}${card.cardNumber ? `, card ${card.cardNumber}` : ""}`
             : `Card ${card.cardNumber}`;
 
           return (
-            <Link
+            // Binder Card Flip: previously the whole tile WAS the <a> with
+            // the image as its only child. A flip <button> can never
+            // validly be a descendant of an <a> (see CardTile.tsx's
+            // identical comment), so the <a> is now a separate, invisible,
+            // full-tile overlay (z-10) and the visual image lives in a
+            // sibling on top of it. `group` moves to this outer wrapper so
+            // both the tile hover-lift and the image's own hover-scale
+            // (group-hover:scale-[1.03] below) keep working exactly as
+            // before -- :hover on an ancestor tracks cursor position within
+            // its box regardless of a pointer-events-none descendant.
+            <div
               key={card.userCardId}
-              href={`/cards/${card.userCardId}`}
-              aria-label={label}
-              className="group block aspect-[2.5/3.5] overflow-hidden rounded-lg bg-zinc-100 shadow-sm transition duration-150 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)] focus-visible:ring-offset-2"
+              className="group relative aspect-[2.5/3.5] overflow-hidden rounded-lg shadow-sm transition duration-150 hover:-translate-y-0.5 hover:shadow-md"
             >
-              {imageUrl ? (
-                // imageUrl is a private, expiring signed Supabase Storage
-                // URL (see useUserCardDisplayImages/getCardMediaImageUrls),
-                // not a static asset -- next/image would need remote-domain
-                // config for a URL that changes per session and per user,
-                // which this phase doesn't add. Matches the same intentional
-                // <img> choice already made in CardTile.tsx and
-                // PlayerOwnedCardTile.tsx for the identical reason.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={imageUrl}
-                  alt={label}
-                  className="h-full w-full object-cover transition group-hover:scale-[1.03]"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : loading ? (
-                <div className="h-full w-full animate-pulse bg-zinc-100" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white via-zinc-50 to-zinc-100 text-[9px] text-zinc-400">
-                  No image
-                </div>
-              )}
-            </Link>
+              <Link
+                href={`/cards/${card.userCardId}`}
+                aria-label={label}
+                className="absolute inset-0 z-10 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)] focus-visible:ring-offset-2"
+              />
+              <div className="pointer-events-none absolute inset-0 bg-zinc-100">
+                {imageUrl ? (
+                  // imageUrl is a private, expiring signed Supabase Storage
+                  // URL (see useUserCardDisplayImages/getCardMediaImageUrls),
+                  // not a static asset -- next/image would need remote-domain
+                  // config for a URL that changes per session and per user,
+                  // which this phase doesn't add. backUrl comes only from
+                  // that same resolver's "back" side (see
+                  // PlayerCollectionWallProps.backImagesByUserCardId above),
+                  // never a community-reference fallback (this wall has
+                  // none).
+                  // No pointer-events override on the <img> itself:
+                  // FlippableCardImage's own flip <button> (rendered only
+                  // once backUrl exists) re-enables pointer-events on
+                  // itself directly, regardless of this pointer-events-none
+                  // ancestor -- see CardTile.tsx's identical comment. With
+                  // no back image, the plain <img> must stay click-through
+                  // so clicks fall to the stretched Link below.
+                  <FlippableCardImage
+                    frontUrl={imageUrl}
+                    backUrl={backUrl}
+                    alt={label}
+                    imgClassName="h-full w-full object-cover transition group-hover:scale-[1.03]"
+                  />
+                ) : loading ? (
+                  <div className="h-full w-full animate-pulse bg-zinc-100" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white via-zinc-50 to-zinc-100 text-[9px] text-zinc-400">
+                    No image
+                  </div>
+                )}
+              </div>
+            </div>
           );
         })}
       </div>
