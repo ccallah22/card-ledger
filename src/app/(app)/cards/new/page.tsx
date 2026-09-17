@@ -160,6 +160,50 @@ export function shouldAutoSelectCandidate(ctx: CandidateAutoSelectContext): bool
   return true;
 }
 
+// Add Card scan UX simplification, Phase I (automatic top-candidate
+// application): a NEW, separate decision from shouldAutoSelectCandidate
+// above -- that function (and the CandidateConfidenceAssessment/
+// safe_to_preselect machinery it reads) is deliberately left completely
+// unmodified and still fully computed (see confidenceAssessments in
+// NewCardPageInner), it simply no longer gates the page's automatic-
+// application effect. The product decision this phase implements is
+// "automatic first attempt + easy correction": once a search cycle has
+// produced at least one ranked candidate, the top-ranked one
+// (candidateResults[0] -- ranking/retrieval themselves are untouched)
+// becomes the working selection immediately, with no confidence/
+// recommendation threshold gating it at all. Every other guard
+// shouldAutoSelectCandidate already had EXCEPT the confidence/
+// recommendation/field-quality checks is preserved unchanged here, for
+// the same reasons as before: never act on a wishlist card, never
+// override an already-selected candidate, never fight a user's explicit
+// interaction during the current search cycle, never act twice for the
+// same cycle, and never act on a stale (still-resolving) candidate list.
+export type CandidateAutoApplyContext = {
+  isWishlistCard: boolean;
+  hasSelectedCandidate: boolean;
+  hasManualInteraction: boolean;
+  alreadyAutoAppliedThisCycle: boolean;
+  candidatesResolvedForCurrentCycle: boolean;
+  hasCandidates: boolean;
+};
+
+export function shouldAutoApplyTopCandidate(ctx: CandidateAutoApplyContext): boolean {
+  if (ctx.isWishlistCard) return false;
+  if (ctx.hasSelectedCandidate) return false;
+  if (ctx.hasManualInteraction) return false;
+  if (ctx.alreadyAutoAppliedThisCycle) return false;
+  if (!ctx.candidatesResolvedForCurrentCycle) return false;
+  // The only "is there anything to apply" condition -- deliberately NOT a
+  // confidence/recommendation check. A genuine catalog match existing at
+  // all (candidateResults.length > 0) is now sufficient; how trustworthy
+  // that top match is remains available internally (confidenceAssessments)
+  // but is no longer a precondition for applying it. Step 13's zero-
+  // candidate case is exactly ctx.hasCandidates === false here.
+  if (!ctx.hasCandidates) return false;
+
+  return true;
+}
+
 // Vision Engine V3, Phase V3.1B: resolves the visual-analysis result (if
 // any) that is safe to persist for one side at save time. Exported,
 // side-effect-free (never touches component state directly) so it can be
@@ -1268,16 +1312,21 @@ function NewCardPageInner() {
   // Vision Engine V3, Phase V3.4A: now reads displayEvidence -- the same
   // single evidence object candidate search and variant ranking use --
   // instead of a separate OCR-only value.
+  // Add Card scan UX simplification, Phase I: no longer read by the
+  // automatic-application effect below (which now applies candidateResults[0]
+  // unconditionally -- see shouldAutoApplyTopCandidate's own comment) or by
+  // any other current UI, since Phase C already removed this normal-path
+  // rendering. Left fully computed and unchanged, exactly per this task's
+  // Step 14 requirement -- assessCandidateConfidence/MatchQuality/
+  // shouldAutoSelectCandidate's underlying architecture is preserved for
+  // future use (a stricter future auto-behavior, telemetry, deciding when
+  // more evidence is needed, community visual-reference matching), even
+  // though nothing in this page currently reads the result.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const confidenceAssessments = useMemo(
     () => assessCandidateConfidence(displayEvidence, candidateResults),
     [displayEvidence, candidateResults],
   );
-  // Add Card scan UX simplification, Phase C: confidenceAssessments (and
-  // its [0]/top entry, read directly where needed -- e.g. the auto-select
-  // effect below) remains the full internal engine output; only the
-  // separate named topConfidenceAssessment display convenience and its
-  // rendering were removed, since the normal Card-identified summary no
-  // longer surfaces score/confidence/recommendation/field-quality.
 
   // Vision Engine V2, Phase 7C: safe candidate preselection. selectedCandidate
   // is the one, shared source of truth for "is a candidate selected" --
@@ -1329,6 +1378,26 @@ function NewCardPageInner() {
     // was open/closed for no longer relevant -- collapse it so it can't
     // stay open over an unrelated new set of candidates.
     setShowCandidateAlternatives(false);
+    // Add Card scan UX simplification, Phase I lifecycle fix: a working
+    // selection (auto-applied OR manually chosen) belongs to the search
+    // cycle it was resolved against, never to a LATER one -- searchCycleKey
+    // only changes when mergedOcr's identity-driving fields actually change
+    // (buildSearchCycleKey), i.e. genuinely new scan evidence (a retake/
+    // re-crop), so this is the same boundary hasManualCandidateInteractionRef
+    // is already reset at above, applied symmetrically to selectedCandidate.
+    // Without this, Cycle A's selectedCandidate (auto or manual) would keep
+    // `hasSelectedCandidate: true` permanently true in
+    // shouldAutoApplyTopCandidate's gate, silently preventing EVERY future
+    // cycle's own top candidate from ever auto-applying again -- clearing it
+    // here, not by weakening that gate, is the smallest correct fix.
+    // candidateAutoSelected is reset alongside it for the same reason
+    // (it's scoped to "was the CURRENT selection auto-applied", and there is
+    // no current selection once a new cycle begins). This never fires
+    // merely because candidateResults/confidence recomputed for the SAME
+    // cycle (searchCycleKey is stable across those) -- only a genuine new
+    // cycle reaches this branch at all (see the guard above).
+    setSelectedCandidate(null);
+    setCandidateAutoSelected(false);
   }, [searchCycleKey]);
 
   // Shared selection/field-population code path -- the ONE place that
@@ -1540,39 +1609,38 @@ function NewCardPageInner() {
 
   const isWishlistCard = isWishlist || status === "WANT";
 
-  // Vision Engine V2, Phase 7C: automatic preselection of the top
-  // candidate -- ONLY when every one of these holds:
+  // Add Card scan UX simplification, Phase I: automatic application of the
+  // TOP-RANKED candidate -- ONLY when every one of these holds:
   //  - not a wishlist card (candidate search/fields aren't shown there)
-  //  - the top candidate's recommendation is exactly "safe_to_preselect"
+  //  - at least one candidate exists for this cycle (candidateResults[0])
   //  - candidateResults has finished loading FOR THIS cycle
   //    (resolvedCandidateCycleKey === searchCycleKey guards against acting
   //    on a stale array while a new search is still in flight)
   //  - no candidate is already selected (manual or auto)
   //  - the user hasn't manually selected/switched/cleared a candidate
   //    during this search cycle
-  //  - this exact cycle hasn't already been auto-selected (rerender guard)
-  //  - player AND card number evidence are both present -- re-checked here
-  //    directly rather than trusted from the recommendation alone, so
-  //    malformed upstream data can never cause an auto-select without
-  //    genuine identity evidence
-  // This never creates a catalog row, never saves, never mutates
-  // persistence -- it only calls the same applyCandidateSelection() a
-  // manual pick uses.
+  //  - this exact cycle hasn't already been auto-applied (rerender guard)
+  // Deliberately NOT gated on confidenceAssessments/recommendation/
+  // safe_to_preselect anymore -- see shouldAutoApplyTopCandidate's own
+  // comment above for why. This never creates a catalog row, never saves,
+  // never mutates persistence -- it only calls the same
+  // applyCandidateSelection() a manual pick uses, on candidateResults[0]
+  // (the engine's own top-ranked result, untouched by this phase).
   useEffect(() => {
-    const eligible = shouldAutoSelectCandidate({
+    const eligible = shouldAutoApplyTopCandidate({
       isWishlistCard,
       hasSelectedCandidate: selectedCandidate !== null,
       hasManualInteraction: hasManualCandidateInteractionRef.current,
-      alreadyAutoSelectedThisCycle: autoSelectedCandidateCycleKeyRef.current === searchCycleKey,
+      alreadyAutoAppliedThisCycle: autoSelectedCandidateCycleKeyRef.current === searchCycleKey,
       candidatesResolvedForCurrentCycle: resolvedCandidateCycleKey === searchCycleKey,
-      topAssessment: confidenceAssessments[0],
+      hasCandidates: candidateResults.length > 0,
     });
     if (!eligible) return;
 
     autoSelectedCandidateCycleKeyRef.current = searchCycleKey;
-    applyCandidateSelection(confidenceAssessments[0].candidate);
+    applyCandidateSelection(candidateResults[0]);
     setCandidateAutoSelected(true);
-  }, [isWishlistCard, selectedCandidate, resolvedCandidateCycleKey, searchCycleKey, confidenceAssessments]);
+  }, [isWishlistCard, selectedCandidate, resolvedCandidateCycleKey, searchCycleKey, candidateResults]);
 
   // frontImage/backImage are fresh objects returned by useCardImageSlot on
   // every render, so depending on them directly would rerun this effect on
@@ -2785,21 +2853,23 @@ function NewCardPageInner() {
             itself is untouched -- still the sole input to searchCycleKey
             and the candidate-search effect's early-return gate above. */}
 
-        {/* Add Card scan UX simplification, Phase C: the normal path shows
-            a concise "Card identified" summary (canonical identity only --
-            no score/confidence/recommendation/field-quality, which remain
-            internal-only, still fully computed via confidenceAssessments/
-            candidateAutoSelected, just not rendered here) plus a "Change
-            card" disclosure. When nothing has been safely selected yet
-            (selectedCandidate === null -- candidate confidence/
-            safe-preselection policy is untouched by this phase and is
-            never second-guessed here), this shows an explicit
-            choose-a-card state and the candidate list directly instead,
-            so the UI never claims a card was identified when it wasn't.
-            Selecting an alternative reuses selectCandidateManually /
-            applyCandidateSelection unchanged -- Phase A/B still own save
-            identity and form population; this phase only changes what's
-            visible and when. */}
+        {/* Add Card scan UX simplification, Phase C (wording updated in
+            Phase I): the normal path shows a concise "Card identified"
+            summary (canonical identity only -- no score/confidence/
+            recommendation/field-quality, which remain internal-only, still
+            fully computed via confidenceAssessments/candidateAutoSelected,
+            just not rendered here) plus a "Change card" disclosure.
+            Phase I made the top-ranked candidate (candidateResults[0])
+            apply automatically whenever at least one candidate exists
+            (see shouldAutoApplyTopCandidate above) -- confidence/
+            safe-preselection no longer gates this at all, so
+            selectedCandidate === null with candidateResults.length > 0 now
+            means the user deliberately cleared/rejected the automatic
+            match (via "None of these" below), not that the system
+            declined to guess. Selecting an alternative reuses
+            selectCandidateManually / applyCandidateSelection unchanged --
+            Phase A/B still own save identity and form population; this
+            phase only changes what's visible and when. */}
         {!isWishlistCard && candidateResults.length > 0 ? (
           <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-700">
             {selectedCandidate ? (
@@ -2925,11 +2995,16 @@ function NewCardPageInner() {
               </>
             ) : (
               <>
-                <div className="font-semibold text-zinc-900">Choose the matching card</div>
+                {/* Add Card scan UX simplification, Phase I: with the top
+                    candidate now applying automatically whenever any exist
+                    (see above), this branch is reached only right after the
+                    user deliberately clears/rejects that automatic match
+                    (the "None of these" action below) -- never because
+                    confidence was merely imperfect -- so the copy no longer
+                    claims TheBinder "couldn't confirm one automatically". */}
+                <div className="font-semibold text-zinc-900">No card selected</div>
                 <div className="mt-1 text-zinc-500">
-                  TheBinder found {candidateResults.length} possible match
-                  {candidateResults.length === 1 ? "" : "es"} but couldn&apos;t confirm one
-                  automatically.
+                  Choose the matching card below, or enter this card manually.
                 </div>
               </>
             )}
@@ -2962,6 +3037,21 @@ function NewCardPageInner() {
                   );
                 })}
                 {selectedCandidate ? (
+                  // Add Card scan UX simplification, Phase I: the escape
+                  // hatch for "none of these candidates are correct" --
+                  // clearSelectedCandidate() (unchanged) sets selectedCandidate
+                  // to null, which is Phase A's OTHER catalogCardId input
+                  // (selectedCandidate?.cardId ?? selectedCard?.id) already
+                  // becoming null/undefined here too (selectedCard is a
+                  // separate manual-lookup state this flow never touches) --
+                  // so the previously automatically-applied candidate loses
+                  // canonical save authority immediately, satisfying this
+                  // phase's mandatory "manual fallback must remove the
+                  // candidate's canonical save authority" requirement with
+                  // no new state. The form fields it already populated stay
+                  // as an editable starting point -- the existing Field
+                  // inputs and manual catalog search below remain the
+                  // fallback, per Step 14 (no new manual-entry system).
                   <button
                     type="button"
                     onClick={() => {
@@ -2970,7 +3060,7 @@ function NewCardPageInner() {
                     }}
                     className="text-zinc-600 underline"
                   >
-                    Clear selection
+                    None of these — enter card manually
                   </button>
                 ) : null}
               </div>
