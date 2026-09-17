@@ -1,6 +1,5 @@
 "use client";
 
-import { IMAGE_RULES } from "@/lib/image";
 import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 
 export type CardImageUploaderProps = {
@@ -23,9 +22,15 @@ export type CardImageUploaderProps = {
   setImageIsSlabbed: (v: boolean) => void;
   cardPhotoConfirm: boolean;
   setCardPhotoConfirm: (v: boolean) => void;
-  imageOwnerConfirm: boolean;
+  // Add Card presentation cleanup: the per-side "Community reference"
+  // checkboxes (ownership + share consent) were consolidated into one
+  // cohesive section at the bottom of the Add Card page (see cards/new/
+  // page.tsx) rather than repeated under each of the Front/Back uploaders.
+  // The setters are still needed here -- "Use community image" and "Remove
+  // image" below reset both values back to false, exactly as before -- but
+  // the current boolean values are no longer read/rendered by this
+  // component, so only the setters remain in its contract.
   setImageOwnerConfirm: (v: boolean) => void;
-  imageShare: boolean;
   setImageShare: (v: boolean) => void;
   imageError: string;
   imageCheckStatus: "idle" | "checking" | "accept" | "review" | "block";
@@ -52,9 +57,7 @@ export function CardImageUploader({
   setImageIsSlabbed,
   cardPhotoConfirm,
   setCardPhotoConfirm,
-  imageOwnerConfirm,
   setImageOwnerConfirm,
-  imageShare,
   setImageShare,
   imageError,
   imageCheckStatus,
@@ -225,32 +228,6 @@ export function CardImageUploader({
             I confirm this is a photo of the card (or slab).
           </label>
 
-          <div className="rounded-md border bg-zinc-50 p-2 text-xs text-zinc-600">
-            <div className="font-medium text-zinc-800">Community reference (optional)</div>
-            <div>
-              Share a photo you took so others can see an example image for this exact card.
-            </div>
-            <div className="mt-2 flex flex-wrap gap-3">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={imageOwnerConfirm}
-                  onChange={(e) => setImageOwnerConfirm(e.target.checked)}
-                />
-                I own this photo
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  disabled={!imageOwnerConfirm || !imageUrl}
-                  checked={imageShare}
-                  onChange={(e) => setImageShare(e.target.checked)}
-                />
-                Allow as community reference
-              </label>
-            </div>
-          </div>
-
           {imageError ? (
             <div className="text-xs text-red-600">{imageError}</div>
           ) : null}
@@ -260,24 +237,10 @@ export function CardImageUploader({
           ) : null}
           {imageCheckStatus === "review" ? (
             <div className="text-xs text-amber-600">
-              Image needs review. Please confirm this is a card photo.
+              Please confirm this is a clear photo of the card.
             </div>
           ) : null}
-          {imageCheckStatus === "accept" ? (
-            <div className="text-xs text-emerald-600">Image looks like a card.</div>
-          ) : null}
         </div>
-      </div>
-      <div className="mt-2 text-xs text-zinc-500">
-        {imageUrl
-          ? "Using your image."
-          : sharedImage?.dataUrl
-          ? "Community image (example)."
-          : "No image yet."}
-      </div>
-      <div className="mt-1 text-xs text-zinc-500">
-        Allowed: JPG/PNG/WebP/HEIC • Max {Math.round(IMAGE_RULES.maxBytes / 1024 / 1024)}MB •
-        Min {IMAGE_RULES.minWidth}×{IMAGE_RULES.minHeight}
       </div>
     </div>
   );

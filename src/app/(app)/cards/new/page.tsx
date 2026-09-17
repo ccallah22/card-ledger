@@ -257,21 +257,23 @@ export async function resolveVisionResultForSave(params: {
   return result;
 }
 
-// Vision Engine V2, Phase 6A correction: minimal, side-specific OCR status
-// text -- never exposes raw model JSON/extracted fields, just a concise
-// state. "done" always means a genuinely successful, completed OCR
-// attempt -- it may have found no text (a valid, neutral outcome), which
-// is distinct from "failed" (the request/response itself was invalid).
+// Add Card presentation cleanup: this used to also report "done" states
+// ("Front text detected" / "No readable text detected") -- those were
+// internal diagnostics with no action for a collector to take, so a
+// successful (or successfully-empty) OCR attempt is now silent. Only two
+// states are ever worth a collector's attention: OCR is actively running
+// (brief, temporary "Reading…" feedback), or it genuinely failed, in which
+// case manual entry is still available -- the message says so, without
+// naming OCR/providers/internals. frontOcrResult/backOcrResult themselves,
+// and every downstream consumer (mergedOcr, fullFusedEvidence, candidate
+// search), are completely unaffected -- this only changes what renders.
 function ocrStatusLabel(
   side: "front" | "back",
   status: "idle" | "running" | "done" | "failed",
-  result: CardOcrResult | null,
 ): string {
-  const label = side === "front" ? "Front" : "Back";
   if (status === "running") return `Reading ${side}…`;
-  if (status === "failed") return `${label} OCR failed`;
-  if (status === "done") {
-    return result?.rawText ? `${label} text detected` : "No readable text detected";
+  if (status === "failed") {
+    return "Couldn't read this photo automatically. You can still enter the card details below.";
   }
   return "";
 }
@@ -2782,9 +2784,7 @@ function NewCardPageInner() {
                 setImageIsSlabbed={frontImage.setImageIsSlabbed}
                 cardPhotoConfirm={frontImage.cardPhotoConfirm}
                 setCardPhotoConfirm={frontImage.setCardPhotoConfirm}
-                imageOwnerConfirm={frontImage.imageOwnerConfirm}
                 setImageOwnerConfirm={frontImage.setImageOwnerConfirm}
-                imageShare={frontImage.imageShare}
                 setImageShare={frontImage.setImageShare}
                 imageError={frontImage.imageError}
                 imageCheckStatus={frontImage.imageCheckStatus}
@@ -2793,9 +2793,9 @@ function NewCardPageInner() {
                 fingerprint={fingerprint}
                 onFileSelected={frontImage.handleImageFile}
               />
-              {ocrStatusLabel("front", frontOcrStatus, frontOcrResult) ? (
+              {ocrStatusLabel("front", frontOcrStatus) ? (
                 <div className="mt-1 text-xs text-zinc-500">
-                  {ocrStatusLabel("front", frontOcrStatus, frontOcrResult)}
+                  {ocrStatusLabel("front", frontOcrStatus)}
                 </div>
               ) : null}
               {frontOcrError ? (
@@ -2829,9 +2829,7 @@ function NewCardPageInner() {
                 setImageIsSlabbed={backImage.setImageIsSlabbed}
                 cardPhotoConfirm={backImage.cardPhotoConfirm}
                 setCardPhotoConfirm={backImage.setCardPhotoConfirm}
-                imageOwnerConfirm={backImage.imageOwnerConfirm}
                 setImageOwnerConfirm={backImage.setImageOwnerConfirm}
-                imageShare={backImage.imageShare}
                 setImageShare={backImage.setImageShare}
                 imageError={backImage.imageError}
                 imageCheckStatus={backImage.imageCheckStatus}
@@ -2840,9 +2838,9 @@ function NewCardPageInner() {
                 fingerprint=""
                 onFileSelected={backImage.handleImageFile}
               />
-              {ocrStatusLabel("back", backOcrStatus, backOcrResult) ? (
+              {ocrStatusLabel("back", backOcrStatus) ? (
                 <div className="mt-1 text-xs text-zinc-500">
-                  {ocrStatusLabel("back", backOcrStatus, backOcrResult)}
+                  {ocrStatusLabel("back", backOcrStatus)}
                 </div>
               ) : null}
               {backOcrError ? (
@@ -3282,6 +3280,56 @@ function NewCardPageInner() {
             placeholder="Any extra details…"
           />
         </div>
+
+        {/* Add Card presentation cleanup: ONE cohesive community-reference
+            section for the card (front + back together), replacing the two
+            near-identical "Community reference" boxes that used to render
+            separately under each of the Front/Back CardImageUploaders. Still
+            reads/writes exactly the same state and gates on exactly the same
+            conditions as before (frontImage.imageOwnerConfirm/imageShare,
+            enabled only once an image exists and ownership is confirmed) --
+            only where/how often it's shown changed.
+            Bound to frontImage only, not "whichever side has an image":
+            saveSharedImage()/buildCard()'s imageShared field above are (and
+            remain) front-only -- the shared-image/community-reference
+            feature is keyed by a single per-card fingerprint that only the
+            front slot's OCR feeds (see the "No community-image lookup exists
+            for a back photo yet" comment on the Back Image uploader below),
+            so backImage.imageOwnerConfirm/imageShare were never actually
+            read by any save/storage path even when they had their own
+            checkboxes. This section's single consent therefore already
+            covers everything that can genuinely be shared today; it isn't
+            hiding a real back-image capability. */}
+        {!isWishlistCard ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 p-3 text-xs text-zinc-600">
+            <div className="text-sm font-medium text-zinc-900">
+              Help improve card identification
+            </div>
+            <div className="mt-1">
+              Allow this card&apos;s photo to be used as a community reference image, to help
+              identify this card for other collectors.
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={frontImage.imageOwnerConfirm}
+                  onChange={(e) => frontImage.setImageOwnerConfirm(e.target.checked)}
+                />
+                I own this photo
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  disabled={!frontImage.imageOwnerConfirm || !frontImage.imageUrl}
+                  checked={frontImage.imageShare}
+                  onChange={(e) => frontImage.setImageShare(e.target.checked)}
+                />
+                Allow as community reference
+              </label>
+            </div>
+          </div>
+        ) : null}
 
         {/* Vision Engine V3 responsive fix (Phase 1C): stacked full-width
             below sm: (three buttons in one non-wrapping row overflowed at
