@@ -129,7 +129,13 @@ export function MiniBadge({
     tone === "dots-blue"
       ? "border-blue-200 bg-blue-50 text-blue-700"
       : tone === "blue"
-      ? "border-zinc-300 bg-zinc-100 text-zinc-200"
+      ? // Button-system audit: was border-zinc-300 bg-zinc-100
+        // text-zinc-200 -- text-zinc-200 on bg-zinc-100 is ~1.1:1
+        // contrast, effectively invisible (a copy-paste slip; every
+        // other tone here pairs a -200 border/-50 bg with -700 text).
+        // Brought in line with that same established pattern, and with
+        // "dots-blue" just above (same colors, no dot overlay).
+        "border-blue-200 bg-blue-50 text-blue-700"
       : tone === "purple"
       ? "border-purple-200 bg-purple-50 text-purple-700"
       : tone === "amber"

@@ -29,20 +29,64 @@
 }
 
 @layer components {
+  /* TheBinder button system, Phase 1 (button-system cleanup audit):
+     five semantic treatments sharing one geometry (rounded-md px-4 py-2
+     text-sm font-semibold, focus-visible ring, disabled state) so a
+     future migration is a class-name swap, not a layout change. Colors
+     moved off bright brand-accent blue / solid red onto the dark-neutral
+     zinc direction established on the Card Detail page (commit ebfaabc)
+     -- see that page's own cardActionBase for the precedent these were
+     generalized from. Phase 1 only changes definitions here; no call
+     sites were migrated (see BUTTON_AUDIT/Phase 2 for that). */
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[var(--brand-accent)] text-white hover:bg-[#1d4ed8];
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-zinc-900 text-white hover:bg-zinc-950;
   }
 
+  /* New in Phase 1: everyday actions on an item (Edit, Mark as Sold,
+     Approve, etc.) that shouldn't carry .btn-primary's strongest
+     hierarchy but also aren't low-emphasis like .btn-secondary. Same
+     geometry/focus/disabled contract as the rest of this family. */
+  .btn-normal {
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-zinc-800 text-white hover:bg-zinc-900;
+  }
+
+  /* Deliberately kept light/outlined, not darkened -- Secondary's role
+     (Cancel, Filters, Clear, an action paired with a Primary) depends on
+     staying visually quieter than Primary/Normal, not on matching their
+     dark palette. Focus ring moved off brand-accent blue onto the same
+     neutral zinc ring the rest of this family uses. */
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-zinc-200;
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-100;
   }
 
+  /* Restrained destructive direction from Card Detail (ebfaabc): still
+     clearly destructive via red text/border, but no longer a large
+     solid-red fill. Styling only -- this class carries no behavior, so
+     every existing onClick/confirmation using .btn-destructive is
+     unaffected. */
   .btn-destructive {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-red-600 text-white hover:bg-red-700;
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border border-red-200 bg-white text-red-700 hover:bg-red-50 hover:border-red-300;
   }
 
+  /* .btn-link: inline/link-style action (e.g. "Done", "Change card"),
+     distinct from the new .btn-nav below (page-level navigation). Only
+     change in Phase 1 is adding a focus-visible treatment -- it had none
+     before, unlike every other control in this file. Purpose/underline/
+     color unchanged. */
   .btn-link {
-    @apply inline-flex items-center text-sm font-semibold text-[var(--brand-accent)] hover:text-[#1d4ed8] hover:underline;
+    @apply inline-flex items-center text-sm font-semibold text-[var(--brand-accent)] hover:text-[#1d4ed8] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 rounded-sm;
+  }
+
+  /* New in Phase 1: quiet page-navigation control (e.g. "Back to
+     Binder"), generalized from Card Detail's page-local Back link
+     (ebfaabc: `inline-flex items-center gap-1 text-sm text-zinc-500
+     hover:text-zinc-700`). Deliberately NOT given the boxed px-4/py-2
+     geometry the other four share -- a nav control that looked like an
+     operation button was exactly the problem Card Detail's Back fixed.
+     Adds a focus-visible ring, which that original page-local version
+     didn't have. */
+  .btn-nav {
+    @apply inline-flex items-center gap-1 text-sm font-medium text-zinc-500 transition hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 rounded-sm;
   }
 
   .empty-state {

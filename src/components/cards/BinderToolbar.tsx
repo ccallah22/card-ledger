@@ -188,7 +188,16 @@ export function BinderToolbar({
         <div className="rounded-lg border bg-zinc-50 p-3 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-xs font-medium text-zinc-600 mr-1">Location</div>
-            <Link href="/cards/locations" className="text-xs text-zinc-300 underline">
+            {/* Button-system audit: was text-zinc-300 underline, ~1.4:1
+                contrast on this white/zinc-50 background -- effectively
+                invisible. text-zinc-600/hover:zinc-800 matches this same
+                row's other secondary text (the "Location" label just
+                before it) while staying clearly readable. Wording, href,
+                placement, and underline unchanged. */}
+            <Link
+              href="/cards/locations"
+              className="text-xs text-zinc-600 underline hover:text-zinc-800"
+            >
               Manage
             </Link>
 
