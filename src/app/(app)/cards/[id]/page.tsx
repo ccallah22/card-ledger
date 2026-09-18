@@ -12,7 +12,7 @@ import { fetchSharedImage } from "@/lib/db/sharedImages";
 import { REPORT_HIDE_THRESHOLD, REPORT_REASONS } from "@/lib/reporting";
 import { startTrace, captureError } from "@/lib/sentry";
 import { useUserCardDisplayImages } from "@/hooks/cards/useUserCardDisplayImages";
-import { MiniBadge, Chip, Stat } from "@/components/cards/BinderUi";
+import { MiniBadge, Chip } from "@/components/cards/BinderUi";
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -40,13 +40,6 @@ function daysSince(dateStr?: string): number | null {
   return Number.isFinite(days) ? Math.max(0, days) : null;
 }
 
-function safeLabel(key: string) {
-  return key
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function statusLabel(s: string) {
   return s
     .replaceAll("_", " ")
@@ -59,6 +52,30 @@ function newId() {
     return crypto.randomUUID();
   }
   return `comp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Card detail cleanup: the hero subtitle used to always render
+// `${year} ${setName}`, which duplicates the year whenever setName ALREADY
+// starts with it (e.g. year "2025" + setName "2025 Panini Select
+// Football" produced "2025 2025 Panini Select Football"). The check is
+// specifically "does setName START WITH this exact year" (word-boundary
+// anchored, so "2025" doesn't false-match inside an unrelated number like
+// "20250"), not "does setName contain this year anywhere" -- a year
+// mentioned later in a set name (unusual, but not this bug) is left
+// alone, and no digits are ever stripped from setName itself; this only
+// decides whether to prefix a second copy of the same year, never edits
+// the stored set name. Presentation-only: card.year/card.setName
+// themselves are completely untouched.
+function formatYearAndSet(year: string, setName: string): string {
+  const trimmedYear = year.trim();
+  const trimmedSet = setName.trim();
+  if (!trimmedYear) return trimmedSet;
+  if (!trimmedSet) return trimmedYear;
+
+  const escapedYear = trimmedYear.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const setAlreadyStartsWithYear = new RegExp(`^${escapedYear}\\b`).test(trimmedSet);
+
+  return setAlreadyStartsWithYear ? trimmedSet : `${trimmedYear} ${trimmedSet}`;
 }
 
 function buildEbaySoldUrl(card: MyCard) {
@@ -85,6 +102,40 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-start justify-between gap-4">
       <div className="text-sm text-zinc-700">{label}</div>
       <div className="text-right text-sm font-medium text-zinc-900">{value}</div>
+    </div>
+  );
+}
+
+// Card detail cleanup: a deliberately smaller, page-local stand-in for
+// BinderUi's <Stat> (rounded-xl border p-4, text-xl value) for this page's
+// value row only. <Stat> itself is reused as-is by Dashboard/Sold/
+// BinderStats (the main Binder's own summary row) -- shrinking it there
+// too was never asked for and would restyle pages this task doesn't
+// touch, so this page keeps its own compact variant instead of forking
+// the shared component's default size for everyone. Same tone/value
+// contract as <Stat>, just smaller padding/radius/type.
+function CompactStat({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "positive" | "negative";
+}) {
+  const valueClass =
+    tone === "positive" ? "text-emerald-700" : tone === "negative" ? "text-red-700" : "text-zinc-900";
+  const borderClass =
+    tone === "positive"
+      ? "border-emerald-200 bg-emerald-50"
+      : tone === "negative"
+      ? "border-red-200 bg-red-50"
+      : "border-zinc-200 bg-white";
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${borderClass}`}>
+      <div className="text-[11px] text-zinc-500">{label}</div>
+      <div className={`text-sm font-semibold ${valueClass}`}>{value}</div>
     </div>
   );
 }
@@ -343,9 +394,6 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     return (
       <div className="error-state space-y-2">
         <div className="text-base font-semibold">Card not found</div>
-        <div className="text-xs text-zinc-600">
-          ID in URL: <span className="font-mono">{String(id)}</span>
-        </div>
         <Link href="/cards" className="btn-link">
           Back to Binder
         </Link>
@@ -360,6 +408,17 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
   // repeated here as rows -- the hero badges above already state them, and
   // this task's own instruction is not to duplicate identity across
   // sections.
+  //
+  // Card detail cleanup: Team moved here from Collection Information --
+  // product direction is that Team is now canonical per-card catalog
+  // identity (card_players.team_id -> teams.id), so it conceptually
+  // belongs alongside Player/Set/Card #, not "facts about this physical
+  // copy only". This is presentation-only, though: the value rendered
+  // below is still card.team, i.e. user_cards.team_name (see myCards.ts's
+  // toMyCard) -- the exact same field Collection Information used to show
+  // in this same spot, just moved. Nothing about where Team is stored,
+  // and no switch to card_players.team_id/teams as the display source,
+  // was made or asked for here.
   const catalogRows: Array<{ label: string; value: string }> = [
     { label: "Player", value: card.playerName },
     { label: "Year", value: card.year },
@@ -367,14 +426,13 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     { label: "Card #", value: card.cardNumber ?? "" },
     { label: "Variation", value: card.variation ?? "" },
     { label: "Insert", value: card.insert ?? "" },
+    { label: "Team", value: card.team ?? "" },
     { label: "Parallel", value: card.parallel ?? "" },
     { label: "Print Run", value: typeof card.serialTotal === "number" ? `/${card.serialTotal}` : "" },
   ].filter((r) => r.value.trim() !== "");
 
   // ---- Collection Information: facts about THIS physical copy only.
-  // team_name lives on user_cards (free-text per copy, not the shared
-  // catalog teams table -- see myCards.ts), so it belongs here, not in
-  // Catalog Identity, even though it reads like catalog trivia.
+  // Team no longer appears here -- see catalogRows above.
   const gradingValue =
     card.gradingStatus === "GRADED"
       ? [card.grader, card.grade].filter(Boolean).join(" ") || "Graded"
@@ -385,7 +443,6 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
     { label: "Grading", value: gradingValue },
     { label: "Condition", value: card.condition ?? "" },
     { label: "Location", value: card.location ?? "" },
-    { label: "Team", value: card.team ?? "" },
     {
       label: "Serial Number",
       value: typeof card.serialNumber === "number" ? String(card.serialNumber) : "",
@@ -396,56 +453,6 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       value: typeof card.purchasePrice === "number" ? formatCurrency(card.purchasePrice) : "",
     },
   ].filter((r) => r.value.trim() !== "");
-
-  const primaryKeys = new Set(
-    [
-      "id",
-      "playerName",
-      "players",
-      "catalogCardId",
-      "year",
-      "setId",
-      "setName",
-      "setSlug",
-      "cardNumber",
-      "team",
-      "location",
-      "variation",
-      "insert",
-      "parallel",
-      "serialNumber",
-      "serialTotal",
-      "gradingStatus",
-      "condition",
-      "grader",
-      "grade",
-      "certNumber",
-      "status",
-      "purchaseDate",
-      "purchasePrice",
-      "estimatedValue",
-      "askingPrice",
-      "soldPrice",
-      "soldDate",
-      "soldFees",
-      "soldNotes",
-      "notes",
-      "comps",
-      "imagePath",
-      "thumbPath",
-      "imageShared",
-      "imageType",
-      "isRookie",
-      "isAutograph",
-      "isPatch",
-      "createdAt",
-      "updatedAt",
-    ].map(String)
-  );
-
-  const extraEntries = Object.entries(card || {})
-    .filter(([k, v]) => !primaryKeys.has(k) && v !== undefined && v !== null && String(v).trim() !== "")
-    .sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="p-4 space-y-5">
@@ -540,7 +547,20 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold leading-tight break-words">
+            {/* Card detail cleanup: this h1 previously had no explicit text
+                color, so it inherited body's `color: var(--foreground)` --
+                a proper dark gray in light mode, but near-white
+                (#ededed) under prefers-color-scheme: dark, while this hero
+                surface (and every other heading on this page: "Catalog
+                Identity", "Collection Information", "Notes", "Comps") is
+                an explicit `bg-white` card, not the page's own dark
+                background. That left the player name -- the one piece of
+                text this page most needs readable -- as near-invisible
+                light text on a white card in dark mode, and merely
+                inherited (not deliberately styled) even in light mode.
+                text-zinc-900 matches this same page's other headings
+                exactly and is unaffected by color-scheme, fixing both. */}
+            <h1 className="text-2xl font-bold leading-tight break-words text-zinc-900">
               {card.playerName}
               {card.cardNumber ? (
                 <span className="ml-2 text-sm font-normal text-zinc-500">#{card.cardNumber}</span>
@@ -548,8 +568,7 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             </h1>
 
             <div className="mt-0.5 text-gray-600 break-words">
-              {card.year ? `${card.year} ` : ""}
-              {card.setName}
+              {formatYearAndSet(card.year, card.setName)}
             </div>
 
             {card.parallel || card.variation ? (
@@ -571,15 +590,6 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
               ) : null}
             </div>
 
-            {card.catalogCardId ? (
-              <Link
-                href={`/catalog/cards/${card.catalogCardId}`}
-                className="mt-2 inline-flex items-center text-xs text-[var(--brand-accent)] hover:underline"
-              >
-                View catalog card
-              </Link>
-            ) : null}
-
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Link href="/cards" className="btn-secondary">
                 Back
@@ -600,7 +610,17 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                   Mark as Sold
                 </button>
               ) : null}
-              <button type="button" onClick={handleDelete} className="btn-destructive ml-auto">
+              {/* Card detail cleanup: .btn-destructive already shares the
+                  exact same size/padding/radius/typography as
+                  .btn-secondary/.btn-primary (see globals.css -- all three
+                  apply the identical base utility string, differing only
+                  in color). The one thing that made Delete "look out of
+                  place" next to Back/Edit/Mark as Sold was `ml-auto`,
+                  which pushed it alone to the opposite end of this row --
+                  removed so it sits in the same left-aligned flow as its
+                  neighbors, still visually distinct via its own red
+                  color, unchanged handler/confirmation. */}
+              <button type="button" onClick={handleDelete} className="btn-destructive">
                 Delete
               </button>
             </div>
@@ -609,34 +629,35 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Value: visible but compact -- never dominates the page, and never
-          silently renders $0 in place of "we don't know yet". */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-        <Stat label="Paid" value={formatCurrency(computed.paid)} />
-        <Stat
+          silently renders $0 in place of "we don't know yet". CompactStat
+          (not <Stat>) throughout this row -- see its own comment for why. */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+        <CompactStat label="Paid" value={formatCurrency(computed.paid)} />
+        <CompactStat
           label="Estimated Value"
-          value={typeof computed.market === "number" ? formatCurrency(computed.market) : "No estimated value yet"}
+          value={typeof computed.market === "number" ? formatCurrency(computed.market) : "N/A"}
         />
         {computed.status === "FOR_SALE" && typeof computed.asking === "number" ? (
-          <Stat label="Asking" value={formatCurrency(computed.asking)} />
+          <CompactStat label="Asking" value={formatCurrency(computed.asking)} />
         ) : null}
         {computed.status === "SOLD" && typeof computed.sold === "number" ? (
-          <Stat label="Sold For" value={formatCurrency(computed.sold)} />
+          <CompactStat label="Sold For" value={formatCurrency(computed.sold)} />
         ) : null}
         {computed.status === "SOLD" && typeof computed.net === "number" ? (
-          <Stat
+          <CompactStat
             label="Net (sold - paid)"
             value={formatCurrency(computed.net, { accounting: true })}
             tone={computed.net > 0 ? "positive" : computed.net < 0 ? "negative" : "neutral"}
           />
         ) : null}
         {computed.status !== "SOLD" && typeof computed.unrealized === "number" ? (
-          <Stat
+          <CompactStat
             label="Unrealized Gain"
             value={formatCurrency(computed.unrealized, { accounting: true })}
             tone={computed.unrealized > 0 ? "positive" : computed.unrealized < 0 ? "negative" : "neutral"}
           />
         ) : null}
-        {computed.held !== null ? <Stat label="Held" value={`${computed.held} days`} /> : null}
+        {computed.held !== null ? <CompactStat label="Held" value={`${computed.held} days`} /> : null}
       </div>
 
       {/* Catalog Identity vs Collection Information: the page's core
@@ -775,24 +796,6 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      {extraEntries.length > 0 ? (
-        <div className="rounded-xl border bg-white">
-          <div className="border-b px-4 py-3 font-semibold text-zinc-900">More details</div>
-          <div className="p-4 grid gap-3">
-            {extraEntries.map(([k, v]) => (
-              <div key={k} className="flex items-start justify-between gap-4">
-                <div className="text-gray-600">{safeLabel(k)}</div>
-                <div className="text-right font-medium">{String(v)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="text-xs text-gray-500">
-        ID in URL: <span className="font-mono">{String(id)}</span> • Stored card id:{" "}
-        <span className="font-mono">{String(card.id)}</span>
-      </div>
     </div>
   );
 }
