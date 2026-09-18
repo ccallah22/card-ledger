@@ -537,11 +537,15 @@ export default function ChecklistAdminPage() {
       <div className="rounded-md border bg-white p-3 text-sm text-zinc-700">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="font-medium">Stored Preview (Supabase)</div>
+          {/* Button-system Phase 3 (corrected): read-only utility action,
+              was a one-off bordered box -- .btn-secondary, kept at its
+              existing compact text-xs size. Preview behavior unchanged;
+              Import above stays .btn-primary. */}
           <button
             type="button"
             onClick={loadStoredPreview}
             disabled={previewLoading}
-            className="rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            className="btn-secondary text-xs"
           >
             {previewLoading ? "Loading…" : "Load Preview"}
           </button>
@@ -652,12 +656,14 @@ export default function ChecklistAdminPage() {
         Parsed entries: <b>{entries.length}</b>
       </div>
 
+      {/* Button-system Phase 3: the primary forward/commit action of this
+          tool (uploads parsed checklist entries into Supabase) -- was a
+          literal bg-black one-off, the third independent "dark button"
+          implementation the original audit flagged alongside
+          bg-[var(--brand-primary)] and the old page-local Card Detail
+          treatment. Now .btn-primary. */}
       <div className="flex gap-2">
-        <button
-          onClick={upload}
-          disabled={loading}
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
+        <button type="button" onClick={upload} disabled={loading} className="btn-primary">
           {loading ? "Importing…" : "Import"}
         </button>
       </div>

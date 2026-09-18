@@ -112,9 +112,16 @@ export function CardImageUploader({
           <div className="pointer-events-none absolute inset-2 rounded-sm border border-dashed border-zinc-300/70" />
         </div>
 
+        {/* Button-system Phase 3: these three compact media controls
+            (Upload/Use community image/Remove image) are optional/
+            utility actions -- none of them save or commit anything, they
+            only change what's staged in this form -- so .btn-secondary,
+            kept at their existing compact text-xs size rather than full
+            px-4/py-2 geometry (per the task's guidance for small media
+            controls). Upload/remove/community-image behavior unchanged. */}
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
-            <label className="rounded-md border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50 cursor-pointer">
+            <label className="btn-secondary text-xs cursor-pointer">
               Upload card photo (front/back)
               <input
                 type="file"
@@ -139,7 +146,7 @@ export function CardImageUploader({
                   setImageOwnerConfirm(false);
                   setImageShare(false);
                 }}
-                className="rounded-md border bg-white px-3 py-2 text-xs font-medium hover:bg-zinc-50"
+                className="btn-secondary text-xs"
               >
                 Use community image
               </button>
@@ -153,7 +160,7 @@ export function CardImageUploader({
                   setImageOwnerConfirm(false);
                   setImageShare(false);
                 }}
-                className="rounded-md border bg-white px-3 py-2 text-xs font-medium hover:bg-zinc-50"
+                className="btn-secondary text-xs"
               >
                 Remove image
               </button>

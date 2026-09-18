@@ -1275,11 +1275,16 @@ function CardsPageInner() {
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <div className="flex gap-2 sm:contents">
+              {/* Button-system Phase 3 (corrected): calls
+                  applyBulkStatus("FOR_SALE") directly -- the same
+                  immediate-commit pattern as bulk "Mark Sold" below (no
+                  intermediate form), so this now matches its .btn-primary
+                  classification rather than staying .btn-secondary. */}
               <button
                 type="button"
                 onClick={() => applyBulkStatus("FOR_SALE")}
                 disabled={bulkBusy}
-                className="btn-secondary flex-1 sm:flex-none"
+                className="btn-primary flex-1 sm:flex-none"
               >
                 Mark For Sale
               </button>
@@ -1293,11 +1298,23 @@ function CardsPageInner() {
                 </button>
               ) : (
                 <>
+                  {/* Button-system Phase 3: unlike every per-card "Mark as
+                      Sold" migrated in Phase 2 (which only open the sold
+                      form), this bulk action calls applyBulkStatus("SOLD")
+                      directly -- applyBulkCardUpdate commits status=SOLD
+                      immediately for every selected card, with no
+                      intermediate form. That's the same commit weight as
+                      the sold form's own "Save Sold" (.btn-primary), so
+                      this gets the same class -- stronger than the
+                      NORMAL "opens a form" pattern. (The adjacent "Mark
+                      For Sale" button above uses the identical
+                      applyBulkStatus pattern and now matches this same
+                      classification.) */}
                   <button
                     type="button"
                     onClick={() => applyBulkStatus("SOLD")}
                     disabled={bulkBusy}
-                    className="btn-secondary flex-1 sm:flex-none"
+                    className="btn-primary flex-1 sm:flex-none"
                   >
                     Mark Sold
                   </button>

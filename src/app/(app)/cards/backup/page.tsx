@@ -183,15 +183,25 @@ export default function BackupPage() {
           <span className="font-medium text-zinc-900">{summary.images}</span> images,{" "}
           <span className="font-medium text-zinc-900">{summary.thumbnails}</span> thumbnails.
         </div>
+        {/* Button-system Phase 3 (corrected): Export reads/downloads only
+            (no mutation) -- an optional utility action, so .btn-secondary.
+            Import's internal implementation does delete existing cards
+            before recreating them (see handleImport's deleteMyCards call
+            below), but that's an implementation detail of a restore
+            operation, not the user's intended action -- "Import JSON" is
+            a normal import/restore entry point, not a Delete command, so
+            it must not read as a destructive red button. Classified as
+            .btn-normal: a real, whole-page operation, but this page has
+            no single "principal" action the way e.g. Save Card does --
+            Export and Import are two co-equal top-level actions, so
+            neither claims .btn-primary. (The missing confirmation step
+            before existing data is replaced is flagged separately -- see
+            this phase's report -- and intentionally NOT added here.) */}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleExport}
-            className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
-          >
+          <button type="button" onClick={handleExport} className="btn-secondary">
             Export JSON
           </button>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50">
+          <label className="btn-normal inline-flex cursor-pointer items-center gap-2">
             <span>{importing ? "Importing…" : "Import JSON"}</span>
             <input
               type="file"

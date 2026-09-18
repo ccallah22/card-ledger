@@ -136,10 +136,15 @@ export function BinderToolbar({
           ))}
         </div>
 
+        {/* Button-system Phase 3: was a one-off bordered box
+            (border-zinc-400 bg-white text-zinc-900 hover:bg-zinc-50) --
+            an optional/utility toggle, so .btn-secondary. hidden/
+            sm:inline-flex/whitespace-nowrap (responsive display + layout)
+            kept; color/geometry now come from the shared class. */}
         <button
           type="button"
           onClick={() => setShowFilters((v) => !v)}
-          className="hidden shrink-0 sm:inline-flex rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
+          className="hidden shrink-0 sm:inline-flex btn-secondary whitespace-nowrap"
         >
           Filters{activeFiltersCount ? ` • ${activeFiltersCount}` : ""}
         </button>
@@ -168,17 +173,17 @@ export function BinderToolbar({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {/* Button-system Phase 3: same one-off-to-.btn-secondary
+              migration as the desktop Filters toggle above; mobile-only
+              display/layout classes kept. */}
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
-            className="sm:hidden rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
+            className="sm:hidden btn-secondary whitespace-nowrap"
           >
             Filters{activeFiltersCount ? ` • ${activeFiltersCount}` : ""}
           </button>
-          <button
-            onClick={clearAllFilters}
-            className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 whitespace-nowrap"
-          >
+          <button onClick={clearAllFilters} className="btn-secondary whitespace-nowrap">
             Clear filters
           </button>
         </div>

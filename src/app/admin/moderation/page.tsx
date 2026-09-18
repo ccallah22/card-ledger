@@ -100,25 +100,38 @@ export default function ModerationPage() {
                   </div>
                 </div>
 
+                {/* Button-system Phase 3: classified by what each action
+                    actually does (act() only ever PATCHes a status field
+                    -- nothing here deletes data). Approve is a real
+                    moderation judgment on the item -- .btn-normal. Clear
+                    reports just resets the report count, the lowest-
+                    stakes of the three -- .btn-secondary. Block sets
+                    status to "blocked" (suppresses the image from
+                    display), a real but fully reversible status change,
+                    not data removal -- .btn-normal, not .btn-destructive
+                    (the word "Block" sounds negative, but nothing is
+                    actually deleted). This also retires the third literal
+                    dark-button implementation (bg-[var(--brand-primary)])
+                    the original audit flagged. */}
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => act(item.fingerprint, "approve")}
-                    className="rounded-md border bg-white px-3 py-2 text-xs font-medium hover:bg-zinc-50"
+                    className="btn-normal text-xs"
                   >
                     Approve
                   </button>
                   <button
                     type="button"
                     onClick={() => act(item.fingerprint, "clear")}
-                    className="rounded-md border bg-white px-3 py-2 text-xs font-medium hover:bg-zinc-50"
+                    className="btn-secondary text-xs"
                   >
                     Clear reports
                   </button>
                   <button
                     type="button"
                     onClick={() => act(item.fingerprint, "block")}
-                    className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--brand-primary-strong)]"
+                    className="btn-normal text-xs"
                   >
                     Block
                   </button>

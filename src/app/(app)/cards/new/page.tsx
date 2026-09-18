@@ -3073,12 +3073,16 @@ function NewCardPageInner() {
                   </div>
                 ) : null}
                 <div className="mt-2 flex flex-wrap gap-3">
+                  {/* Button-system Phase 3: genuine inline textual action
+                      (disclosure toggle) -- .btn-link, not a boxed
+                      button. Style consolidation only; toggle logic
+                      unchanged. */}
                   <button
                     type="button"
                     onClick={() => setShowCandidateAlternatives((prev) => !prev)}
                     aria-expanded={showCandidateAlternatives}
                     aria-controls="candidate-alternatives"
-                    className="text-blue-700 underline"
+                    className="btn-link"
                   >
                     Change card
                   </button>
@@ -3093,7 +3097,7 @@ function NewCardPageInner() {
                       onClick={() => setShowVariantRefinement((prev) => !prev)}
                       aria-expanded={showVariantRefinement}
                       aria-controls="variant-refinement"
-                      className="text-blue-700 underline"
+                      className="btn-link"
                     >
                       Choose parallel / variant
                     </button>
@@ -3144,6 +3148,13 @@ function NewCardPageInner() {
                                 .filter(Boolean)
                                 .join(" • ") || "No additional attributes"}
                             </div>
+                            {/* Button-system Phase 3: .btn-link for the
+                                inline action; .btn-link itself has no
+                                disabled treatment (its other usages never
+                                disable), so this page's own existing
+                                disabled overrides are kept alongside it --
+                                same visual "currently selected" state as
+                                before, selection logic untouched. */}
                             <button
                               type="button"
                               disabled={isActive}
@@ -3152,7 +3163,7 @@ function NewCardPageInner() {
                                 setSelectedVariantCandidate(variant);
                                 setShowVariantRefinement(false);
                               }}
-                              className="mt-1 text-blue-700 underline disabled:cursor-default disabled:text-zinc-400 disabled:no-underline"
+                              className="mt-1 btn-link disabled:cursor-default disabled:text-zinc-400 disabled:no-underline"
                             >
                               {isActive ? "Currently selected" : "Select this variant"}
                             </button>
@@ -3192,6 +3203,9 @@ function NewCardPageInner() {
                       }
                     >
                       <CandidateSummary candidate={candidate} />
+                      {/* Button-system Phase 3: same .btn-link +
+                          preserved disabled-override pattern as "Select
+                          this variant" above. */}
                       <button
                         type="button"
                         disabled={isActive}
@@ -3199,7 +3213,7 @@ function NewCardPageInner() {
                           selectCandidateManually(candidate);
                           setShowCandidateAlternatives(false);
                         }}
-                        className="mt-1 text-blue-700 underline disabled:cursor-default disabled:text-zinc-400 disabled:no-underline"
+                        className="mt-1 btn-link disabled:cursor-default disabled:text-zinc-400 disabled:no-underline"
                       >
                         {isActive ? "Currently selected" : "Select this card"}
                       </button>

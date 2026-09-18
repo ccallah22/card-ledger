@@ -153,10 +153,9 @@ export default function LocationsPage() {
           <p className="text-sm text-zinc-600">Rename locations across your binder.</p>
         </div>
 
-        <Link
-          href="/cards"
-          className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-        >
+        {/* Button-system Phase 3: page-level navigation, was a one-off
+            bordered box. */}
+        <Link href="/cards" className="btn-nav">
           Back to Binder
         </Link>
       </div>
@@ -218,18 +217,25 @@ export default function LocationsPage() {
                     />
                   </div>
 
+                  {/* Button-system Phase 3: Rename is the actual commit
+                      for this row (calls updateMyCard) -- .btn-primary.
+                      Clear genuinely removes the location value from
+                      every matching card (updateMyCard(..., {location:
+                      ""})), not just local UI state -- real
+                      removal/data-affecting behavior, so .btn-destructive
+                      rather than .btn-secondary. */}
                   <div className="flex gap-2 sm:col-span-2 sm:justify-end">
                     <button
                       type="button"
                       onClick={() => renameLocation(loc.key)}
-                      className="flex-1 rounded-md bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--brand-primary-strong)] sm:flex-none"
+                      className="btn-primary flex-1 text-xs sm:flex-none"
                     >
                       Rename
                     </button>
                     <button
                       type="button"
                       onClick={() => clearLocation(loc.key)}
-                      className="flex-1 rounded-md border bg-white px-3 py-2 text-xs hover:bg-zinc-50 sm:flex-none"
+                      className="btn-destructive flex-1 text-xs sm:flex-none"
                     >
                       Clear
                     </button>

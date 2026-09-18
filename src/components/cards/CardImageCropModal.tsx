@@ -412,6 +412,10 @@ export function CardImageCropModal({
               column on mobile rather than just its sliders means there's no
               leftover empty grid cell. */}
           <div className="hidden text-xs text-zinc-500 sm:block">
+            {/* Button-system Phase 3: compact media controls, optional/
+                utility (non-destructive, reversible) -- .btn-secondary at
+                their existing compact text-[11px]/px-2 py-1 size rather
+                than full geometry. Rotation logic unchanged. */}
             <div className="mb-3 flex items-center gap-2">
               <button
                 type="button"
@@ -419,7 +423,7 @@ export function CardImageCropModal({
                   const nextBase = cropRotationBase - 90;
                   applyCropRotation(nextBase, cropRotationFine);
                 }}
-                className="rounded-md border bg-white px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-50"
+                className="btn-secondary px-2 py-1 text-[11px]"
               >
                 Rotate Left
               </button>
@@ -429,7 +433,7 @@ export function CardImageCropModal({
                   const nextBase = cropRotationBase + 90;
                   applyCropRotation(nextBase, cropRotationFine);
                 }}
-                className="rounded-md border bg-white px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-50"
+                className="btn-secondary px-2 py-1 text-[11px]"
               >
                 Rotate Right
               </button>
