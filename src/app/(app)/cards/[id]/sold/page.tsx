@@ -111,17 +111,23 @@ export default function MarkSoldPage({
           </p>
         </div>
 
+        {/* Phase 2 button-system migration: this top row is pure
+            page-level navigation (no data mutation, no pairing with a
+            commit action -- the actual submit/Cancel pair is in its own
+            row below and is left as .btn-secondary, unchanged). Multiple
+            simultaneous destinations here are still all navigation, so
+            all three now use .btn-nav; hrefs/labels unchanged. */}
         <div className="flex gap-2">
           {returnTo === "for-sale" ? (
-            <Link href="/cards/for-sale" className="btn-secondary">
+            <Link href="/cards/for-sale" className="btn-nav">
               Return to For Sale
             </Link>
           ) : (
             <>
-              <Link href={`/cards/${id}`} className="btn-secondary">
+              <Link href={`/cards/${id}`} className="btn-nav">
                 Back to card
               </Link>
-              <Link href="/cards" className="btn-secondary">
+              <Link href="/cards" className="btn-nav">
                 Binder
               </Link>
             </>

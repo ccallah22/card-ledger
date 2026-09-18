@@ -30,20 +30,18 @@ export function DeleteCardDialog({
           </div>
         </div>
 
+        {/* Phase 2 button-system migration: was a hardcoded bg-red-600
+            solid-fill Delete, inconsistent with the restrained
+            .btn-destructive direction established on Card Detail
+            (ebfaabc) and generalized into globals.css (c7d5966). Styling
+            only -- onCancel/onConfirm, confirmation text, and this
+            dialog's own open/close behavior are all unchanged. */}
         <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-          >
+          <button type="button" onClick={onCancel} className="btn-secondary">
             Cancel
           </button>
 
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-          >
+          <button type="button" onClick={onConfirm} className="btn-destructive">
             Delete
           </button>
         </div>

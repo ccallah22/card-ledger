@@ -294,7 +294,9 @@ export default function SoldHistoryPage() {
           <p className="text-sm text-zinc-600">Realized performance based on actual sold prices.</p>
         </div>
 
-        <Link href="/cards" className="btn-secondary">
+        {/* Phase 2 button-system migration: single page-level nav
+            control, href/behavior unchanged. */}
+        <Link href="/cards" className="btn-nav">
           Back to Binder
         </Link>
       </div>
@@ -376,7 +378,12 @@ export default function SoldHistoryPage() {
         ) : soldCards.length === 0 ? (
           <div className="empty-state space-y-3">
             <div>You haven&apos;t sold any cards yet.</div>
-            <Link href="/cards" className="btn-primary">
+            {/* Phase 2 button-system migration: this is lateral
+                navigation to the Binder (same destination as the header's
+                own "Back to Binder" above), not a forward-progress commit
+                action -- demoted from .btn-primary on that basis, not
+                because it's in an empty state. */}
+            <Link href="/cards" className="btn-nav">
               Go to your Binder
             </Link>
           </div>

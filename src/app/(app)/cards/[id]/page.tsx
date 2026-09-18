@@ -140,22 +140,6 @@ function CompactStat({
   );
 }
 
-// Card detail visual refinement: page-local button treatment for the
-// Edit/Mark as Sold/Delete action row only. Same base geometry as the
-// shared .btn-* classes in globals.css (rounded-md px-4 py-2 text-sm
-// font-semibold, focus ring, disabled state) so all three sit together
-// at identical height/padding/radius/typography, but with a darker,
-// desaturated zinc palette instead of .btn-primary's bright brand-accent
-// blue or .btn-destructive's bright red-600 -- those global classes are
-// shared by Add Card, Binder, catalog and other pages, so they're left
-// untouched and this page uses its own variant instead.
-const cardActionBaseGeometry =
-  "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
-const cardActionBase = {
-  neutral: `${cardActionBaseGeometry} bg-zinc-800 text-white hover:bg-zinc-900 focus-visible:ring-zinc-500`,
-  destructive: `${cardActionBaseGeometry} border border-red-200 bg-white text-red-700 hover:bg-red-50 hover:border-red-300 focus-visible:ring-red-400`,
-};
-
 export default function CardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { id } = use(params);
@@ -476,12 +460,11 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
           the Edit/Mark as Sold/Delete row below (which act ON the card)
           and placed ahead of the hero so it doesn't compete with the
           player name for attention. Same href/behavior as before
-          (Link to /cards), just relocated and restyled as a quiet nav
-          control instead of a full secondary button. */}
-      <Link
-        href="/cards"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
-      >
+          (Link to /cards). Phase 2 button-system migration: this page-
+          local treatment was the exact source .btn-nav (globals.css) was
+          generalized from -- now using that shared class instead of its
+          own copy. */}
+      <Link href="/cards" className="btn-nav">
         <span aria-hidden="true">←</span> Back to Binder
       </Link>
 
@@ -622,21 +605,20 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
             {/* Card detail visual refinement: this row is now ONLY actions
                 performed on the card (Edit/Mark as Sold/Delete) -- Back is
                 page navigation and now lives at the top of the page (see
-                above), not grouped here. Buttons share one page-local base
-                class (cardActionBase) for identical height/padding/radius/
-                typography, then layer on a darker/quieter zinc palette
-                instead of the app-wide .btn-primary (bright brand-accent
-                blue) / .btn-destructive (bright red-600) treatments, which
-                read as too vibrant next to this page's neutral zinc theme.
-                Kept page-local rather than editing .btn-primary/
-                .btn-destructive in globals.css, since those classes are
-                shared by Add Card, Binder, catalog, and other pages this
-                task must not touch. */}
+                above), not grouped here. Phase 2 button-system migration:
+                the page-local cardActionBase (dark zinc treatment) has
+                been retired in favor of the shared .btn-normal/
+                .btn-destructive classes it was generalized from -- same
+                geometry/colors, no visual change. Edit and Mark as Sold
+                are both .btn-normal: opening the sold flow is an
+                everyday item action, not the final commit (that's the
+                sold form's own submit button, which stays .btn-primary --
+                unchanged by this page). */}
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => router.push(`/cards/${String(id)}/edit`)}
-                className={cardActionBase.neutral}
+                className="btn-normal"
               >
                 Edit
               </button>
@@ -644,12 +626,12 @@ export default function CardDetailPage({ params }: { params: Promise<{ id: strin
                 <button
                   type="button"
                   onClick={() => router.push(`/cards/${String(id)}/sold`)}
-                  className={cardActionBase.neutral}
+                  className="btn-normal"
                 >
                   Mark as Sold
                 </button>
               ) : null}
-              <button type="button" onClick={handleDelete} className={cardActionBase.destructive}>
+              <button type="button" onClick={handleDelete} className="btn-destructive">
                 Delete
               </button>
             </div>

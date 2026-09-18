@@ -221,7 +221,12 @@ export default function ForSalePage() {
                   });
                 }}
                 disabled={bulkBusy}
-                className="btn-secondary text-xs"
+                // Phase 2 button-system migration: this only opens the
+                // sold form for each selected card (window.open) -- it
+                // never commits a sale itself, so it's a NORMAL item
+                // action, not PRIMARY. The actual commit is that form's
+                // own Save Sold submit, untouched by this change.
+                className="btn-normal text-xs"
               >
                 Mark Sold Selected
               </button>
@@ -257,7 +262,10 @@ export default function ForSalePage() {
         ) : forSaleCards.length === 0 ? (
           <div className="empty-state space-y-3">
             <div>No cards are currently listed for sale.</div>
-            <Link href="/cards" className="btn-primary">
+            {/* Phase 2 button-system migration: lateral navigation to the
+                Binder, not a forward-progress commit action -- demoted
+                from .btn-primary on that basis. */}
+            <Link href="/cards" className="btn-nav">
               Go to your Binder
             </Link>
           </div>
@@ -311,9 +319,12 @@ export default function ForSalePage() {
                           <div className="text-xs font-semibold text-zinc-900">
                             {typeof asking === "number" ? formatCurrency(asking) : "—"}
                           </div>
+                          {/* Phase 2 button-system migration: opens the
+                              sold form, doesn't commit a sale -- NORMAL,
+                              not PRIMARY. */}
                           <Link
                             href={`/cards/${c.id}/sold?return=for-sale`}
-                            className="btn-secondary text-xs"
+                            className="btn-normal text-xs"
                           >
                             Mark Sold
                           </Link>
@@ -379,9 +390,14 @@ export default function ForSalePage() {
                     <div className="text-xs font-semibold text-zinc-900">
                       {typeof asking === "number" ? formatCurrency(asking) : "—"}
                     </div>
+                    {/* Phase 2 button-system migration: opens the sold
+                        form, doesn't commit a sale -- NORMAL, not
+                        PRIMARY. (The adjacent "Remove" button is left as
+                        its existing one-off style -- not a Mark as Sold
+                        call site, out of scope for this migration.) */}
                     <Link
                       href={`/cards/${c.id}/sold?return=for-sale`}
-                      className="rounded-md border px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                      className="btn-normal text-xs"
                     >
                       Mark Sold
                     </Link>

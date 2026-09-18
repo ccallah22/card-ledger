@@ -2481,10 +2481,10 @@ function NewCardPageInner() {
               : "Add a new card to your binder."}
           </p>
         </div>
-        <Link
-          href={isWishlist ? "/cards/wishlist" : "/cards"}
-          className="rounded-md border border-zinc-400 bg-white px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50"
-        >
+        {/* Phase 2 button-system migration: top page-level navigation,
+            was a one-off bordered box that read as an operation button.
+            href/behavior unchanged -- styling only. */}
+        <Link href={isWishlist ? "/cards/wishlist" : "/cards"} className="btn-nav">
           Back
         </Link>
       </div>

@@ -810,7 +810,11 @@ export default function EditCardPage({
           <h1 className="text-2xl font-semibold tracking-tight">Edit Card</h1>
           <p className="text-sm text-zinc-600">Update details for this card.</p>
         </div>
-        <Link href={`/cards/${String(id)}`} className="btn-secondary">
+        {/* Phase 2 button-system migration: top page-level navigation
+            (distinct from the bottom "Cancel," which stays .btn-secondary
+            -- that one is paired with Save Changes as a choice, not a
+            standalone nav control). href/behavior unchanged. */}
+        <Link href={`/cards/${String(id)}`} className="btn-nav">
           Back
         </Link>
       </div>
