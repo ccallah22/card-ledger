@@ -44,12 +44,32 @@ function downloadJson(filename: string, data: unknown) {
   URL.revokeObjectURL(url);
 }
 
+// Backup Import safety: the validated, not-yet-applied contents of a
+// selected backup file. Populated only once a file has been read and has
+// passed the existing structural check (Array.isArray(parsed.cards)) --
+// its mere existence is what gates the confirmation modal, so nothing in
+// this shape is optional/partial. fileName is display-only context for
+// the confirmation (see JSX below); it never affects import behavior.
+type PendingImport = {
+  cards: MyCard[];
+  images: Record<string, string>;
+  thumbnails: Record<string, string>;
+  fileName: string;
+};
+
 export default function BackupPage() {
   const [notice, setNotice] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [importing, setImporting] = useState(false);
   const [cards, setCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
+  // Backup Import safety: a non-null value means a file was selected and
+  // passed validation, and the confirmation modal is showing -- see
+  // handleFileSelected/confirmImport/cancelImport below. Nothing in
+  // handleFileSelected ever calls deleteMyCards/createMyCard; those only
+  // run from confirmImport, after the user explicitly clicks "Replace and
+  // Import".
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -104,14 +124,21 @@ export default function BackupPage() {
     setNotice("Backup exported.");
   }
 
-  async function handleImport(file: File | null) {
+  // Backup Import safety: runs on every file selection. Reads + parses +
+  // validates only -- the exact same structural check the old
+  // handleImport used (Array.isArray(parsed.cards)) -- and never calls
+  // deleteMyCards/createMyCard/replaceImageMap/replaceThumbnailMap. On
+  // success it stores the validated payload in pendingImport, which is
+  // what makes the confirmation modal appear (see JSX below); it does NOT
+  // touch the existing collection. On failure it shows the same error
+  // behavior as before and leaves pendingImport null, so no confirmation
+  // opens and nothing is mutated.
+  async function handleFileSelected(file: File | null) {
     if (!file) return;
     setError("");
     setNotice("");
-    setImporting(true);
 
     try {
-      const endTrace = startTrace("import-backup");
       const text = await file.text();
       const parsed = JSON.parse(text) as Partial<BackupPayload>;
 
@@ -119,9 +146,47 @@ export default function BackupPage() {
         throw new Error("Invalid backup file. Missing cards array.");
       }
 
-      const nextCards = parsed.cards as MyCard[];
-      const images = (parsed.images ?? {}) as Record<string, string>;
-      const thumbnails = (parsed.thumbnails ?? {}) as Record<string, string>;
+      setPendingImport({
+        cards: parsed.cards as MyCard[],
+        images: (parsed.images ?? {}) as Record<string, string>,
+        thumbnails: (parsed.thumbnails ?? {}) as Record<string, string>,
+        fileName: file.name,
+      });
+    } catch (err) {
+      captureError(err, { area: "backup-import-validate" });
+      setError((err as Error).message || "Failed to read backup file.");
+    }
+  }
+
+  // Backup Import safety: closes the confirmation without touching the
+  // collection. Guarded against firing while a confirmed import is
+  // already running (the Cancel button is also disabled in that state --
+  // see JSX below -- this is defense in depth, e.g. against the backdrop
+  // click handler). The file input already resets its own value
+  // synchronously in its onChange (see JSX), independent of this
+  // function, so selecting the same file again after Cancel still fires
+  // onChange and re-triggers validation/confirmation.
+  function cancelImport() {
+    if (importing) return;
+    setPendingImport(null);
+  }
+
+  // Backup Import safety: this is the ONLY place that mutates the
+  // collection -- the exact same delete-then-create sequence the old
+  // handleImport ran, unchanged, just moved behind explicit confirmation
+  // and reading from pendingImport instead of a freshly-parsed file.
+  // Guarded on both pendingImport and importing so neither a missing
+  // payload nor a second click (double submission) can start a second
+  // run while one is already in flight.
+  async function confirmImport() {
+    if (!pendingImport || importing) return;
+    setError("");
+    setNotice("");
+    setImporting(true);
+
+    try {
+      const endTrace = startTrace("import-backup");
+      const { cards: nextCards, images, thumbnails } = pendingImport;
 
       const profileId = await requireProfileId();
       const existing = await listMyCards(profileId);
@@ -155,10 +220,18 @@ export default function BackupPage() {
 
       setCards(created);
       setNotice(`Backup imported: ${created.length} cards.${imageMsg}${thumbMsg}`.trim());
+      setPendingImport(null);
       if (endTrace) endTrace();
     } catch (err) {
       captureError(err, { area: "backup-import" });
       setError((err as Error).message || "Failed to import backup.");
+      // Close the confirmation on failure rather than leaving it open on
+      // a payload that may have partially applied (see the report's
+      // partial-restore note) -- surfaces the existing error banner
+      // instead of a silent success, and prevents an accidental re-click
+      // of "Replace and Import" from re-running against stale state. The
+      // user can retry by selecting the file again.
+      setPendingImport(null);
     } finally {
       setImporting(false);
     }
@@ -185,8 +258,8 @@ export default function BackupPage() {
         </div>
         {/* Button-system Phase 3 (corrected): Export reads/downloads only
             (no mutation) -- an optional utility action, so .btn-secondary.
-            Import's internal implementation does delete existing cards
-            before recreating them (see handleImport's deleteMyCards call
+            Import's internal implementation deletes existing cards before
+            recreating them (see confirmImport's deleteMyCards call
             below), but that's an implementation detail of a restore
             operation, not the user's intended action -- "Import JSON" is
             a normal import/restore entry point, not a Delete command, so
@@ -194,9 +267,10 @@ export default function BackupPage() {
             .btn-normal: a real, whole-page operation, but this page has
             no single "principal" action the way e.g. Save Card does --
             Export and Import are two co-equal top-level actions, so
-            neither claims .btn-primary. (The missing confirmation step
-            before existing data is replaced is flagged separately -- see
-            this phase's report -- and intentionally NOT added here.) */}
+            neither claims .btn-primary. Selecting a file here only
+            validates it (handleFileSelected) -- the actual replacement
+            now requires an explicit confirmation (see the modal below and
+            confirmImport), which is the destructive step. */}
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" onClick={handleExport} className="btn-secondary">
             Export JSON
@@ -210,7 +284,7 @@ export default function BackupPage() {
               onChange={(e) => {
                 const file = e.currentTarget.files?.[0] ?? null;
                 e.currentTarget.value = "";
-                handleImport(file);
+                handleFileSelected(file);
               }}
               className="hidden"
             />
@@ -229,6 +303,63 @@ export default function BackupPage() {
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
+        </div>
+      ) : null}
+
+      {/* Backup Import safety: explicit confirmation gate, page-local
+          (structurally similar to DeleteCardDialog.tsx, but this isn't
+          card-delete-specific so it isn't forced into that component).
+          Rendered only while pendingImport is set -- i.e. only after a
+          file has been read and passed validation, never on a raw file
+          selection. Cancel/backdrop click clear pendingImport without
+          touching the collection; "Replace and Import" is the sole
+          trigger for confirmImport's mutation. Both actions are disabled
+          while importing so a second click (or a stray backdrop click)
+          can't start a second run or close the dialog mid-mutation. */}
+      {pendingImport ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4"
+          onClick={cancelImport}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="backup-import-confirm-title"
+            className="w-full max-w-md rounded-2xl border bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div id="backup-import-confirm-title" className="text-lg font-semibold">
+              Replace current card data?
+            </div>
+
+            <div className="mt-1 text-sm text-zinc-600">
+              Importing this backup will replace the card data currently in your Binder with
+              the data from this backup.
+              <div className="mt-2 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-800">
+                Selected file: {pendingImport.fileName} &middot; {pendingImport.cards.length} card
+                {pendingImport.cards.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelImport}
+                disabled={importing}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmImport}
+                disabled={importing}
+                className="btn-destructive"
+              >
+                {importing ? "Importing…" : "Replace and Import"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
