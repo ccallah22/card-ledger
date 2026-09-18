@@ -767,6 +767,13 @@ function NewCardPageInner() {
   // save attempt, set only by onSave()/onSaveAndAddAnother()'s outer catch
   // (see below) when runSaveCycle() itself throws.
   const [saveFailureMessage, setSaveFailureMessage] = useState("");
+  // Production Add Card save investigation: coarse, page-level stages for
+  // whatever part of runSaveCycle() runs OUTSIDE createMyCard() (which
+  // tags its own, finer-grained stage directly onto any error it throws --
+  // see myCards.ts). A plain ref, not state: nothing here should ever
+  // trigger a render, it only needs to be legible to onSave()/
+  // onSaveAndAddAnother()'s outer catch after a throw.
+  const saveStageRef = useRef<"profile" | "create-card" | "post-create">("profile");
 
   // Vision Engine V2, Phase 5B correction: once createMyCard() succeeds for
   // this form submission, its id is retained here so a later retry (after a
@@ -1852,10 +1859,13 @@ function NewCardPageInner() {
     if (!cardId) {
       const input = buildCard();
       if (!input) return null;
+      saveStageRef.current = "profile";
       profileId = await requireProfileId();
+      saveStageRef.current = "create-card";
       const card = await createMyCard(profileId, input);
       cardId = card.id;
       setCreatedCardId(cardId);
+      saveStageRef.current = "post-create";
 
       needsLegacyFront = !isWishlistCard && !!frontImage.imageUrl;
       needsFrontMedia = !isWishlistCard && !!frontImage.imageUrl;
@@ -1871,6 +1881,10 @@ function NewCardPageInner() {
       setFrontOcrPending(needsFrontOcr);
       setBackOcrPending(needsBackOcr);
     } else {
+      // A retry with a card already created is, by definition, already
+      // past "profile"/"create-card" -- everything left to (re)do here is
+      // post-create work.
+      saveStageRef.current = "post-create";
       profileId = await requireProfileId();
       needsLegacyFront = legacyFrontPending;
       needsFrontMedia = frontMediaPending;
@@ -2248,6 +2262,68 @@ function NewCardPageInner() {
     return { message: typeof err === "string" ? err : "Unknown error" };
   }
 
+  // Production Add Card save investigation: myCards.ts's createMyCard()
+  // tags its own three internal steps ("resolve-catalog"/"insert-user-
+  // card"/"load-created-card") directly onto whatever error it throws --
+  // this reads that back if present, since it's strictly more specific
+  // than saveStageRef's coarser page-level stage (which only distinguishes
+  // "profile"/"create-card"/"post-create" -- createMyCard() itself is a
+  // single "create-card" step from the page's own point of view).
+  function getSaveStage(err: unknown): string {
+    if (typeof err === "object" && err !== null && "saveStage" in err) {
+      const tagged = (err as { saveStage?: unknown }).saveStage;
+      if (typeof tagged === "string") return tagged;
+    }
+    return saveStageRef.current;
+  }
+
+  // /api/catalog/resolve-card returns a diagnosticId with every response
+  // (success or failure -- see route.ts), which resolveCatalogIdsViaApi()
+  // (myCards.ts) attaches to whatever it throws. Reading it back here is
+  // the only way this page-level catch can correlate a specific failed
+  // attempt to that request's own Vercel log lines.
+  function getApiDiagnosticId(err: unknown): string | undefined {
+    if (typeof err === "object" && err !== null && "diagnosticId" in err) {
+      const id = (err as { diagnosticId?: unknown }).diagnosticId;
+      if (typeof id === "string" && id) return id;
+    }
+    return undefined;
+  }
+
+  // Used only when the failure never reached /api/catalog/resolve-card at
+  // all (so there's no server-generated diagnosticId to reuse) -- still
+  // gives the collector and the console something short and correlatable,
+  // per this investigation's temporary diagnostic UX. Never used for
+  // anything but display/logging; never read back for control flow.
+  function generateClientReference(): string {
+    return Math.random().toString(36).slice(2, 8).toUpperCase();
+  }
+
+  // Shared by onSave()/onSaveAndAddAnother()'s outer catches (identical
+  // handling in both, per the prior "Surface Add Card save failures" pass)
+  // -- extracted now rather than duplicated a second time, since it grew a
+  // stage + reference lookup on top of the classification/logging it
+  // already did. Still does exactly what it did before: classify, log
+  // safely, set the one visible fallback message. The session-expired
+  // message is intentionally left exactly as before with no reference
+  // appended -- it's already a specific, actionable message on its own,
+  // and TEST D of this investigation requires it stay unchanged.
+  function handleSaveFailure(err: unknown): void {
+    const stage = getSaveStage(err);
+    const diagnosticId = getApiDiagnosticId(err) ?? generateClientReference();
+    console.error("[Add Card] Save failed before completion", {
+      stage,
+      likelySessionIssue: isLikelySessionError(err),
+      diagnosticId,
+      error: safeErrorInfo(err),
+    });
+    setSaveFailureMessage(
+      isLikelySessionError(err)
+        ? "Your session has expired. Please sign in again, then try saving the card."
+        : `We couldn't save this card. Please try again. Reference: ${diagnosticId}`,
+    );
+  }
+
   async function onSave() {
     if (isSaving) return;
     setIsSaving(true);
@@ -2263,23 +2339,7 @@ function NewCardPageInner() {
         router.push("/cards");
       }
     } catch (err) {
-      // createdCardId (component state) is read AFTER the throw, not
-      // captured before -- if runSaveCycle() got far enough to create the
-      // card before failing (only reachable today via the one post-create
-      // call that isn't wrapped in its own try/catch, saveSharedImage()),
-      // setCreatedCardId(cardId) already ran, so this distinguishes
-      // "failed before any card existed" from "failed after" without
-      // runSaveCycle() needing to report a stage itself.
-      console.error("[Add Card] Save failed before completion", {
-        stage: createdCardId ? "after-card-created" : "before-card-created",
-        likelySessionIssue: isLikelySessionError(err),
-        error: safeErrorInfo(err),
-      });
-      setSaveFailureMessage(
-        isLikelySessionError(err)
-          ? "Your session has expired. Please sign in again, then try saving the card."
-          : "We couldn't save this card. Please try again.",
-      );
+      handleSaveFailure(err);
     } finally {
       setIsSaving(false);
     }
@@ -2398,20 +2458,11 @@ function NewCardPageInner() {
       setManualOverridesError("");
       lastPersistedManualOverridesRef.current = null;
     } catch (err) {
-      // See onSave()'s identical catch for the full explanation -- same
+      // See handleSaveFailure/onSave() for the full explanation -- same
       // classification/logging, same fallback message. The form-reset
       // block above already only runs once result.succeeded is true, so a
       // thrown exception here can never leave the form partially reset.
-      console.error("[Add Card] Save failed before completion", {
-        stage: createdCardId ? "after-card-created" : "before-card-created",
-        likelySessionIssue: isLikelySessionError(err),
-        error: safeErrorInfo(err),
-      });
-      setSaveFailureMessage(
-        isLikelySessionError(err)
-          ? "Your session has expired. Please sign in again, then try saving the card."
-          : "We couldn't save this card. Please try again.",
-      );
+      handleSaveFailure(err);
     } finally {
       setIsSaving(false);
     }

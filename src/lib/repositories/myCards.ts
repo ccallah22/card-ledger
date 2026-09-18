@@ -367,57 +367,104 @@ async function resolveCatalogIdsViaApi(input: MyCardInput): Promise<CatalogResol
     body: JSON.stringify(body),
   });
 
+  // Production Add Card save investigation: every response from this route
+  // (success or failure) now carries a diagnosticId that also prefixes its
+  // own server-side log lines (see route.ts) -- attached to whatever error
+  // is thrown below so it survives up through createMyCard()'s own
+  // stage-tagging and reaches cards/new/page.tsx's outer catch, purely for
+  // correlating one failed request to its Vercel log lines. Never read for
+  // control flow, never shown as anything but an opaque short reference.
+  let diagnosticId: string | undefined;
   if (res.status === 401) {
-    throw new Error("Not logged in");
+    diagnosticId = await readDiagnosticId(res);
+    throwWithDiagnosticId("Not logged in", diagnosticId);
   }
   if (res.status === 400) {
-    throw new Error("Please check the card details and try again.");
+    diagnosticId = await readDiagnosticId(res);
+    throwWithDiagnosticId("Please check the card details and try again.", diagnosticId);
   }
   if (!res.ok) {
-    throw new Error("We couldn't save this card right now. Please try again.");
+    diagnosticId = await readDiagnosticId(res);
+    throwWithDiagnosticId("We couldn't save this card right now. Please try again.", diagnosticId);
   }
 
   return (await res.json()) as CatalogResolutionResult;
 }
 
+// Best-effort only: the error response body is already known-shaped JSON
+// this same route just returned (see route.ts), never user/request data --
+// if parsing fails for any reason, resolution simply proceeds without a
+// diagnosticId rather than blocking on it.
+async function readDiagnosticId(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.clone().json()) as { diagnosticId?: unknown };
+    return typeof body.diagnosticId === "string" ? body.diagnosticId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function throwWithDiagnosticId(message: string, diagnosticId: string | undefined): never {
+  const err = new Error(message) as Error & { diagnosticId?: string };
+  if (diagnosticId) err.diagnosticId = diagnosticId;
+  throw err;
+}
+
 export async function createMyCard(profileId: string, input: MyCardInput): Promise<MyCard> {
-  const { cardId, cardVariantId, locationId, gradingCompanyId } =
-    await resolveCatalogIdsViaApi(input);
+  // Production Add Card save investigation: the real failure reported from
+  // a phone was the generic fallback message, not the session-expired one
+  // -- meaning it's somewhere in this function's three awaited steps, each
+  // with a genuinely different failure mode (the trusted API route vs. two
+  // direct RLS-bound writes on the plain browser client). Tagging the
+  // stage on whatever error already came out of that step -- never
+  // replacing it, never changing what's thrown -- is enough to tell them
+  // apart in cards/new/page.tsx's outer catch without restructuring this
+  // function or threading a callback through it.
+  let stage: "resolve-catalog" | "insert-user-card" | "load-created-card" = "resolve-catalog";
+  try {
+    const { cardId, cardVariantId, locationId, gradingCompanyId } =
+      await resolveCatalogIdsViaApi(input);
 
-  const row = await createUserCard({
-    profile_id: profileId,
-    card_id: cardId,
-    card_variant_id: cardVariantId,
-    location_id: locationId,
-    team_name: input.team ?? null,
-    serial_number: input.serialNumber ?? null,
-    grading_status: input.gradingStatus ?? "RAW",
-    condition: input.condition ?? null,
-    grading_company_id: gradingCompanyId,
-    grade: input.grade ?? null,
-    cert_number: input.certNumber ?? null,
-    status: input.status ?? "HAVE",
-    purchase_price: input.purchasePrice ?? null,
-    purchase_date: input.purchaseDate ?? null,
-    purchase_source: null,
-    estimated_value: input.estimatedValue ?? null,
-    asking_price: input.askingPrice ?? null,
-    sold_price: input.soldPrice ?? null,
-    sold_date: input.soldDate ?? null,
-    sold_fees: input.soldFees ?? null,
-    sold_notes: input.soldNotes ?? null,
-    quantity: 1,
-    notes: input.notes ?? null,
-    comps: input.comps ?? [],
-    image_path: input.imagePath ?? null,
-    thumb_path: input.thumbPath ?? null,
-    image_shared: input.imageShared ?? false,
-    image_type: input.imageType ?? null,
-  });
+    stage = "insert-user-card";
+    const row = await createUserCard({
+      profile_id: profileId,
+      card_id: cardId,
+      card_variant_id: cardVariantId,
+      location_id: locationId,
+      team_name: input.team ?? null,
+      serial_number: input.serialNumber ?? null,
+      grading_status: input.gradingStatus ?? "RAW",
+      condition: input.condition ?? null,
+      grading_company_id: gradingCompanyId,
+      grade: input.grade ?? null,
+      cert_number: input.certNumber ?? null,
+      status: input.status ?? "HAVE",
+      purchase_price: input.purchasePrice ?? null,
+      purchase_date: input.purchaseDate ?? null,
+      purchase_source: null,
+      estimated_value: input.estimatedValue ?? null,
+      asking_price: input.askingPrice ?? null,
+      sold_price: input.soldPrice ?? null,
+      sold_date: input.soldDate ?? null,
+      sold_fees: input.soldFees ?? null,
+      sold_notes: input.soldNotes ?? null,
+      quantity: 1,
+      notes: input.notes ?? null,
+      comps: input.comps ?? [],
+      image_path: input.imagePath ?? null,
+      thumb_path: input.thumbPath ?? null,
+      image_shared: input.imageShared ?? false,
+      image_type: input.imageType ?? null,
+    });
 
-  const full = await getMyCard(row.id);
-  if (!full) throw new Error("Failed to load created card");
-  return full;
+    stage = "load-created-card";
+    const full = await getMyCard(row.id);
+    if (!full) throw new Error("Failed to load created card");
+    return full;
+  } catch (err) {
+    if (err instanceof Error) (err as Error & { saveStage?: string }).saveStage = stage;
+    throw err;
+  }
 }
 
 const CATALOG_FIELDS = [
