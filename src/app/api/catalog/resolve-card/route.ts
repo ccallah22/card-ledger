@@ -38,6 +38,45 @@ function generateDiagnosticId(): string {
   return Math.random().toString(36).slice(2, 8);
 }
 
+// Production Add Card save investigation, round 2: a real request reached
+// resolution-start and failed, but the previous sanitizer's `err instanceof
+// Error` check produced { name: "object", message: "[object Object]",
+// code: undefined } -- useless for diagnosis. Root cause: nothing in this
+// codebase's repository layer ever calls postgrest-js's .throwOnError()
+// (confirmed -- no occurrences anywhere in src/), so every `if (error)
+// throw error` in the repository files resolveCatalogIds calls into
+// rethrows the exact plain object postgrest-js's own request handling
+// parses straight from the HTTP response body -- never a PostgrestError
+// instance, never anything `instanceof Error`. That's true of every
+// Supabase call in this app, not one specific operation, so the old
+// `instanceof Error` check was the wrong test for the error shape this
+// codebase actually produces. This reads name/message/code/details/hint
+// directly off whatever was thrown, whether it's a real Error or (the
+// common case here) a plain object, plus resolutionStage if
+// resolveCatalogIdsServer tagged one (see resolveCatalogIdsServer.ts).
+function safeCatalogErrorInfo(err: unknown): {
+  stage?: string;
+  name?: string;
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+} {
+  if (typeof err !== "object" || err === null) {
+    return { name: typeof err, message: typeof err === "string" ? err : undefined };
+  }
+  const obj = err as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  return {
+    stage: str(obj.resolutionStage),
+    name: err instanceof Error ? err.name : "object",
+    message: err instanceof Error ? err.message : str(obj.message),
+    code: str(obj.code),
+    details: str(obj.details),
+    hint: str(obj.hint),
+  };
+}
+
 export async function POST(req: Request) {
   const diagnosticId = generateDiagnosticId();
   console.log(`[resolve-card:${diagnosticId}] request`);
@@ -87,26 +126,20 @@ export async function POST(req: Request) {
   } catch (err) {
     // Never forward raw internal errors (may include Postgres/PostgREST
     // detail) or any credential material to the client -- log server-side
-    // only, and return a generic 500 + diagnosticId only. The logged
-    // name/message/code here is what actually distinguishes a genuine
-    // catalog-resolution failure from, e.g., missing service-role
-    // configuration (createServiceRoleClient() throws the plain, safe-to-
-    // log strings "Missing NEXT_PUBLIC_SUPABASE_URL" / "Missing
-    // SUPABASE_SERVICE_ROLE_KEY" -- never the key value itself) --
-    // resolveCatalogIdsServer.ts/serviceRole.ts are intentionally
-    // untouched; this is enough to tell the two apart from this one log
-    // line without adding a second stage-tracking mechanism inside them.
+    // only, and return a generic 500 + diagnosticId only. `stage` says
+    // which of resolveCatalogIds's operations failed (set/player/card/
+    // card-player-link/parallel-type/variant/location/grading-company
+    // resolution, or the catalogCardId lookup); details/hint/code are
+    // PostgREST's own safe (no credential/row-data) fields, present when
+    // the underlying failure was a genuine database error and absent
+    // otherwise (e.g. a non-JSON response from an infra-level failure --
+    // see resolveCatalogIdsServer.ts's own comment on this).
     //
     // To find this exact request in Vercel's logs after a real attempt:
     // search for "[resolve-card:" plus the diagnosticId shown to the user
     // (see cards/new/page.tsx's saveFailureMessage) or logged in their
     // browser console.
-    const code = (err as { code?: unknown } | null)?.code;
-    console.error(`[resolve-card:${diagnosticId}] error`, {
-      name: err instanceof Error ? err.name : typeof err,
-      message: err instanceof Error ? err.message : String(err),
-      code: typeof code === "string" ? code : undefined,
-    });
+    console.error(`[resolve-card:${diagnosticId}] error`, safeCatalogErrorInfo(err));
     return NextResponse.json({ error: "Catalog resolution failed.", diagnosticId }, { status: 500 });
   }
 }

@@ -95,10 +95,58 @@ async function resolveCardForPlayer(
   }
 }
 
+// Production Add Card save investigation: a real request reached
+// resolution-start and then failed with a thrown value that had no useful
+// name/message (see route.ts's error log for that request -- name:
+// "object", message: "[object Object]"). Root cause of THAT shape: nothing
+// in this codebase's repository layer ever calls postgrest-js's
+// .throwOnError() (confirmed -- no occurrences anywhere in src/), so every
+// `if (error) throw error` in sets.ts/players.ts/cards.ts/cardPlayers.ts/
+// parallelTypes.ts/cardVariants.ts/gradingCompanies.ts/locations.ts
+// rethrows the exact plain object postgrest-js's own PostgrestBuilder
+// parses straight from the HTTP response body (JSON.parse(body), or
+// {message: body} when the response isn't even valid JSON) -- never a
+// PostgrestError instance, never anything `instanceof Error`. That's a
+// property of every Supabase call in this app, not of one specific
+// operation, so it explains the SHAPE of what was logged but not WHICH of
+// this function's many sequential operations produced it. `stage` below
+// exists only to answer that -- tagged onto whatever the error already is
+// (never replacing it, never changing what's thrown, never altering
+// control flow or which branch runs) so route.ts's catch can report which
+// operation failed without needing to catch/log at every call site
+// individually.
 async function resolveCatalogIds(profileId: string, input: MyCardInput, client: SupabaseClient) {
+  let stage = "start";
+  try {
+    return await resolveCatalogIdsWithStages(profileId, input, client, (s) => {
+      stage = s;
+    });
+  } catch (err) {
+    if (typeof err === "object" && err !== null) {
+      (err as Record<string, unknown>).resolutionStage = stage;
+    }
+    throw err;
+  }
+}
+
+// The original resolveCatalogIds body, renamed and given one extra
+// `setStage(...)` parameter/call before each operation -- otherwise
+// unchanged (see git history): same order, same arguments, same branches,
+// same return value. Kept as its own function, called from the thin
+// try/catch wrapper above, specifically so this function's own
+// indentation stays untouched -- wrapping these ~140 existing lines in a
+// new try block in place would have touched every one of them just to
+// re-indent, a much larger diff than this investigation needs.
+async function resolveCatalogIdsWithStages(
+  profileId: string,
+  input: MyCardInput,
+  client: SupabaseClient,
+  setStage: (stage: string) => void,
+) {
   let card: CardRow;
 
   if (input.catalogCardId) {
+    setStage("catalog-card-lookup");
     // "Search -> Add to Collection" / manual catalog lookup: the collector
     // already explicitly picked this exact catalog card (selectedCard.id
     // in cards/new/page.tsx), so it is the authoritative identity -- skip
@@ -116,6 +164,7 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
   } else {
     const releaseYear = input.year ? Number.parseInt(input.year, 10) : NaN;
 
+    setStage("set-resolution");
     const set = await findOrCreateSet(
       {
         name: input.setName,
@@ -138,6 +187,7 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
     // parsePlayerNames.ts.
     const playerNames = parsePlayerNames(input.playerName.trim());
     const primaryPlayerName = playerNames[0] ?? null;
+    setStage("player-resolution");
     const player = primaryPlayerName
       ? await findOrCreatePlayer({ full_name: primaryPlayerName }, client)
       : null;
@@ -146,6 +196,7 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
     // the section-scoped identity instead of the v1 set-scoped
     // resolveCardForPlayer path. Omitted (the case for every existing caller
     // today) falls through to the exact existing Catalog v1 behavior.
+    setStage("card-resolution");
     card = input.checklistSectionId
       ? await findOrCreateCardV2(
           {
@@ -170,6 +221,7 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
         );
 
     if (player) {
+      setStage("card-player-link");
       await findOrCreateCardPlayer(card.id, player.id, "primary", client);
 
       // For a genuine multi-player "/"-combined name (e.g.
@@ -193,6 +245,7 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
 
   let parallelTypeId: number | null = null;
   if (input.parallel?.trim()) {
+    setStage("parallel-type-resolution");
     const parallelType = await findOrCreateParallelType(input.parallel.trim(), client);
     parallelTypeId = parallelType.id;
   }
@@ -201,6 +254,7 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
   // through the wider (card, parallel, print run, swatch descriptor)
   // identity instead of the v1 (card, parallel, print run) lookup. Omitted
   // falls through to the exact existing Catalog v1 behavior.
+  setStage("variant-resolution");
   const variant = input.swatchDescriptor
     ? await findOrCreateCardVariantV2(
         {
@@ -228,12 +282,14 @@ async function resolveCatalogIds(profileId: string, input: MyCardInput, client: 
 
   let locationId: number | null = null;
   if (input.location?.trim()) {
+    setStage("location-resolution");
     const location = await findOrCreateLocation(profileId, input.location.trim(), client);
     locationId = location.id;
   }
 
   let gradingCompanyId: number | null = null;
   if (input.grader?.trim()) {
+    setStage("grading-company-resolution");
     const company = await findOrCreateGradingCompany(input.grader.trim(), client);
     gradingCompanyId = company.id;
   }
