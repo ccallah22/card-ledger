@@ -6,13 +6,33 @@ import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageMap, loadThumbnailMap, replaceImageMap, replaceThumbnailMap } from "@/lib/imageStore";
 import { startTrace, captureError } from "@/lib/sentry";
 
-type BackupPayload = {
+// The exact shape TheBinder has shipped and exported as "version: 1" since
+// the original Backup feature -- renamed from the old generic
+// `BackupPayload` to make its version explicit now that a second format
+// version number exists (see detectBackupVersion below). Fields,
+// optionality, and serialized output are byte-for-byte unchanged from
+// before this rename.
+type BackupV1Payload = {
   version: 1;
   exportedAt: string;
   cards: MyCard[];
   images: Record<string, string>;
   thumbnails?: Record<string, string>;
 };
+
+// Version dispatch must run BEFORE any format-specific structural
+// validation (see handleFileSelected) -- deliberately does NOT infer V1
+// merely because a `cards` array happens to be present, which was the
+// old (pre-V2-aware) behavior this replaces. Any object whose `version`
+// isn't exactly 1 or 2 -- including a missing version field entirely --
+// is "unknown" and must be safely rejected, never guessed at.
+function detectBackupVersion(parsed: unknown): 1 | 2 | "unknown" {
+  if (!parsed || typeof parsed !== "object") return "unknown";
+  const version = (parsed as { version?: unknown }).version;
+  if (version === 1) return 1;
+  if (version === 2) return 2;
+  return "unknown";
+}
 
 async function requireProfileId(): Promise<string> {
   const profile = await getCurrentProfile();
@@ -45,12 +65,15 @@ function downloadJson(filename: string, data: unknown) {
 }
 
 // Backup Import safety: the validated, not-yet-applied contents of a
-// selected backup file. Populated only once a file has been read and has
-// passed the existing structural check (Array.isArray(parsed.cards)) --
-// its mere existence is what gates the confirmation modal, so nothing in
-// this shape is optional/partial. fileName is display-only context for
+// selected V1 backup file. Explicitly V1-specific (not a generic
+// "PendingImport") now that a second format exists -- a V2 file can never
+// reach this state, see handleFileSelected's version dispatch below.
+// Populated only once a file has been read, detected as version 1, and
+// has passed the existing structural check (Array.isArray(parsed.cards))
+// -- its mere existence is what gates the confirmation modal, so nothing
+// in this shape is optional/partial. fileName is display-only context for
 // the confirmation (see JSX below); it never affects import behavior.
-type PendingImport = {
+type BackupV1PendingImport = {
   cards: MyCard[];
   images: Record<string, string>;
   thumbnails: Record<string, string>;
@@ -69,7 +92,7 @@ export default function BackupPage() {
   // handleFileSelected ever calls deleteMyCards/createMyCard; those only
   // run from confirmImport, after the user explicitly clicks "Replace and
   // Import".
-  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [pendingImport, setPendingImport] = useState<BackupV1PendingImport | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -113,7 +136,10 @@ export default function BackupPage() {
     if (endTrace) endTrace();
     const images = loadImageMap();
     const thumbnails = loadThumbnailMap();
-    const payload: BackupPayload = {
+    // Export remains V1 in this phase -- unchanged payload shape, unchanged
+    // "version: 1" literal, unchanged output. Nothing here generates a V2
+    // backup yet.
+    const payload: BackupV1Payload = {
       version: 1,
       exportedAt: new Date().toISOString(),
       cards: data,
@@ -124,32 +150,65 @@ export default function BackupPage() {
     setNotice("Backup exported.");
   }
 
-  // Backup Import safety: runs on every file selection. Reads + parses +
-  // validates only -- the exact same structural check the old
-  // handleImport used (Array.isArray(parsed.cards)) -- and never calls
-  // deleteMyCards/createMyCard/replaceImageMap/replaceThumbnailMap. On
-  // success it stores the validated payload in pendingImport, which is
-  // what makes the confirmation modal appear (see JSX below); it does NOT
-  // touch the existing collection. On failure it shows the same error
-  // behavior as before and leaves pendingImport null, so no confirmation
-  // opens and nothing is mutated.
+  // Backup Import safety: runs on every file selection. Reads + parses the
+  // file, then dispatches on detectBackupVersion's result BEFORE any
+  // format-specific structural validation runs -- version detection first,
+  // format validation second, never the old "assume V1 because a `cards`
+  // array exists" shortcut.
+  //
+  // Only a file that detects as version 1 AND passes V1's existing
+  // structural check ever reaches setPendingImport (the only thing that
+  // makes the confirmation modal appear) -- a version-2 file and an
+  // unknown/missing-version file both return before that point, and
+  // neither this function nor anything it calls ever invokes
+  // deleteMyCards/createMyCard/replaceImageMap/replaceThumbnailMap. Only
+  // confirmImport (reachable solely through that modal) mutates anything.
   async function handleFileSelected(file: File | null) {
     if (!file) return;
     setError("");
     setNotice("");
 
+    let parsed: unknown;
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text) as Partial<BackupPayload>;
+      parsed = JSON.parse(text);
+    } catch (err) {
+      captureError(err, { area: "backup-import-validate" });
+      setError((err as Error).message || "Failed to read backup file.");
+      return;
+    }
 
-      if (!parsed || !Array.isArray(parsed.cards)) {
+    const version = detectBackupVersion(parsed);
+
+    if (version === "unknown") {
+      setError("This doesn't look like a supported TheBinder backup file.");
+      return;
+    }
+
+    if (version === 2) {
+      // Phase 1 of the Backup V2 rollout: V2 files are recognized as a
+      // valid, known format version, but V2 restore does not exist yet.
+      // Explicitly refuse to proceed rather than attempting to interpret
+      // V2 data with V1 logic (or vice versa) -- no confirmation is shown,
+      // pendingImport is never set, and nothing is mutated.
+      setError("Backup V2 files are recognized, but V2 restore is not available yet.");
+      return;
+    }
+
+    // version === 1: preserve the existing V1 structural validation
+    // exactly (Array.isArray(parsed.cards)), now reached only after an
+    // explicit version check rather than being the default assumption.
+    try {
+      const v1 = parsed as Partial<BackupV1Payload>;
+
+      if (!Array.isArray(v1.cards)) {
         throw new Error("Invalid backup file. Missing cards array.");
       }
 
       setPendingImport({
-        cards: parsed.cards as MyCard[],
-        images: (parsed.images ?? {}) as Record<string, string>,
-        thumbnails: (parsed.thumbnails ?? {}) as Record<string, string>,
+        cards: v1.cards as MyCard[],
+        images: (v1.images ?? {}) as Record<string, string>,
+        thumbnails: (v1.thumbnails ?? {}) as Record<string, string>,
         fileName: file.name,
       });
     } catch (err) {
