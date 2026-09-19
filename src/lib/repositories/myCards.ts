@@ -37,6 +37,14 @@ export type MyCard = {
   // else should key off it, since this type otherwise deliberately treats
   // the catalog card as an implementation detail of the join.
   catalogCardId?: number;
+  // Backup V2 metadata export: the shared catalog's resolved variant id
+  // (card_variants.id) -- already fetched by SELECT's card_variants(*)
+  // join below, simply not previously exposed on this type. Same
+  // optionality rationale as catalogCardId: card_variant_id is nullable
+  // on user_cards (on delete set null), so a card can legitimately have
+  // none. Read-only/derived, exactly like catalogCardId -- nothing writes
+  // to this field via MyCardInput.
+  catalogVariantId?: number;
   setId?: number;
   setName: string;
   setSlug?: string;
@@ -76,6 +84,15 @@ export type MyCard = {
   isPatch?: boolean;
 
   comps?: CardComp[];
+
+  // Backup V2 metadata export: user_cards.quantity (not null, defaults to
+  // 1). Always 1 today -- createMyCard's insert hardcodes quantity: 1 and
+  // MyCardInput has no field for it, so there is currently no way for a
+  // user to set anything else -- but the column is real and already part
+  // of SELECT's `*`, so exposing it costs nothing and closes a real gap
+  // against the underlying schema. Read-only here; Add/Edit behavior and
+  // MyCardInput are intentionally untouched.
+  quantity: number;
 
   imagePath?: string | null;
   imageShared?: boolean;
@@ -208,6 +225,7 @@ function toMyCard(row: UserCardJoined): MyCard {
     players,
     year: set?.release_year != null ? String(set.release_year) : "",
     catalogCardId: card?.id ?? undefined,
+    catalogVariantId: variant?.id ?? undefined,
     setId: set?.id ?? undefined,
     setName: set?.name ?? "",
     setSlug: set?.slug ?? undefined,
@@ -247,6 +265,8 @@ function toMyCard(row: UserCardJoined): MyCard {
     isPatch: variant?.has_memorabilia ?? undefined,
 
     comps: row.comps ?? [],
+
+    quantity: row.quantity,
 
     imagePath: row.image_path,
     imageShared: row.image_shared,

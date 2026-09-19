@@ -5,6 +5,23 @@ import { type MyCard, type MyCardInput, listMyCards, createMyCard, deleteMyCards
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageMap, loadThumbnailMap, replaceImageMap, replaceThumbnailMap } from "@/lib/imageStore";
 import { startTrace, captureError } from "@/lib/sentry";
+import type { CardComp, CardCondition, CardStatus, GradingStatus } from "@/lib/types";
+import { listLocations, type LocationRow } from "@/lib/repositories/locations";
+import {
+  listValueSnapshotsForUserCards,
+  type ValueSnapshotRow,
+} from "@/lib/repositories/valueSnapshots";
+import {
+  listManualEvidenceOverrideHistoryForUserCards,
+  type ManualEvidenceOverrideRow,
+} from "@/lib/repositories/manualEvidenceOverrides";
+import {
+  listCardMediaForUserCards,
+  type CardMedia,
+  type CardMediaSide,
+  type CardMediaProcessingStatus,
+  type JsonValue,
+} from "@/lib/repositories/cardMedia";
 
 // The exact shape TheBinder has shipped and exported as "version: 1" since
 // the original Backup feature -- renamed from the old generic
@@ -19,6 +36,266 @@ type BackupV1Payload = {
   images: Record<string, string>;
   thumbnails?: Record<string, string>;
 };
+
+// ---------------------------------------------------------------------------
+// Backup V2 format types (Backup V2 architecture audit, Phase 2: metadata
+// export). Every field was reconciled against current source-of-truth
+// types (MyCard in myCards.ts, CardMedia in repositories/cardMedia.ts,
+// ValueSnapshotRow in valueSnapshots.ts, ManualEvidenceOverrideRow in
+// manualEvidenceOverrides.ts, LocationRow in locations.ts) -- see
+// toBackupV2Card/toBackupV2Media/toBackupV2ValueSnapshot/
+// toBackupV2ManualEvidenceOverride/toBackupV2Location below for the exact
+// mapping each field comes from.
+//
+// `version` identifies the V2 schema generation; `backupMode` identifies
+// whether THIS backup is metadata-only or a complete, photo-inclusive
+// one -- resolving the exact ambiguity a version-number-only scheme would
+// have created once a full, photo-inclusive exporter also exists and also
+// says "version: 2" (see BackupV2Manifest.backupMode below). card_media
+// ROWS are collection metadata in their own right (OCR/Vision results,
+// slab status, processing state) even though the underlying Storage image
+// bytes remain out of scope for "metadata" mode -- see BackupV2Media's own
+// comment for exactly what is and isn't included.
+// ---------------------------------------------------------------------------
+
+type BackupV2Manifest = {
+  version: 2;
+  // "metadata": cards + card_media rows (no image bytes) + value
+  // snapshots + manual evidence override history + locations -- exactly
+  // what this phase's exporter produces, always. "full" (photo-inclusive,
+  // archive-based) is not implemented anywhere in this codebase yet --
+  // nothing in this phase ever emits it.
+  backupMode: "metadata" | "full";
+  exportedAt: string;
+  // Informational only -- NEVER authorization. A future V2 restore's real
+  // ownership boundary is always the importing session's own
+  // authenticated profile; this field exists only so a confirmation UI
+  // can flag a cross-account restore to the user, never to grant access
+  // to anything this field merely claims.
+  profileId: string;
+
+  cards: BackupV2Card[];
+  media: BackupV2Media[];
+  valueSnapshots: BackupV2ValueSnapshot[];
+  manualEvidenceOverrides: BackupV2ManualEvidenceOverride[];
+  locations: BackupV2Location[];
+};
+
+// Deliberately NOT `MyCard` itself: MyCard also carries derived/read-only
+// fields (players, setId, setSlug, hasPersistedImage, image path fields)
+// that don't belong in a portable backup record the way this
+// card-identity shape needs them named, and this type's `id` is
+// documented as PRESERVED on a future restore (design audit's UUID
+// strategy recommendation) rather than the server-generated id MyCard.id
+// merely happens to describe today.
+type BackupV2Card = {
+  // Original user_cards.id -- preserved (not remapped) on a future restore.
+  id: string;
+
+  // Stable catalog identity first; free-text fallback fields always
+  // included too, mirroring MyCardInput's own existing fallback-
+  // resolution fields (see resolveCatalogIdsWithStages).
+  catalogCardId?: number;
+  catalogVariantId?: number;
+  playerName: string;
+  year?: string;
+  setName: string;
+  cardNumber?: string;
+  insert?: string;
+  parallel?: string;
+  variation?: string;
+  serialNumber?: number;
+  serialTotal?: number;
+  isRookie?: boolean;
+  isAutograph?: boolean;
+  isPatch?: boolean;
+
+  team?: string;
+  locationName?: string;
+
+  gradingStatus: GradingStatus;
+  condition?: CardCondition;
+  grader?: string;
+  grade?: string;
+  certNumber?: string;
+
+  status: CardStatus;
+
+  purchasePrice?: number;
+  purchaseDate?: string;
+  estimatedValue?: number;
+  askingPrice?: number;
+  soldPrice?: number;
+  soldDate?: string;
+  soldFees?: number;
+  soldNotes?: string;
+
+  quantity: number;
+  notes?: string;
+  comps?: CardComp[];
+
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+// Mirrors CardMedia (repositories/cardMedia.ts). `id` is not preserved --
+// nothing else references a card_media row by its own id.
+//
+// STORAGE PATH RULE: originalPath/processedPath/thumbnailPath are
+// deliberately NOT represented anywhere in this type. Those are live
+// Supabase Storage destinations (see cardMediaStorage.ts's
+// buildCardMediaObjectPath), not portable backup content -- exporting
+// them as restorable identity would let a future restore treat a stale
+// path string as if it still points at real, present bytes. This
+// metadata-only manifest preserves the FACT that a card_media row exists
+// for (userCardId, side) and its meaningful non-path metadata, without
+// implying image bytes are contained (there is no archivePath at all in
+// backupMode: "metadata" -- see the manifest's own comment). No image
+// bytes are read or downloaded to produce this type.
+//
+// mediaType is also excluded: the column is a checked, currently
+// single-valued field (`media_type in ('image')`, always "image" today),
+// so it carries no information a metadata export needs to preserve.
+type BackupV2Media = {
+  userCardId: string;
+  side: CardMediaSide;
+  isSlabbed: boolean;
+
+  ocrOutput?: JsonValue | null;
+  visionOutput?: JsonValue | null;
+  catalogMatchVariantId?: number;
+  confidenceScore?: number;
+  imageContentHash?: string;
+  processingStatus: CardMediaProcessingStatus;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Mirrors ValueSnapshotRow (repositories/valueSnapshots.ts). `id` is not
+// preserved -- a pure append-only history row nothing else references by
+// id.
+type BackupV2ValueSnapshot = {
+  userCardId: string;
+  marketValue: number;
+  source?: string;
+  recordedAt: string;
+  createdAt: string;
+};
+
+// Mirrors ManualEvidenceOverrideRow (repositories/manualEvidenceOverrides.ts).
+// Full history (not just the currently-active row) is included, per the
+// design audit's recommendation -- supersededAt: null marks the active
+// row for a given (userCardId, fieldName). `id` is not preserved.
+// fieldName is typed as `string`, not the narrower EvidenceFieldName
+// union, because the export read (listManualEvidenceOverrideHistoryForUserCards)
+// deliberately returns raw, unvalidated rows for backup fidelity -- see
+// that function's own comment.
+type BackupV2ManualEvidenceOverride = {
+  userCardId: string;
+  fieldName: string;
+  value: unknown;
+  explanation: string;
+  createdAt: string;
+  supersededAt: string | null;
+};
+
+// Mirrors LocationRow (repositories/locations.ts) -- explicit entities,
+// not only inferred from card references, so an empty location or its
+// description survives a restore. `id`/`profileId`/timestamps are not
+// preserved -- a restore re-resolves locations by name via the existing
+// findOrCreateLocation idiom, exactly as V1 already does.
+type BackupV2Location = {
+  name: string;
+  description?: string;
+};
+
+function toBackupV2Card(c: MyCard): BackupV2Card {
+  return {
+    id: c.id,
+    catalogCardId: c.catalogCardId,
+    catalogVariantId: c.catalogVariantId,
+    playerName: c.playerName,
+    year: c.year || undefined,
+    setName: c.setName,
+    cardNumber: c.cardNumber,
+    insert: c.insert,
+    parallel: c.parallel,
+    variation: c.variation,
+    serialNumber: c.serialNumber,
+    serialTotal: c.serialTotal,
+    isRookie: c.isRookie,
+    isAutograph: c.isAutograph,
+    isPatch: c.isPatch,
+    team: c.team,
+    locationName: c.location,
+    gradingStatus: c.gradingStatus,
+    condition: c.condition,
+    grader: c.grader,
+    grade: c.grade,
+    certNumber: c.certNumber,
+    status: c.status,
+    purchasePrice: c.purchasePrice,
+    purchaseDate: c.purchaseDate,
+    estimatedValue: c.estimatedValue,
+    askingPrice: c.askingPrice,
+    soldPrice: c.soldPrice,
+    soldDate: c.soldDate,
+    soldFees: c.soldFees,
+    soldNotes: c.soldNotes,
+    quantity: c.quantity,
+    notes: c.notes,
+    comps: c.comps,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+  };
+}
+
+function toBackupV2Media(row: CardMedia): BackupV2Media {
+  return {
+    userCardId: row.userCardId,
+    side: row.side,
+    isSlabbed: row.isSlabbed,
+    ocrOutput: row.ocrOutput,
+    visionOutput: row.visionOutput,
+    catalogMatchVariantId: row.catalogMatchId ?? undefined,
+    confidenceScore: row.confidenceScore ?? undefined,
+    imageContentHash: row.imageContentHash ?? undefined,
+    processingStatus: row.processingStatus,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function toBackupV2ValueSnapshot(row: ValueSnapshotRow): BackupV2ValueSnapshot {
+  return {
+    userCardId: row.user_card_id,
+    marketValue: row.market_value,
+    source: row.source ?? undefined,
+    recordedAt: row.recorded_at,
+    createdAt: row.created_at,
+  };
+}
+
+function toBackupV2ManualEvidenceOverride(
+  row: ManualEvidenceOverrideRow,
+): BackupV2ManualEvidenceOverride {
+  return {
+    userCardId: row.userCardId,
+    fieldName: row.fieldName,
+    value: row.value,
+    explanation: row.explanation,
+    createdAt: row.createdAt,
+    supersededAt: row.supersededAt,
+  };
+}
+
+function toBackupV2Location(row: LocationRow): BackupV2Location {
+  return {
+    name: row.name,
+    description: row.description ?? undefined,
+  };
+}
 
 // Version dispatch must run BEFORE any format-specific structural
 // validation (see handleFileSelected) -- deliberately does NOT infer V1
@@ -86,6 +363,10 @@ export default function BackupPage() {
   const [importing, setImporting] = useState(false);
   const [cards, setCards] = useState<MyCard[]>([]);
   const [loading, setLoading] = useState(true);
+  // Backup V2 metadata export: separate loading flag from `importing` --
+  // this is a read-only export, not the mutating import path, and must
+  // never gate/disable the Import JSON control or vice versa.
+  const [exportingV2, setExportingV2] = useState(false);
   // Backup Import safety: a non-null value means a file was selected and
   // passed validation, and the confirmation modal is showing -- see
   // handleFileSelected/confirmImport/cancelImport below. Nothing in
@@ -148,6 +429,67 @@ export default function BackupPage() {
     };
     downloadJson(`thebinder-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
     setNotice("Backup exported.");
+  }
+
+  // Backup V2 metadata export (Phase 2): a separate, clearly-labeled
+  // action from V1's "Export JSON" above -- does not touch or replace it.
+  // Loads all five datasets (cards, card_media metadata, value snapshots,
+  // manual evidence override history, locations), all read-only/RLS-
+  // scoped, then maps them into a BackupV2Manifest tagged
+  // backupMode: "metadata" and downloads it. Deliberately all-or-error:
+  // if any dataset fails to load, the catch below runs and downloadJson
+  // is never called -- no partially-populated V2 file is ever produced.
+  // Contains no image-byte handling of any kind -- card_media ROWS are
+  // included (OCR/Vision results, slab status, processing state), but no
+  // Storage path, signed URL, download, or upload of any kind occurs
+  // anywhere in this function (see BackupV2Media's own comment for the
+  // Storage Path Rule this deliberately follows).
+  async function handleExportV2Metadata() {
+    setError("");
+    setNotice("");
+    setExportingV2(true);
+
+    try {
+      const profileId = await requireProfileId();
+      const endTrace = startTrace("export-backup-v2-metadata");
+
+      const cardRows = await listMyCards(profileId);
+      const userCardIds = cardRows.map((c) => c.id);
+
+      const [mediaRows, locationRows, valueSnapshotRows, overrideRows] = await Promise.all([
+        listCardMediaForUserCards(userCardIds),
+        listLocations(profileId),
+        listValueSnapshotsForUserCards(userCardIds),
+        listManualEvidenceOverrideHistoryForUserCards(userCardIds),
+      ]);
+
+      if (endTrace) endTrace();
+
+      const manifest: BackupV2Manifest = {
+        version: 2,
+        backupMode: "metadata",
+        exportedAt: new Date().toISOString(),
+        profileId,
+        cards: cardRows.map(toBackupV2Card),
+        media: mediaRows.map(toBackupV2Media),
+        valueSnapshots: valueSnapshotRows.map(toBackupV2ValueSnapshot),
+        manualEvidenceOverrides: overrideRows.map(toBackupV2ManualEvidenceOverride),
+        locations: locationRows.map(toBackupV2Location),
+      };
+
+      downloadJson(
+        `thebinder-backup-v2-metadata-${new Date().toISOString().slice(0, 10)}.json`,
+        manifest,
+      );
+      setNotice(
+        `V2 metadata exported: ${manifest.cards.length} cards, ${manifest.media.length} media rows, ${manifest.valueSnapshots.length} value snapshots, ${manifest.manualEvidenceOverrides.length} manual overrides, ${manifest.locations.length} locations.`,
+      );
+    } catch (err) {
+      captureError(err, { area: "backup-export-v2-metadata" });
+      setError((err as Error).message || "Failed to export V2 metadata.");
+    } finally {
+      setExportingV2(false);
+    }
   }
 
   // Backup Import safety: runs on every file selection. Reads + parses the
@@ -333,6 +675,19 @@ export default function BackupPage() {
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" onClick={handleExport} className="btn-secondary">
             Export JSON
+          </button>
+          {/* Backup V2 metadata export (Phase 2): temporary development/
+              product scaffolding so the V2 format can be inspected/tested
+              independently of V1 -- does not replace or change "Export
+              JSON" above. Same .btn-secondary classification as V1 Export
+              (read-only, optional/utility action). */}
+          <button
+            type="button"
+            onClick={handleExportV2Metadata}
+            disabled={exportingV2}
+            className="btn-secondary"
+          >
+            {exportingV2 ? "Exporting…" : "Export V2 Metadata"}
           </button>
           <label className="btn-normal inline-flex cursor-pointer items-center gap-2">
             <span>{importing ? "Importing…" : "Import JSON"}</span>

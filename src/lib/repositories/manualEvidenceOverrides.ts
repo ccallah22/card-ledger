@@ -199,6 +199,44 @@ export async function listManualEvidenceOverrides(userCardId: string): Promise<M
 }
 
 /**
+ * Backup V2 metadata export: bulk, FULL-HISTORY counterpart to
+ * listManualEvidenceOverrides -- deliberately a separate function rather
+ * than a parameter added to that one, because the two have genuinely
+ * different contracts. listManualEvidenceOverrides exists for the live
+ * Add/Edit evidence UI: active-only (`superseded_at is null`), and it
+ * drops any row that fails parseManualEvidenceOverrideRow's validation
+ * (unknown field_name, wrong-shaped value, oversized explanation,
+ * unparseable timestamp) so a single malformed row can never crash that
+ * UI. This function is for backup fidelity instead: every row (active AND
+ * superseded, per the Backup V2 design audit's "preserve full history"
+ * recommendation), returned as raw mapped rows with NO content
+ * validation/filtering -- a backup should preserve exactly what is
+ * stored, not silently drop a row a future schema change might make this
+ * validator reject. Ownership stays RLS-enforced exactly as
+ * listManualEvidenceOverrides already is (indirect via user_cards.profile_id
+ * = auth.uid()); the caller is still expected to pass only ids it already
+ * knows belong to the current profile, matching the existing bulk pattern
+ * in repositories/cardMedia.ts. Does not affect
+ * listManualEvidenceOverrides or Add/Edit's active-only behavior at all.
+ */
+export async function listManualEvidenceOverrideHistoryForUserCards(
+  userCardIds: string[],
+): Promise<ManualEvidenceOverrideRow[]> {
+  if (userCardIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("manual_evidence_overrides")
+    .select("id, user_card_id, field_name, value, explanation, created_at, superseded_at")
+    .in("user_card_id", userCardIds)
+    .order("user_card_id", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  return ((data ?? []) as ManualEvidenceOverrideDbRow[]).map(mapManualEvidenceOverrideRow);
+}
+
+/**
  * Sets the active override for one field, preserving history: the
  * previous active row (if any) is marked superseded and a new active row
  * is created, both in one transaction -- see

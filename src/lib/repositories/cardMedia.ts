@@ -289,6 +289,41 @@ export async function listCardMediaForUserCardsBySide(
   return ((data ?? []) as CardMediaRow[]).map(mapCardMediaRow);
 }
 
+/**
+ * Backup V2 metadata export: bulk, ALL-sides counterpart to
+ * listCardMediaForUserCard -- one query for every card_media row across an
+ * entire collection, instead of one request per card (and unlike
+ * listCardMediaForUserCardsBySide, not restricted to a single side, since
+ * a metadata export needs every row a card has). Same RLS scoping as
+ * every other read in this file (card_media's own policies only ever
+ * return rows whose user_card_id maps to a user_cards row owned by the
+ * caller -- see 202607100002_vision_engine_v2_card_media.sql); the caller
+ * is still expected to pass only ids it already knows belong to the
+ * current profile, matching this file's existing bulk pattern.
+ */
+export async function listCardMediaForUserCards(userCardIds: string[]): Promise<CardMedia[]> {
+  if (userCardIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("card_media")
+    .select("*")
+    .in("user_card_id", userCardIds);
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as CardMediaRow[];
+
+  return rows
+    .slice()
+    .sort(
+      (a, b) =>
+        a.user_card_id.localeCompare(b.user_card_id) ||
+        SIDE_SORT_ORDER[a.side] - SIDE_SORT_ORDER[b.side] ||
+        a.created_at.localeCompare(b.created_at),
+    )
+    .map(mapCardMediaRow);
+}
+
 export async function createCardMedia(input: CreateCardMediaInput): Promise<CardMedia> {
   const { data, error } = await supabase
     .from("card_media")
