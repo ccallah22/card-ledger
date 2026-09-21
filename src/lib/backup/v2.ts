@@ -721,19 +721,43 @@ export function validateBackupV2Manifest(
     }
   }
 
+  // Phase 4A audit finding: locations.name is unique per profile at the DB
+  // level (locations_profile_id_name_key, 202607050001_user_collections.sql)
+  // but that constraint is case-SENSITIVE, while both this file's own
+  // card->location matching just below and the real findLocationByName
+  // (locations.ts) resolve by name case-INSENSITIVELY (`.trim().toLowerCase()`
+  // / `.ilike`). Without this check, a manifest containing e.g. "Binder A"
+  // and "binder a" would pass per-row validation (each is independently a
+  // valid BackupV2Location) but be genuinely ambiguous for any restore that
+  // resolves locationName the same way the rest of this file already does --
+  // silently picking whichever the resolver happens to match first. Rejected
+  // outright here, not deduplicated, since deduplication would mean silently
+  // discarding one of the two entities (and their possibly-different
+  // `description`) without the user ever choosing which survives.
+  const seenLocationNames = new Map<string, number>();
   for (let i = 0; i < parsed.locations.length; i++) {
     const err = validateBackupV2Location(parsed.locations[i], i);
     if (err) return fail(err);
+
+    const row = parsed.locations[i] as BackupV2Location;
+    const normalized = row.name.trim().toLowerCase();
+    const firstIndex = seenLocationNames.get(normalized);
+    if (firstIndex !== undefined) {
+      return fail(
+        `locations[${i}].name ("${row.name}") duplicates locations[${firstIndex}].name ("${(parsed.locations[firstIndex] as BackupV2Location).name}") case-insensitively. Location names must be unique regardless of case.`,
+      );
+    }
+    seenLocationNames.set(normalized, i);
   }
 
   // Location relationship check: a card's locationName must match a real
   // location entity in this same manifest. Matched case-insensitively,
   // mirroring findLocationByName's existing `.ilike("name", name)`
   // semantics (locations.ts) -- the same lookup a future restore would
-  // use to resolve locationName back to a row.
-  const locationNames = new Set(
-    (parsed.locations as BackupV2Location[]).map((l) => l.name.trim().toLowerCase()),
-  );
+  // use to resolve locationName back to a row. Safe to build directly from
+  // `seenLocationNames`' keys now that the loop above guarantees no two
+  // locations normalize to the same key.
+  const locationNames = new Set(seenLocationNames.keys());
   for (let i = 0; i < parsed.cards.length; i++) {
     const card = parsed.cards[i] as BackupV2Card;
     const name = card.locationName?.trim();
