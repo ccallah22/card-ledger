@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type MyCard, type MyCardInput, listMyCards, createMyCard, deleteMyCards } from "@/lib/repositories/myCards";
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageMap, loadThumbnailMap, replaceImageMap, replaceThumbnailMap } from "@/lib/imageStore";
@@ -24,6 +24,14 @@ import {
   type BackupV2Manifest,
   type BackupV2DryRun,
 } from "@/lib/backup/v2";
+// Backup V2 Phase 4C1/4E: the read-only restore preflight (unmodified in
+// this phase -- see restorePreflight.ts's own header comment for why it
+// must stay provably read-only) and the restore execution boundary (the
+// pure payload-builder plus the one function that actually calls
+// restore_backup_v2). Kept as two separate imports from two separate
+// modules deliberately, mirroring that same read-only/mutating split.
+import { runBackupV2RestorePreflight, type BackupV2RestorePreflight } from "@/lib/backup/restorePreflight";
+import { buildBackupV2RestorePayload, executeBackupV2Restore } from "@/lib/backup/restoreExecute";
 
 // The exact shape TheBinder has shipped and exported as "version: 1" since
 // the original Backup feature -- renamed from the old generic
@@ -123,6 +131,31 @@ export default function BackupPage() {
   // restore action anywhere that reads this state; it exists purely for
   // display, and closing it never mutates anything.
   const [v2DryRun, setV2DryRun] = useState<BackupV2DryRun | null>(null);
+  // Backup V2 restore (Phase 4E): null until the user explicitly triggers
+  // "Check if this backup can be restored" (see handleRunV2Preflight) --
+  // never run automatically just because a valid V2 file was selected.
+  // Belongs to whichever manifest is currently in v2DryRun; both handlers
+  // that replace/clear v2DryRun (handleFileSelected, closeV2DryRun) also
+  // clear this, so a preflight result can never be shown against a
+  // different file than the one it was actually run for.
+  const [v2Preflight, setV2Preflight] = useState<BackupV2RestorePreflight | null>(null);
+  const [runningV2Preflight, setRunningV2Preflight] = useState(false);
+  // Backup V2 restore (Phase 4E safety fix): a monotonically increasing
+  // generation token identifying "which V2 backup is currently active."
+  // handleRunV2Preflight captures the current value before starting its
+  // async preflight call and checks it again once that call resolves --
+  // if a NEW file was selected or the V2 flow was closed/reset in the
+  // meantime, this ref has already advanced, and the (now stale) result or
+  // error is discarded instead of being applied. A ref, not state: bumping
+  // it must never itself trigger a re-render, and reading it must always
+  // see the value as of the moment it's checked (not a stale render-time
+  // closure) -- exactly the property a ref (not useState) guarantees.
+  const v2GenerationRef = useRef(0);
+  // Backup V2 restore (Phase 4E): the one in-flight flag guarding the
+  // actual destructive restore_backup_v2 call -- same role as `importing`
+  // does for V1's confirmImport, kept as its own separate flag since V1
+  // import and V2 restore are mutually exclusive but not the same action.
+  const [restoringV2, setRestoringV2] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -269,6 +302,14 @@ export default function BackupPage() {
     setNotice("");
     setPendingImport(null);
     setV2DryRun(null);
+    setV2Preflight(null);
+    setRunningV2Preflight(false);
+    // Invalidates any preflight still in flight for whatever V2 backup was
+    // previously active -- see v2GenerationRef's own comment. Bumped
+    // unconditionally on every file selection (even a V1 file, or one that
+    // fails validation entirely), since any of those cases means the
+    // previously-active V2 backup, if any, is no longer the active one.
+    v2GenerationRef.current += 1;
 
     let parsed: unknown;
     try {
@@ -349,12 +390,117 @@ export default function BackupPage() {
     setPendingImport(null);
   }
 
-  // Backup V2 import validation (Phase 3): closes the read-only dry-run
-  // panel. No guard is needed the way cancelImport needs one against
-  // `importing` -- nothing about the V2 dry-run path ever sets that flag
-  // or performs any mutation this could race with.
+  // Backup V2 import validation (Phase 3) / restore (Phase 4E): closes the
+  // V2 panel, clearing both the dry-run preview and whatever preflight
+  // result belongs to it. Guarded against firing while a restore is
+  // actually in flight (restoringV2) -- same reasoning as cancelImport's
+  // guard against `importing` -- so a backdrop click or the Close button
+  // can't tear down the panel while restore_backup_v2 is mid-call. Running
+  // preflight (runningV2Preflight) is still read-only and safe to close
+  // over; only the destructive restore call itself blocks closing.
   function closeV2DryRun() {
+    if (restoringV2) return;
     setV2DryRun(null);
+    setV2Preflight(null);
+    setRunningV2Preflight(false);
+    // Same invalidation as handleFileSelected's -- closing the V2 flow
+    // means any preflight still in flight for the backup that was just
+    // closed must never be allowed to reopen/repopulate this state once it
+    // resolves (see v2GenerationRef's own comment and handleRunV2Preflight).
+    v2GenerationRef.current += 1;
+  }
+
+  // Backup V2 restore (Phase 4E): user-triggered, read-only. Runs
+  // runBackupV2RestorePreflight (unmodified) against the already-validated
+  // manifest already sitting in v2DryRun -- never against raw/unvalidated
+  // JSON, since v2DryRun can only exist once validateBackupV2Manifest has
+  // already fully passed it (see handleFileSelected). Guarded against
+  // firing with no dry-run present or while an earlier preflight run is
+  // still in flight, mirroring the same double-submission guard shape used
+  // throughout this file (cancelImport vs `importing`, confirmImport vs
+  // `importing`). Performs no database WRITE of any kind -- every function
+  // runBackupV2RestorePreflight can call is read-only by construction (see
+  // restorePreflight.ts's own BackupV2RestorePreflightDeps interface).
+  async function handleRunV2Preflight() {
+    if (!v2DryRun || runningV2Preflight) return;
+    setError("");
+    setNotice("");
+    setRunningV2Preflight(true);
+    // Captured before the async call starts -- see v2GenerationRef's own
+    // comment. If handleFileSelected or closeV2DryRun bumps the ref while
+    // this call is in flight (a new file selected, or the flow closed),
+    // `generation` below stays frozen at its old value while
+    // v2GenerationRef.current moves on, so every check against it after
+    // the await correctly detects "this result is now stale."
+    const generation = v2GenerationRef.current;
+
+    try {
+      const result = await runBackupV2RestorePreflight(v2DryRun.manifest);
+      if (v2GenerationRef.current !== generation) return; // stale -- a newer backup is now active; discard silently
+      setV2Preflight(result);
+    } catch (err) {
+      if (v2GenerationRef.current !== generation) return; // stale -- never surface an old backup's failure against a newer one
+      captureError(err, { area: "backup-restore-v2-preflight" });
+      setError((err as Error).message || "Failed to check whether this backup can be restored.");
+    } finally {
+      // Only clear the in-flight flag if it's still ours to clear -- a
+      // newer file selection or close already reset it to false itself
+      // (see handleFileSelected/closeV2DryRun), and a stale finally here
+      // must never clobber a LATER, still-genuinely-running preflight's
+      // own in-flight state.
+      if (v2GenerationRef.current === generation) {
+        setRunningV2Preflight(false);
+      }
+    }
+  }
+
+  // Backup V2 restore (Phase 4E): the ONLY place that calls
+  // restore_backup_v2 -- the sole mutation boundary for a V2 restore. Never
+  // writes user_cards/locations/card_media/card_value_snapshots/
+  // manual_evidence_overrides directly, never touches Storage, never touches
+  // the legacy localStorage image maps (imageStore) -- this is a
+  // metadata-only restore, and none of those are part of its contract.
+  //
+  // Requires a validated manifest (v2DryRun), a completed preflight result
+  // whose canProceed is true, and that no restore is already in flight --
+  // restore is all-or-nothing (a card with a blocking error can never be
+  // silently skipped; canProceed is only true once every card resolved),
+  // matching the locked product decision.
+  //
+  // On success: clears the whole V2 panel (dry-run + preflight) and
+  // reloads this profile's own card list via the exact same
+  // listMyCards(profileId) call the initial page load already uses -- no
+  // full browser reload. On failure: the RPC's own atomicity guarantees
+  // zero DB change, so the dry-run and preflight state are deliberately
+  // PRESERVED (not cleared) -- the user can inspect the error and retry
+  // immediately without re-selecting the file or re-running preflight.
+  async function handleRestoreV2() {
+    if (!v2DryRun || !v2Preflight || !v2Preflight.canProceed || restoringV2) return;
+    setError("");
+    setNotice("");
+    setRestoringV2(true);
+
+    try {
+      const endTrace = startTrace("restore-backup-v2");
+      const payload = buildBackupV2RestorePayload(v2DryRun.manifest, v2Preflight);
+      const result = await executeBackupV2Restore(payload);
+      if (endTrace) endTrace();
+
+      const profileId = await requireProfileId();
+      const refreshed = await listMyCards(profileId);
+      setCards(refreshed);
+
+      setV2DryRun(null);
+      setV2Preflight(null);
+      setNotice(
+        `Backup restored: ${result.restoredCards} cards, ${result.restoredLocations} locations, ${result.restoredMedia} media rows, ${result.restoredValueSnapshots} value snapshots, ${result.restoredManualEvidenceOverrides} manual overrides.`,
+      );
+    } catch (err) {
+      captureError(err, { area: "backup-restore-v2" });
+      setError((err as Error).message || "Failed to restore backup. Your existing collection was not changed.");
+    } finally {
+      setRestoringV2(false);
+    }
   }
 
   // Backup Import safety: this is the ONLY place that mutates the
@@ -562,16 +708,21 @@ export default function BackupPage() {
         </div>
       ) : null}
 
-      {/* Backup V2 import validation (Phase 3): read-only dry-run
-          inspection panel, rendered only once a selected V2 file has
-          passed validateBackupV2Manifest's full structural + relational
-          validation. Deliberately has no restore/import/replace action --
-          only Close -- since V2 restore does not exist yet; this exists
-          purely so a user can confirm what a V2 backup contains before
-          that capability ships. Closing (or a backdrop click, same
-          handler) never mutates anything. Mutually exclusive with the V1
-          modal above by construction -- handleFileSelected always clears
-          both pendingImport and v2DryRun before setting either one. */}
+      {/* Backup V2 import validation (Phase 3) + restore (Phase 4E):
+          rendered only once a selected V2 file has passed
+          validateBackupV2Manifest's full structural + relational
+          validation. The dry-run summary (counts/warnings) is always
+          read-only display. Below that, three mutually exclusive states:
+          (1) v2Preflight is null -- only a "Check if this backup can be
+          restored" button, itself still fully read-only; (2) preflight ran
+          and canProceed is false -- blocking errors are listed and NO
+          restore action is rendered at all (not merely disabled); (3)
+          preflight ran and canProceed is true -- warnings (if any), the
+          destructive REPLACE confirmation copy, and the one "Replace and
+          Restore" button that actually calls restore_backup_v2 (via
+          handleRestoreV2). Mutually exclusive with the V1 modal above by
+          construction -- handleFileSelected always clears pendingImport,
+          v2DryRun, AND v2Preflight before setting any of them. */}
       {v2DryRun ? (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4"
@@ -629,16 +780,115 @@ export default function BackupPage() {
               </div>
             ) : null}
 
-            <div className="mt-3 text-xs text-zinc-500">
-              This is a preview only. Backup V2 restore is not available yet -- nothing has
-              been changed.
-            </div>
+            {/* State 1: no preflight run yet -- still purely read-only. */}
+            {!v2Preflight ? (
+              <>
+                <div className="mt-3 text-xs text-zinc-500">
+                  Validating this file never changes anything. Checking below is also
+                  read-only -- it looks up your catalog data but does not restore
+                  anything yet.
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button type="button" onClick={closeV2DryRun} className="btn-secondary">
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRunV2Preflight}
+                    disabled={runningV2Preflight}
+                    className="btn-normal"
+                  >
+                    {runningV2Preflight ? "Checking…" : "Check if this backup can be restored"}
+                  </button>
+                </div>
+              </>
+            ) : null}
 
-            <div className="mt-4 flex justify-end">
-              <button type="button" onClick={closeV2DryRun} className="btn-secondary">
-                Close
-              </button>
-            </div>
+            {/* State 2: preflight ran, blocking errors exist -- no restore
+                action is rendered at all, not merely disabled. Restore
+                stays all-or-nothing; no blocked card is ever silently
+                skipped. */}
+            {v2Preflight && !v2Preflight.canProceed ? (
+              <>
+                <div className="mt-3 text-sm font-medium text-red-800">
+                  This backup cannot be restored yet.
+                </div>
+                <div className="mt-1 text-xs text-zinc-600">
+                  {v2Preflight.blockingErrors.length} card
+                  {v2Preflight.blockingErrors.length === 1 ? "" : "s"} could not be matched
+                  against your catalog data:
+                </div>
+                <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                  {v2Preflight.blockingErrors.map((blockingError, i) => (
+                    <div
+                      key={i}
+                      className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-900"
+                    >
+                      <span className="font-medium">{blockingError.cardLabel}:</span>{" "}
+                      {blockingError.message}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button type="button" onClick={closeV2DryRun} className="btn-secondary">
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {/* State 3: preflight ran, canProceed -- warnings, the
+                destructive REPLACE confirmation, and the sole restore
+                action. */}
+            {v2Preflight && v2Preflight.canProceed ? (
+              <>
+                {v2Preflight.warnings.length > 0 ? (
+                  <div className="mt-3 space-y-1">
+                    {v2Preflight.warnings.map((warning, i) => (
+                      <div
+                        key={i}
+                        className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900"
+                      >
+                        <span className="font-medium">{warning.cardLabel}:</span>{" "}
+                        {warning.message}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                  This will <span className="font-semibold">replace your entire current
+                  collection</span> with this backup&apos;s contents. This cannot be undone.
+                  This is a metadata-only backup -- it does not contain card photos; you
+                  will need to re-add card images after restoring.
+                  {v2DryRun.manifest.cards.length === 0 ? (
+                    <div className="mt-2 font-semibold">
+                      This backup contains zero cards. Restoring it will completely empty
+                      your collection.
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeV2DryRun}
+                    disabled={restoringV2}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRestoreV2}
+                    disabled={restoringV2}
+                    className="btn-destructive"
+                  >
+                    {restoringV2 ? "Restoring…" : "Replace and Restore"}
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
