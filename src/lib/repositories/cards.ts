@@ -630,6 +630,36 @@ export async function findCardBySetAndNumber(
   return data as CardRow | null;
 }
 
+/**
+ * Backup V2 restore preflight (Phase 4C1): sibling to findCardBySetAndNumber
+ * above, returning every matching row instead of assuming/enforcing at most
+ * one. Needed because (set_id, card_number) is no longer guaranteed unique
+ * -- the old cards_set_id_card_number_key constraint was dropped in
+ * 202607100001_catalog_v2_drop_old_cards_constraint.sql specifically because
+ * Catalog v2 legitimately allows different checklist sections within the
+ * same set to reuse the same card_number. findCardBySetAndNumber's
+ * `.maybeSingle()` would throw a generic postgrest-js error in that case;
+ * restore preflight needs to detect and explain that ambiguity itself
+ * (surfacing it as a specific blocking reason) rather than let an unrelated
+ * query error propagate. Purely additive -- does not change
+ * findCardBySetAndNumber's existing behavior or callers.
+ */
+export async function listCardsBySetAndNumber(
+  setId: number,
+  cardNumber: string,
+  client: SupabaseClient = supabase,
+): Promise<CardRow[]> {
+  const { data, error } = await client
+    .from("cards")
+    .select("*")
+    .eq("set_id", setId)
+    .eq("card_number", cardNumber);
+
+  if (error) throw error;
+
+  return (data ?? []) as CardRow[];
+}
+
 export type CreateCardInput = {
   set_id: number;
   card_number: string;
