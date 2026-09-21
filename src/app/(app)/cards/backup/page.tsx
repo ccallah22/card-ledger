@@ -5,23 +5,25 @@ import { type MyCard, type MyCardInput, listMyCards, createMyCard, deleteMyCards
 import { getCurrentProfile } from "@/lib/repositories/profiles";
 import { loadImageMap, loadThumbnailMap, replaceImageMap, replaceThumbnailMap } from "@/lib/imageStore";
 import { startTrace, captureError } from "@/lib/sentry";
-import type { CardComp, CardCondition, CardStatus, GradingStatus } from "@/lib/types";
-import { listLocations, type LocationRow } from "@/lib/repositories/locations";
+import { listLocations } from "@/lib/repositories/locations";
+import { listValueSnapshotsForUserCards } from "@/lib/repositories/valueSnapshots";
+import { listManualEvidenceOverrideHistoryForUserCards } from "@/lib/repositories/manualEvidenceOverrides";
+import { listCardMediaForUserCards } from "@/lib/repositories/cardMedia";
+// Backup V2 Phase 3 refactor: the V2 data contract (types) and pure
+// validation/mapping logic now live in their own module -- page.tsx keeps
+// only UI, file-selection orchestration, export orchestration, and React
+// state. See src/lib/backup/v2.ts's own top comment for the exact
+// ownership boundary.
 import {
-  listValueSnapshotsForUserCards,
-  type ValueSnapshotRow,
-} from "@/lib/repositories/valueSnapshots";
-import {
-  listManualEvidenceOverrideHistoryForUserCards,
-  type ManualEvidenceOverrideRow,
-} from "@/lib/repositories/manualEvidenceOverrides";
-import {
-  listCardMediaForUserCards,
-  type CardMedia,
-  type CardMediaSide,
-  type CardMediaProcessingStatus,
-  type JsonValue,
-} from "@/lib/repositories/cardMedia";
+  validateBackupV2Manifest,
+  toBackupV2Card,
+  toBackupV2Media,
+  toBackupV2ValueSnapshot,
+  toBackupV2ManualEvidenceOverride,
+  toBackupV2Location,
+  type BackupV2Manifest,
+  type BackupV2DryRun,
+} from "@/lib/backup/v2";
 
 // The exact shape TheBinder has shipped and exported as "version: 1" since
 // the original Backup feature -- renamed from the old generic
@@ -36,266 +38,6 @@ type BackupV1Payload = {
   images: Record<string, string>;
   thumbnails?: Record<string, string>;
 };
-
-// ---------------------------------------------------------------------------
-// Backup V2 format types (Backup V2 architecture audit, Phase 2: metadata
-// export). Every field was reconciled against current source-of-truth
-// types (MyCard in myCards.ts, CardMedia in repositories/cardMedia.ts,
-// ValueSnapshotRow in valueSnapshots.ts, ManualEvidenceOverrideRow in
-// manualEvidenceOverrides.ts, LocationRow in locations.ts) -- see
-// toBackupV2Card/toBackupV2Media/toBackupV2ValueSnapshot/
-// toBackupV2ManualEvidenceOverride/toBackupV2Location below for the exact
-// mapping each field comes from.
-//
-// `version` identifies the V2 schema generation; `backupMode` identifies
-// whether THIS backup is metadata-only or a complete, photo-inclusive
-// one -- resolving the exact ambiguity a version-number-only scheme would
-// have created once a full, photo-inclusive exporter also exists and also
-// says "version: 2" (see BackupV2Manifest.backupMode below). card_media
-// ROWS are collection metadata in their own right (OCR/Vision results,
-// slab status, processing state) even though the underlying Storage image
-// bytes remain out of scope for "metadata" mode -- see BackupV2Media's own
-// comment for exactly what is and isn't included.
-// ---------------------------------------------------------------------------
-
-type BackupV2Manifest = {
-  version: 2;
-  // "metadata": cards + card_media rows (no image bytes) + value
-  // snapshots + manual evidence override history + locations -- exactly
-  // what this phase's exporter produces, always. "full" (photo-inclusive,
-  // archive-based) is not implemented anywhere in this codebase yet --
-  // nothing in this phase ever emits it.
-  backupMode: "metadata" | "full";
-  exportedAt: string;
-  // Informational only -- NEVER authorization. A future V2 restore's real
-  // ownership boundary is always the importing session's own
-  // authenticated profile; this field exists only so a confirmation UI
-  // can flag a cross-account restore to the user, never to grant access
-  // to anything this field merely claims.
-  profileId: string;
-
-  cards: BackupV2Card[];
-  media: BackupV2Media[];
-  valueSnapshots: BackupV2ValueSnapshot[];
-  manualEvidenceOverrides: BackupV2ManualEvidenceOverride[];
-  locations: BackupV2Location[];
-};
-
-// Deliberately NOT `MyCard` itself: MyCard also carries derived/read-only
-// fields (players, setId, setSlug, hasPersistedImage, image path fields)
-// that don't belong in a portable backup record the way this
-// card-identity shape needs them named, and this type's `id` is
-// documented as PRESERVED on a future restore (design audit's UUID
-// strategy recommendation) rather than the server-generated id MyCard.id
-// merely happens to describe today.
-type BackupV2Card = {
-  // Original user_cards.id -- preserved (not remapped) on a future restore.
-  id: string;
-
-  // Stable catalog identity first; free-text fallback fields always
-  // included too, mirroring MyCardInput's own existing fallback-
-  // resolution fields (see resolveCatalogIdsWithStages).
-  catalogCardId?: number;
-  catalogVariantId?: number;
-  playerName: string;
-  year?: string;
-  setName: string;
-  cardNumber?: string;
-  insert?: string;
-  parallel?: string;
-  variation?: string;
-  serialNumber?: number;
-  serialTotal?: number;
-  isRookie?: boolean;
-  isAutograph?: boolean;
-  isPatch?: boolean;
-
-  team?: string;
-  locationName?: string;
-
-  gradingStatus: GradingStatus;
-  condition?: CardCondition;
-  grader?: string;
-  grade?: string;
-  certNumber?: string;
-
-  status: CardStatus;
-
-  purchasePrice?: number;
-  purchaseDate?: string;
-  estimatedValue?: number;
-  askingPrice?: number;
-  soldPrice?: number;
-  soldDate?: string;
-  soldFees?: number;
-  soldNotes?: string;
-
-  quantity: number;
-  notes?: string;
-  comps?: CardComp[];
-
-  createdAt?: string;
-  updatedAt?: string;
-};
-
-// Mirrors CardMedia (repositories/cardMedia.ts). `id` is not preserved --
-// nothing else references a card_media row by its own id.
-//
-// STORAGE PATH RULE: originalPath/processedPath/thumbnailPath are
-// deliberately NOT represented anywhere in this type. Those are live
-// Supabase Storage destinations (see cardMediaStorage.ts's
-// buildCardMediaObjectPath), not portable backup content -- exporting
-// them as restorable identity would let a future restore treat a stale
-// path string as if it still points at real, present bytes. This
-// metadata-only manifest preserves the FACT that a card_media row exists
-// for (userCardId, side) and its meaningful non-path metadata, without
-// implying image bytes are contained (there is no archivePath at all in
-// backupMode: "metadata" -- see the manifest's own comment). No image
-// bytes are read or downloaded to produce this type.
-//
-// mediaType is also excluded: the column is a checked, currently
-// single-valued field (`media_type in ('image')`, always "image" today),
-// so it carries no information a metadata export needs to preserve.
-type BackupV2Media = {
-  userCardId: string;
-  side: CardMediaSide;
-  isSlabbed: boolean;
-
-  ocrOutput?: JsonValue | null;
-  visionOutput?: JsonValue | null;
-  catalogMatchVariantId?: number;
-  confidenceScore?: number;
-  imageContentHash?: string;
-  processingStatus: CardMediaProcessingStatus;
-
-  createdAt: string;
-  updatedAt: string;
-};
-
-// Mirrors ValueSnapshotRow (repositories/valueSnapshots.ts). `id` is not
-// preserved -- a pure append-only history row nothing else references by
-// id.
-type BackupV2ValueSnapshot = {
-  userCardId: string;
-  marketValue: number;
-  source?: string;
-  recordedAt: string;
-  createdAt: string;
-};
-
-// Mirrors ManualEvidenceOverrideRow (repositories/manualEvidenceOverrides.ts).
-// Full history (not just the currently-active row) is included, per the
-// design audit's recommendation -- supersededAt: null marks the active
-// row for a given (userCardId, fieldName). `id` is not preserved.
-// fieldName is typed as `string`, not the narrower EvidenceFieldName
-// union, because the export read (listManualEvidenceOverrideHistoryForUserCards)
-// deliberately returns raw, unvalidated rows for backup fidelity -- see
-// that function's own comment.
-type BackupV2ManualEvidenceOverride = {
-  userCardId: string;
-  fieldName: string;
-  value: unknown;
-  explanation: string;
-  createdAt: string;
-  supersededAt: string | null;
-};
-
-// Mirrors LocationRow (repositories/locations.ts) -- explicit entities,
-// not only inferred from card references, so an empty location or its
-// description survives a restore. `id`/`profileId`/timestamps are not
-// preserved -- a restore re-resolves locations by name via the existing
-// findOrCreateLocation idiom, exactly as V1 already does.
-type BackupV2Location = {
-  name: string;
-  description?: string;
-};
-
-function toBackupV2Card(c: MyCard): BackupV2Card {
-  return {
-    id: c.id,
-    catalogCardId: c.catalogCardId,
-    catalogVariantId: c.catalogVariantId,
-    playerName: c.playerName,
-    year: c.year || undefined,
-    setName: c.setName,
-    cardNumber: c.cardNumber,
-    insert: c.insert,
-    parallel: c.parallel,
-    variation: c.variation,
-    serialNumber: c.serialNumber,
-    serialTotal: c.serialTotal,
-    isRookie: c.isRookie,
-    isAutograph: c.isAutograph,
-    isPatch: c.isPatch,
-    team: c.team,
-    locationName: c.location,
-    gradingStatus: c.gradingStatus,
-    condition: c.condition,
-    grader: c.grader,
-    grade: c.grade,
-    certNumber: c.certNumber,
-    status: c.status,
-    purchasePrice: c.purchasePrice,
-    purchaseDate: c.purchaseDate,
-    estimatedValue: c.estimatedValue,
-    askingPrice: c.askingPrice,
-    soldPrice: c.soldPrice,
-    soldDate: c.soldDate,
-    soldFees: c.soldFees,
-    soldNotes: c.soldNotes,
-    quantity: c.quantity,
-    notes: c.notes,
-    comps: c.comps,
-    createdAt: c.createdAt,
-    updatedAt: c.updatedAt,
-  };
-}
-
-function toBackupV2Media(row: CardMedia): BackupV2Media {
-  return {
-    userCardId: row.userCardId,
-    side: row.side,
-    isSlabbed: row.isSlabbed,
-    ocrOutput: row.ocrOutput,
-    visionOutput: row.visionOutput,
-    catalogMatchVariantId: row.catalogMatchId ?? undefined,
-    confidenceScore: row.confidenceScore ?? undefined,
-    imageContentHash: row.imageContentHash ?? undefined,
-    processingStatus: row.processingStatus,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function toBackupV2ValueSnapshot(row: ValueSnapshotRow): BackupV2ValueSnapshot {
-  return {
-    userCardId: row.user_card_id,
-    marketValue: row.market_value,
-    source: row.source ?? undefined,
-    recordedAt: row.recorded_at,
-    createdAt: row.created_at,
-  };
-}
-
-function toBackupV2ManualEvidenceOverride(
-  row: ManualEvidenceOverrideRow,
-): BackupV2ManualEvidenceOverride {
-  return {
-    userCardId: row.userCardId,
-    fieldName: row.fieldName,
-    value: row.value,
-    explanation: row.explanation,
-    createdAt: row.createdAt,
-    supersededAt: row.supersededAt,
-  };
-}
-
-function toBackupV2Location(row: LocationRow): BackupV2Location {
-  return {
-    name: row.name,
-    description: row.description ?? undefined,
-  };
-}
 
 // Version dispatch must run BEFORE any format-specific structural
 // validation (see handleFileSelected) -- deliberately does NOT infer V1
@@ -374,6 +116,13 @@ export default function BackupPage() {
   // run from confirmImport, after the user explicitly clicks "Replace and
   // Import".
   const [pendingImport, setPendingImport] = useState<BackupV1PendingImport | null>(null);
+  // Backup V2 import validation (Phase 3): a non-null value means a
+  // selected V2 file passed full structural + relational validation
+  // (validateBackupV2Manifest) and the read-only dry-run inspection panel
+  // is showing -- see handleFileSelected/closeV2DryRun below. There is no
+  // restore action anywhere that reads this state; it exists purely for
+  // display, and closing it never mutates anything.
+  const [v2DryRun, setV2DryRun] = useState<BackupV2DryRun | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -500,15 +249,26 @@ export default function BackupPage() {
   //
   // Only a file that detects as version 1 AND passes V1's existing
   // structural check ever reaches setPendingImport (the only thing that
-  // makes the confirmation modal appear) -- a version-2 file and an
-  // unknown/missing-version file both return before that point, and
-  // neither this function nor anything it calls ever invokes
-  // deleteMyCards/createMyCard/replaceImageMap/replaceThumbnailMap. Only
-  // confirmImport (reachable solely through that modal) mutates anything.
+  // makes the V1 confirmation modal appear); only a file that detects as
+  // version 2 AND passes validateBackupV2Manifest's full structural +
+  // relational validation ever reaches setV2DryRun (the only thing that
+  // makes the V2 dry-run panel appear). An unknown/missing-version file,
+  // an invalid V1 file, and an invalid-or-unsupported-mode V2 file all
+  // return before either point. Every new selection clears BOTH pending
+  // states up front (see the two setPendingImport(null)/setV2DryRun(null)
+  // calls just below) so a stale result from a PREVIOUS file selection can
+  // never remain visible once a new file is chosen -- regardless of what
+  // the new file turns out to be. Nothing in this function or anything it
+  // calls ever invokes deleteMyCards/createMyCard/replaceImageMap/
+  // replaceThumbnailMap/any database or Storage write -- only
+  // confirmImport (reachable solely through the V1 modal, never the V2
+  // panel) mutates anything.
   async function handleFileSelected(file: File | null) {
     if (!file) return;
     setError("");
     setNotice("");
+    setPendingImport(null);
+    setV2DryRun(null);
 
     let parsed: unknown;
     try {
@@ -528,12 +288,29 @@ export default function BackupPage() {
     }
 
     if (version === 2) {
-      // Phase 1 of the Backup V2 rollout: V2 files are recognized as a
-      // valid, known format version, but V2 restore does not exist yet.
-      // Explicitly refuse to proceed rather than attempting to interpret
-      // V2 data with V1 logic (or vice versa) -- no confirmation is shown,
-      // pendingImport is never set, and nothing is mutated.
-      setError("Backup V2 files are recognized, but V2 restore is not available yet.");
+      // Backup V2 import validation (Phase 3): recognized as V2, so it's
+      // parsed + fully validated (structure, every row, every cross-
+      // reference, the card_media uniqueness rule) rather than rejected
+      // outright the way Phase 1 always did. Still performs ZERO
+      // database/Storage mutation either way -- a valid file only ever
+      // produces a read-only dry-run summary (setV2DryRun), never a
+      // restore; an invalid or unsupported-mode ("full") file only ever
+      // produces an error message (setError). requireProfileId is the
+      // one authenticated read this needs, purely for the dry run's
+      // informational sameAccount comparison.
+      try {
+        const profileId = await requireProfileId();
+        const result = validateBackupV2Manifest(parsed, profileId);
+
+        if (result.ok) {
+          setV2DryRun(result.dryRun);
+        } else {
+          setError(result.message);
+        }
+      } catch (err) {
+        captureError(err, { area: "backup-import-validate-v2" });
+        setError((err as Error).message || "Failed to validate Backup V2 file.");
+      }
       return;
     }
 
@@ -570,6 +347,14 @@ export default function BackupPage() {
   function cancelImport() {
     if (importing) return;
     setPendingImport(null);
+  }
+
+  // Backup V2 import validation (Phase 3): closes the read-only dry-run
+  // panel. No guard is needed the way cancelImport needs one against
+  // `importing` -- nothing about the V2 dry-run path ever sets that flag
+  // or performs any mutation this could race with.
+  function closeV2DryRun() {
+    setV2DryRun(null);
   }
 
   // Backup Import safety: this is the ONLY place that mutates the
@@ -771,6 +556,87 @@ export default function BackupPage() {
                 className="btn-destructive"
               >
                 {importing ? "Importing…" : "Replace and Import"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Backup V2 import validation (Phase 3): read-only dry-run
+          inspection panel, rendered only once a selected V2 file has
+          passed validateBackupV2Manifest's full structural + relational
+          validation. Deliberately has no restore/import/replace action --
+          only Close -- since V2 restore does not exist yet; this exists
+          purely so a user can confirm what a V2 backup contains before
+          that capability ships. Closing (or a backdrop click, same
+          handler) never mutates anything. Mutually exclusive with the V1
+          modal above by construction -- handleFileSelected always clears
+          both pendingImport and v2DryRun before setting either one. */}
+      {v2DryRun ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4"
+          onClick={closeV2DryRun}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="backup-v2-dry-run-title"
+            className="w-full max-w-md rounded-2xl border bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div id="backup-v2-dry-run-title" className="text-lg font-semibold">
+              Backup V2 validated
+            </div>
+
+            <div className="mt-1 text-sm text-zinc-600">
+              Exported {new Date(v2DryRun.manifest.exportedAt).toLocaleString()} from{" "}
+              {v2DryRun.sameAccount ? "this account" : "a different account"}.
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-zinc-800">
+              <div className="rounded-lg bg-zinc-50 p-2">
+                <div className="text-xs text-zinc-500">Cards</div>
+                <div className="font-medium">{v2DryRun.counts.cards}</div>
+              </div>
+              <div className="rounded-lg bg-zinc-50 p-2">
+                <div className="text-xs text-zinc-500">Media records</div>
+                <div className="font-medium">{v2DryRun.counts.media}</div>
+              </div>
+              <div className="rounded-lg bg-zinc-50 p-2">
+                <div className="text-xs text-zinc-500">Value snapshots</div>
+                <div className="font-medium">{v2DryRun.counts.valueSnapshots}</div>
+              </div>
+              <div className="rounded-lg bg-zinc-50 p-2">
+                <div className="text-xs text-zinc-500">Manual evidence records</div>
+                <div className="font-medium">{v2DryRun.counts.manualEvidenceOverrides}</div>
+              </div>
+              <div className="col-span-2 rounded-lg bg-zinc-50 p-2">
+                <div className="text-xs text-zinc-500">Locations</div>
+                <div className="font-medium">{v2DryRun.counts.locations}</div>
+              </div>
+            </div>
+
+            {v2DryRun.warnings.length > 0 ? (
+              <div className="mt-3 space-y-1">
+                {v2DryRun.warnings.map((warning, i) => (
+                  <div
+                    key={i}
+                    className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900"
+                  >
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="mt-3 text-xs text-zinc-500">
+              This is a preview only. Backup V2 restore is not available yet -- nothing has
+              been changed.
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button type="button" onClick={closeV2DryRun} className="btn-secondary">
+                Close
               </button>
             </div>
           </div>
