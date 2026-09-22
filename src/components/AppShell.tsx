@@ -624,69 +624,82 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               ))}
             </div>
 
-            {pathname === "/cards" ? (
-              <div className="mt-6 border-t pt-3">
-                {!collapsed ? (
-                  <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                    Actions
-                  </div>
-                ) : null}
+            {/* Global More navigation fix: this Actions/More dropdown used
+                to be wrapped in `{pathname === "/cards" ? (...) : null}`,
+                making it disappear from the sidebar on every route except
+                Binder -- Account/Help/Backup had no other path to reach on
+                desktop at all elsewhere. Now renders on every authenticated
+                route the sidebar itself renders on (same `!isAuthScreen &&
+                !isMarketing` condition already gating the whole <aside>).
+                Same dropdown, same moreOpen state, same destinations --
+                only the route-gate around it changed. Export CSV alone
+                stays conditional on pathname === "/cards" below, since its
+                cards:export listener only exists on that page today (see
+                cards/page.tsx) -- exposing it elsewhere would be a
+                knowingly nonfunctional action, not a real fix. */}
+            <div className="mt-6 border-t pt-3">
+              {!collapsed ? (
+                <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                  Actions
+                </div>
+              ) : null}
 
-                <div ref={moreRef} className="relative">
-                  {(() => {
-                    const button = (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMoreOpen((v) => !v);
-                        }}
-                        className={
-                          "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
-                          (collapsed ? "-ml-0.5 w-full " : "w-full ") +
-                          "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
-                        }
-                      >
-                        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 group-hover:bg-white">
-                          <IconDots />
-                        </span>
-                        {!collapsed ? <span className="font-medium">More</span> : null}
-                      </button>
-                    );
-
-                    if (!collapsed) return button;
-                    return <Tooltip text="More">{button}</Tooltip>;
-                  })()}
-
-                  {moreOpen ? (
-                    <div
-                      className="absolute left-2 top-full z-50 mt-2 w-44 overflow-hidden rounded-md border bg-white shadow-sm"
-                      onClick={(e) => e.stopPropagation()}
+              <div ref={moreRef} className="relative">
+                {(() => {
+                  const button = (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMoreOpen((v) => !v);
+                      }}
+                      className={
+                        "group flex items-center gap-3 rounded-md px-2 py-2 text-sm transition " +
+                        (collapsed ? "-ml-0.5 w-full " : "w-full ") +
+                        "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
+                      }
                     >
-                      <Link
-                        href="/account"
-                        onClick={() => setMoreOpen(false)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                      >
-                        <span className="text-xs">👤</span>
-                        Account
-                      </Link>
-                      <Link
-                        href="/help"
-                        onClick={() => setMoreOpen(false)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                      >
-                        <span className="text-xs">❓</span>
-                        Help
-                      </Link>
-                      <Link
-                        href="/cards/backup"
-                        onClick={() => setMoreOpen(false)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                      >
-                        <IconDatabase />
-                        Backup
-                      </Link>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 group-hover:bg-white">
+                        <IconDots />
+                      </span>
+                      {!collapsed ? <span className="font-medium">More</span> : null}
+                    </button>
+                  );
+
+                  if (!collapsed) return button;
+                  return <Tooltip text="More">{button}</Tooltip>;
+                })()}
+
+                {moreOpen ? (
+                  <div
+                    className="absolute left-2 top-full z-50 mt-2 w-44 overflow-hidden rounded-md border bg-white shadow-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Link
+                      href="/account"
+                      onClick={() => setMoreOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                    >
+                      <span className="text-xs">👤</span>
+                      Account
+                    </Link>
+                    <Link
+                      href="/help"
+                      onClick={() => setMoreOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                    >
+                      <span className="text-xs">❓</span>
+                      Help
+                    </Link>
+                    <Link
+                      href="/cards/backup"
+                      onClick={() => setMoreOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                    >
+                      <IconDatabase />
+                      Backup
+                    </Link>
+                    {pathname === "/cards" ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -698,11 +711,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         <IconDownload />
                         Export CSV
                       </button>
-                    </div>
-                  ) : null}
-                </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+            </div>
 
             {!collapsed ? (
               <div className="mt-6 border-t pt-4 px-2">
@@ -801,7 +814,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   comment). Menu contents are the same destinations that used
                   to live in the bottom-nav More sheet (now removed, see the
                   bottom nav below), plus Sign Out, which didn't have a home
-                  in that sheet before since it was already visible here. */}
+                  in that sheet before since it was already visible here.
+                  Global More navigation fix: this whole trigger+dropdown is
+                  now wrapped in `!isMarketing` -- this mobile header bar
+                  previously rendered it on every non-auth-screen route,
+                  including public marketing pages, showing signed-in-only
+                  content (Account/Backup/Sign out) to visitors who may not
+                  even be logged in. The header bar itself (logo row) still
+                  renders unchanged on marketing routes; only the menu
+                  trigger is now scoped away from them, matching the exact
+                  `!isAuthScreen && !isMarketing` condition the sidebar and
+                  bottom nav already use. */}
+              {!isMarketing ? (
               <div ref={headerMenuRef} className="relative">
                 <button
                   type="button"
@@ -872,17 +896,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                           <IconDatabase />
                           Backup
                         </Link>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMoreOpen(false);
-                            window.dispatchEvent(new CustomEvent("cards:export"));
-                          }}
-                          className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
-                        >
-                          <IconDownload />
-                          Export CSV
-                        </button>
+                        {/* Export CSV: the cards:export listener it
+                            depends on is only mounted on /cards (see
+                            cards/page.tsx) -- shown here only on that same
+                            route so More being globally available doesn't
+                            surface a knowingly nonfunctional action
+                            elsewhere. Same gating applied to desktop's
+                            identical button above. */}
+                        {pathname === "/cards" ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMoreOpen(false);
+                              window.dispatchEvent(new CustomEvent("cards:export"));
+                            }}
+                            className="flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                          >
+                            <IconDownload />
+                            Export CSV
+                          </button>
+                        ) : null}
                         <Link
                           href="/help"
                           onClick={() => setMoreOpen(false)}
@@ -914,6 +947,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                 ) : null}
               </div>
+              ) : null}
             </div>
           </div>
         )}
