@@ -683,8 +683,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       <span className="text-xs">👤</span>
                       Account
                     </Link>
+                    {/* Authenticated Help architecture: points at the
+                        authenticated /account/help route (not the public
+                        /help), so a signed-in user choosing Help from More
+                        stays inside authenticated app navigation instead of
+                        landing on the public marketing page. MarketingShell's
+                        own public FAQ link still points at /help,
+                        unchanged. */}
                     <Link
-                      href="/help"
+                      href="/account/help"
                       onClick={() => setMoreOpen(false)}
                       className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
                     >
@@ -916,8 +923,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             Export CSV
                           </button>
                         ) : null}
+                        {/* Authenticated Help architecture: /account/help,
+                            not the public /help -- same reasoning as
+                            desktop's identical link above. */}
                         <Link
-                          href="/help"
+                          href="/account/help"
                           onClick={() => setMoreOpen(false)}
                           className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
                         >
