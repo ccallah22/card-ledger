@@ -161,23 +161,17 @@ export function shouldAutoSelectCandidate(ctx: CandidateAutoSelectContext): bool
 }
 
 // Add Card scan UX simplification, Phase I (automatic top-candidate
-// application): a NEW, separate decision from shouldAutoSelectCandidate
-// above -- that function (and the CandidateConfidenceAssessment/
-// safe_to_preselect machinery it reads) is deliberately left completely
-// unmodified and still fully computed (see confidenceAssessments in
-// NewCardPageInner), it simply no longer gates the page's automatic-
-// application effect. The product decision this phase implements is
-// "automatic first attempt + easy correction": once a search cycle has
-// produced at least one ranked candidate, the top-ranked one
-// (candidateResults[0] -- ranking/retrieval themselves are untouched)
-// becomes the working selection immediately, with no confidence/
-// recommendation threshold gating it at all. Every other guard
-// shouldAutoSelectCandidate already had EXCEPT the confidence/
-// recommendation/field-quality checks is preserved unchanged here, for
-// the same reasons as before: never act on a wishlist card, never
-// override an already-selected candidate, never fight a user's explicit
-// interaction during the current search cycle, never act twice for the
-// same cycle, and never act on a stale (still-resolving) candidate list.
+// application), superseded by the Add Card identity-state lifecycle fix:
+// this unconditional (no confidence/recommendation threshold at all)
+// variant of auto-apply is no longer wired to the page's automatic-
+// application effect, which now calls shouldAutoSelectCandidate above
+// instead -- an unconditionally auto-applied top candidate could become a
+// trusted canonical catalogCardId with no ambiguity check at all, which
+// proved unsafe. Left defined and exported unchanged (matching this file's
+// existing precedent of keeping shouldAutoSelectCandidate itself around
+// through its own prior "dead code" period) in case a future phase wants
+// this exact "automatic first attempt" behavior back deliberately, and
+// because it remains independently unit-testable as-is.
 export type CandidateAutoApplyContext = {
   isWishlistCard: boolean;
   hasSelectedCandidate: boolean;
@@ -1340,17 +1334,17 @@ function NewCardPageInner() {
   // Vision Engine V3, Phase V3.4A: now reads displayEvidence -- the same
   // single evidence object candidate search and variant ranking use --
   // instead of a separate OCR-only value.
-  // Add Card scan UX simplification, Phase I: no longer read by the
-  // automatic-application effect below (which now applies candidateResults[0]
-  // unconditionally -- see shouldAutoApplyTopCandidate's own comment) or by
-  // any other current UI, since Phase C already removed this normal-path
-  // rendering. Left fully computed and unchanged, exactly per this task's
-  // Step 14 requirement -- assessCandidateConfidence/MatchQuality/
-  // shouldAutoSelectCandidate's underlying architecture is preserved for
-  // future use (a stricter future auto-behavior, telemetry, deciding when
-  // more evidence is needed, community visual-reference matching), even
-  // though nothing in this page currently reads the result.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // Add Card identity-state lifecycle fix: Phase I's unconditional
+  // candidateResults[0] auto-apply (no confidence gate at all) is exactly
+  // what let a low-confidence or wrong top candidate silently become a
+  // trusted catalogCardId with no check at all -- this assessment is once
+  // again read, by the auto-select effect below, to require the original
+  // safe_to_preselect bar (confidence/coverage/no core mismatch/meaningful
+  // lead over the next candidate/required player+cardNumber evidence, all
+  // still computed exactly as before by shouldAutoSelectCandidate) before
+  // any candidate may auto-apply. Display of the candidate list itself is
+  // unaffected -- see the read-only summary UI, which still shows every
+  // candidateResults entry regardless of this assessment.
   const confidenceAssessments = useMemo(
     () => assessCandidateConfidence(displayEvidence, candidateResults),
     [displayEvidence, candidateResults],
@@ -1395,6 +1389,25 @@ function NewCardPageInner() {
   // committed. The primary guard is still `selectedCandidate === null`.
   const autoSelectedCandidateCycleKeyRef = useRef<string | null>(null);
   const lastSearchCycleKeyRef = useRef(searchCycleKey);
+
+  // Add Card identity-state lifecycle fix: debounced bridge from a genuine
+  // USER identity-field edit (see handleIdentityFieldEdit below) to a fresh
+  // candidate search. Mirrors the existing debounced-search precedent
+  // (debouncedCatalogQuery above) rather than inventing a new pattern --
+  // edits accumulate in pendingIdentityOverridesRef and are flushed as
+  // manualOverrides (via the existing handleEvidenceOverride/
+  // applyManualOverrides/displayEvidence pipeline, already the search
+  // effect's input) after a short pause in typing, so a fast typist doesn't
+  // trigger a full candidate search per keystroke. This never touches
+  // mergedOcr/frontOcrResult/backOcrResult -- OCR evidence stays OCR
+  // evidence; the user's current visible identity is its own, separate,
+  // higher-priority evidence layer (manual_override already wins fusion by
+  // existing rule -- see manualOverrides.ts).
+  const IDENTITY_EDIT_SEARCH_DEBOUNCE_MS = 300;
+  const identityEditDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingIdentityOverridesRef = useRef<
+    Partial<Record<"playerName" | "year" | "setName" | "cardNumber" | "cardName", string>>
+  >({});
 
   useEffect(() => {
     if (lastSearchCycleKeyRef.current === searchCycleKey) return;
@@ -1491,6 +1504,36 @@ function NewCardPageInner() {
     setIsAutograph(false);
     setIsPatch(false);
     setSelectedCandidate(candidate);
+
+    // Identity-state lifecycle fix: a candidate becoming the selection is a
+    // fresh, trusted identity for these five fields -- cancel any pending
+    // debounced override flush and discard any manual override left over
+    // from an earlier user edit (now superseded by this candidate's own
+    // values), so a stale user_overridden field can't keep masking live
+    // OCR/Vision evidence or contradicting what's now on screen.
+    if (identityEditDebounceRef.current) {
+      clearTimeout(identityEditDebounceRef.current);
+      identityEditDebounceRef.current = null;
+    }
+    pendingIdentityOverridesRef.current = {};
+    setManualOverrides((prev) => {
+      if (
+        prev.playerName === undefined &&
+        prev.year === undefined &&
+        prev.setName === undefined &&
+        prev.cardNumber === undefined &&
+        prev.cardName === undefined
+      ) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next.playerName;
+      delete next.year;
+      delete next.setName;
+      delete next.cardNumber;
+      delete next.cardName;
+      return next;
+    });
   }
 
   function selectCandidateManually(candidate: CatalogCandidate) {
@@ -1503,6 +1546,61 @@ function NewCardPageInner() {
     hasManualCandidateInteractionRef.current = true;
     setCandidateAutoSelected(false);
     setSelectedCandidate(null);
+  }
+
+  // Add Card identity-state lifecycle fix: the ONE place a genuine USER
+  // keystroke into an identity field (Player/Year/Set/Card #/Insert) is
+  // funneled through -- distinct from every programmatic writer of the same
+  // setters (applyCandidateSelection above, fillFieldsFromCatalogMatch, the
+  // ?catalogCardId= bootstrap, the checklist-search/catalog-card-lookup
+  // pickers, the post-save reset), which all call the raw setPlayerName/
+  // setYear/setSetName/setCardNumber/setInsert setters directly and never
+  // reach this function -- so a candidate or catalog match populating these
+  // same fields can never self-invalidate the selection it just
+  // established (see applyCandidateSelection's own override-clearing
+  // instead, which is the correct place for that).
+  //
+  // A genuine user edit means whatever candidate/manual catalog card was
+  // selected no longer necessarily describes this card, so its canonical id
+  // must not silently keep riding along to Save -- AND the edit becomes
+  // fresh evidence for a new candidate search of its own (debounced, see
+  // pendingIdentityOverridesRef above), so a correction the user makes
+  // directly in these fields (rather than via the Evidence Inspector) is no
+  // longer invisible to candidate re-identification.
+  function handleIdentityFieldEdit(
+    setter: (value: string) => void,
+    evidenceField: "playerName" | "year" | "setName" | "cardNumber" | "cardName",
+    value: string,
+  ) {
+    setter(value);
+
+    hasManualCandidateInteractionRef.current = true;
+    setCandidateAutoSelected(false);
+    setSelectedCandidate(null);
+
+    // The manual Set/Section/Card lookup's own exact pick is a second,
+    // independent source of a trusted catalogCardId (buildCard()'s
+    // selectedCard?.id fallback). Set/Year edits already cascade-clear it
+    // via useChecklistSectionLookup/useCatalogCardLookup's own id-keyed
+    // render-time reset, but Player/Card #/Insert do not (they aren't part
+    // of that Set -> Section -> Card hierarchy) -- cleared unconditionally
+    // here so every identity edit is handled the same way rather than only
+    // the fields that happen to cascade.
+    setSelectedCard(null);
+    setSelectedSection(null);
+
+    pendingIdentityOverridesRef.current[evidenceField] = value;
+    if (identityEditDebounceRef.current) clearTimeout(identityEditDebounceRef.current);
+    identityEditDebounceRef.current = setTimeout(() => {
+      const edits = pendingIdentityOverridesRef.current;
+      pendingIdentityOverridesRef.current = {};
+      const explanation = "User-edited identity field on Add Card";
+      if (edits.playerName !== undefined) handleEvidenceOverride("playerName", edits.playerName, explanation);
+      if (edits.year !== undefined) handleEvidenceOverride("year", edits.year, explanation);
+      if (edits.setName !== undefined) handleEvidenceOverride("setName", edits.setName, explanation);
+      if (edits.cardNumber !== undefined) handleEvidenceOverride("cardNumber", edits.cardNumber, explanation);
+      if (edits.cardName !== undefined) handleEvidenceOverride("cardName", edits.cardName, explanation);
+    }, IDENTITY_EDIT_SEARCH_DEBOUNCE_MS);
   }
 
   // Add Card scan UX simplification, Phase D: the ONE place that applies a
@@ -1652,7 +1750,7 @@ function NewCardPageInner() {
 
   const isWishlistCard = isWishlist || status === "WANT";
 
-  // Add Card scan UX simplification, Phase I: automatic application of the
+  // Add Card identity-state lifecycle fix: automatic application of the
   // TOP-RANKED candidate -- ONLY when every one of these holds:
   //  - not a wishlist card (candidate search/fields aren't shown there)
   //  - at least one candidate exists for this cycle (candidateResults[0])
@@ -1660,30 +1758,49 @@ function NewCardPageInner() {
   //    (resolvedCandidateCycleKey === searchCycleKey guards against acting
   //    on a stale array while a new search is still in flight)
   //  - no candidate is already selected (manual or auto)
-  //  - the user hasn't manually selected/switched/cleared a candidate
+  //  - the user hasn't manually selected/switched/cleared/edited identity
   //    during this search cycle
   //  - this exact cycle hasn't already been auto-applied (rerender guard)
-  // Deliberately NOT gated on confidenceAssessments/recommendation/
-  // safe_to_preselect anymore -- see shouldAutoApplyTopCandidate's own
-  // comment above for why. This never creates a catalog row, never saves,
-  // never mutates persistence -- it only calls the same
-  // applyCandidateSelection() a manual pick uses, on candidateResults[0]
-  // (the engine's own top-ranked result, untouched by this phase).
+  //  - the TOP candidate itself clears the original safe_to_preselect bar
+  //    (shouldAutoSelectCandidate/computeRecommendation in
+  //    candidateConfidence.ts -- confidence, evidence coverage, no
+  //    unresolved core-identity mismatch, a meaningful lead over the next
+  //    candidate, and required player+cardNumber evidence). Phase I had
+  //    dropped this last gate entirely (any candidateResults[0] applied
+  //    regardless of confidence/ties); restored here because an
+  //    unconditionally auto-applied WRONG candidate could reach Save as a
+  //    trusted canonical id with no ambiguity check at all -- a worse
+  //    failure mode than the conservative resolver's explicit
+  //    AmbiguousCatalogCardError. A candidate that doesn't clear this bar
+  //    is still fully visible in the candidate list (see the read-only
+  //    summary UI below) for explicit manual selection -- only AUTOMATIC
+  //    application is gated, never display.
+  // This never creates a catalog row, never saves, never mutates
+  // persistence -- it only calls the same applyCandidateSelection() a
+  // manual pick uses, on candidateResults[0] (the engine's own top-ranked
+  // result, untouched by this phase).
   useEffect(() => {
-    const eligible = shouldAutoApplyTopCandidate({
+    const eligible = shouldAutoSelectCandidate({
       isWishlistCard,
       hasSelectedCandidate: selectedCandidate !== null,
       hasManualInteraction: hasManualCandidateInteractionRef.current,
-      alreadyAutoAppliedThisCycle: autoSelectedCandidateCycleKeyRef.current === searchCycleKey,
+      alreadyAutoSelectedThisCycle: autoSelectedCandidateCycleKeyRef.current === searchCycleKey,
       candidatesResolvedForCurrentCycle: resolvedCandidateCycleKey === searchCycleKey,
-      hasCandidates: candidateResults.length > 0,
+      topAssessment: confidenceAssessments[0],
     });
     if (!eligible) return;
 
     autoSelectedCandidateCycleKeyRef.current = searchCycleKey;
     applyCandidateSelection(candidateResults[0]);
     setCandidateAutoSelected(true);
-  }, [isWishlistCard, selectedCandidate, resolvedCandidateCycleKey, searchCycleKey, candidateResults]);
+  }, [
+    isWishlistCard,
+    selectedCandidate,
+    resolvedCandidateCycleKey,
+    searchCycleKey,
+    candidateResults,
+    confidenceAssessments,
+  ]);
 
   // frontImage/backImage are fresh objects returned by useCardImageSlot on
   // every render, so depending on them directly would rerun this effect on
@@ -2660,6 +2777,17 @@ function NewCardPageInner() {
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
+                        // Add Card identity-state lifecycle fix: this
+                        // checklist-search pick is an explicit, exact
+                        // identity choice writing Player/Card #/Insert
+                        // directly, same category as selectCatalogMatch/the
+                        // manual Card Lookup pick below -- clear any active
+                        // scan candidate or manual catalog-card selection
+                        // first so a stale canonical id can't survive
+                        // alongside these now-different field values.
+                        clearSelectedCandidate();
+                        setSelectedCard(null);
+                        setSelectedSection(null);
                         setCardNumber(c.number);
                         setPlayerName(c.name);
                         if (c.team) setTeam(c.team);
@@ -3342,11 +3470,31 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
-        <Field label="Player" value={playerName} onChange={setPlayerName} placeholder="Baker Mayfield" />
+        <Field
+          label="Player"
+          value={playerName}
+          onChange={(v) => handleIdentityFieldEdit(setPlayerName, "playerName", v)}
+          placeholder="Baker Mayfield"
+        />
 
-        <Field label="Year" value={year} onChange={setYear} placeholder="2018" />
-        <Field label="Set" value={setName} onChange={setSetName} placeholder="Panini Prizm" />
-        <Field label="Card #" value={cardNumber} onChange={setCardNumber} placeholder="123" />
+        <Field
+          label="Year"
+          value={year}
+          onChange={(v) => handleIdentityFieldEdit(setYear, "year", v)}
+          placeholder="2018"
+        />
+        <Field
+          label="Set"
+          value={setName}
+          onChange={(v) => handleIdentityFieldEdit(setSetName, "setName", v)}
+          placeholder="Panini Prizm"
+        />
+        <Field
+          label="Card #"
+          value={cardNumber}
+          onChange={(v) => handleIdentityFieldEdit(setCardNumber, "cardNumber", v)}
+          placeholder="123"
+        />
         <Field label="Team" value={team} onChange={setTeam} placeholder="Browns" />
 
         {!isWishlistCard ? (
@@ -3420,7 +3568,12 @@ function NewCardPageInner() {
         </div>
 
         <Field label="Variation" value={variation} onChange={setVariation} placeholder="Refractor" />
-        <Field label="Insert" value={insert} onChange={setInsert} placeholder="Kaboom" />
+        <Field
+          label="Insert"
+          value={insert}
+          onChange={(v) => handleIdentityFieldEdit(setInsert, "cardName", v)}
+          placeholder="Kaboom"
+        />
         <Field
           label="Parallel"
           value={parallel}
