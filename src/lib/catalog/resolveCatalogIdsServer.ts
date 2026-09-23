@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { findOrCreateSet } from "@/lib/repositories/sets";
 import { findOrCreatePlayer } from "@/lib/repositories/players";
 import {
-  findCardBySetAndNumber,
+  listCardsBySetAndNumber,
   createCard,
   findOrCreateCardV2,
   getCard,
@@ -48,50 +48,189 @@ import type { CatalogResolutionInput, CatalogResolutionResult } from "./resolveC
  */
 
 /**
- * (set_id, card_number) is unique at the database level, so a card number
- * can only ever point at one catalog `cards` row. If that row already has a
- * different player attached, we must not silently attach ours to it too
- * (that would misattribute the card for every existing owner). Instead we
- * walk forward to a disambiguated card_number ("1", "1~2", "1~3", ...) until
- * we land on a slot that's either free, or already scoped to this same
- * player -- reusing that slot for legitimate duplicate copies.
+ * Thrown when multiple catalog `cards` rows share (set_id, card_number) and
+ * cannot be safely narrowed down to exactly one using canonical player
+ * membership, title, or rookie evidence. Never guessed/created around --
+ * the caller should ask the user to pick the exact catalog card (e.g. via
+ * Search) instead of manual entry.
  */
-async function resolveCardForPlayer(
+export class AmbiguousCatalogCardError extends Error {
+  constructor(setId: number, cardNumber: string, matchCount: number) {
+    super(
+      `Catalog card is ambiguous for set ${setId}, card number "${cardNumber}": ` +
+        `${matchCount} existing catalog cards matched and could not be ` +
+        `deterministically resolved to exactly one using player membership, ` +
+        `title, or rookie evidence. Use Search to select the exact catalog ` +
+        `card instead of manual entry.`,
+    );
+    this.name = "AmbiguousCatalogCardError";
+  }
+}
+
+function normalizedTitle(title: string | null): string | null {
+  return title?.trim() || null;
+}
+
+/**
+ * (set_id, card_number) is NOT guaranteed unique at the database level --
+ * the old cards_set_id_card_number_key constraint that used to make this
+ * true was intentionally dropped in
+ * 202607100001_catalog_v2_drop_old_cards_constraint.sql, because Catalog v2
+ * legitimately allows different checklist sections within the same set to
+ * reuse the same card_number. This function fetches every candidate at a
+ * card_number (listCardsBySetAndNumber) instead of assuming at most one row
+ * exists, and narrows deterministically:
+ *
+ *   - 0 candidates: create here (unchanged from before this file's Catalog
+ *     v2 hardening).
+ *   - 1 candidate: reuse it under the original legacy rule (no player, or
+ *     no player linked yet, or already linked to this player -- else walk
+ *     forward to a synthetic "~2"/"~3" number). Left byte-for-byte
+ *     equivalent to the pre-hardening single-row behavior -- this task does
+ *     not redesign that legacy path.
+ *   - >1 candidates (genuine Catalog v2 ambiguity): evidence is applied in
+ *     RELIABILITY order, not availability order. `input.insert` (title) and
+ *     `isRookie` are free-text/checkbox fields that can be OCR-derived,
+ *     blank, stale, or user-edited (e.g. "Future" for a card whose catalog
+ *     title is "Select Future"), so they must never veto an exact,
+ *     FK-backed card_players relationship. Concretely: canonical player
+ *     membership is checked FIRST; title/rookie only narrow *within* a
+ *     player-identified subset, and are only used as the sole evidence when
+ *     no player id is available at all. A narrowing step that discards a
+ *     real player match down to zero survivors is treated as conflicting
+ *     evidence, not proof of non-existence -- it fails with
+ *     AmbiguousCatalogCardError rather than creating a duplicate. The
+ *     synthetic "~2" walk-forward mechanism is NOT used in this branch --
+ *     it predates Catalog v2 and would fabricate a card_number that was
+ *     never printed on the card; unresolved ambiguity here always fails
+ *     explicitly instead.
+ *
+ * Player identity uses membership (`links.some(...)`), not exact-set
+ * equality, so a legitimate multi-player card is never rejected merely for
+ * having more than one card_players row.
+ *
+ * Never selects an arbitrary row, never uses .limit(1)/first-result
+ * selection, never uses a confidence score.
+ */
+export async function resolveCardForPlayer(
   setId: number,
   cardNumber: string,
   playerId: number | null,
   cardFields: { title: string | null; rookie_card: boolean; is_insert: boolean },
   client: SupabaseClient,
 ): Promise<CardRow> {
+  const matchesPlayer = (l: { player_id: number }) => l.player_id === playerId;
+
+  // Reuse rule for the legacy single-candidate path only: no player to
+  // attach, or the row has no player yet, or it's already linked to this
+  // exact player -- otherwise it's a genuine conflict with a different
+  // player's card and the caller should walk forward to a fresh candidate
+  // number. Unchanged from before this task.
+  async function canReuse(existing: CardRow): Promise<boolean> {
+    if (playerId === null) return true;
+    const links = await listCardPlayers(existing.id, client);
+    return links.length === 0 || links.some(matchesPlayer);
+  }
+
+  // Secondary-evidence narrowing for the ambiguous (>1 candidate) branch
+  // only. Title first, then rookie -- strictly progressive (mirrors
+  // restorePreflight.ts's resolveBaseCard), applied only within a subset
+  // that reliable evidence has already isolated (or, when no player id
+  // exists at all, the full candidate set, since there is no stronger
+  // evidence to isolate a subset with). Returns the single resolved row, or
+  // null if evidence is insufficient/conflicting -- callers must fail
+  // rather than guess when this returns null, never fall back to creation.
+  function narrowBySecondaryEvidence(subset: CardRow[]): CardRow | null {
+    const titleValue = normalizedTitle(cardFields.title);
+    const titleMatches = subset.filter((c) => normalizedTitle(c.title) === titleValue);
+    if (titleMatches.length === 1) return titleMatches[0];
+    if (titleMatches.length === 0) return null;
+
+    const rookieMatches = titleMatches.filter((c) => c.rookie_card === cardFields.rookie_card);
+    if (rookieMatches.length === 1) return rookieMatches[0];
+    return null;
+  }
+
   let candidateNumber = cardNumber;
   let attempt = 1;
 
   while (true) {
-    const existing = await findCardBySetAndNumber(setId, candidateNumber, client);
+    const matches = await listCardsBySetAndNumber(setId, candidateNumber, client);
 
-    if (!existing) {
-      return createCard(
-        {
-          set_id: setId,
-          card_number: candidateNumber,
-          ...cardFields,
-        },
-        client,
-      );
+    if (matches.length === 0) {
+      return createCard({ set_id: setId, card_number: candidateNumber, ...cardFields }, client);
     }
 
+    if (matches.length === 1) {
+      const existing = matches[0];
+      if (await canReuse(existing)) return existing;
+      attempt += 1;
+      candidateNumber = `${cardNumber}~${attempt}`;
+      continue;
+    }
+
+    // Genuine Catalog v2 ambiguity: multiple rows legitimately share
+    // (set_id, candidateNumber).
     if (playerId === null) {
-      // No player being attached, so there's nothing to conflict with.
-      return existing;
+      // No player evidence at all -- title/rookie are the only signal
+      // available. Resolve if they uniquely identify one row; otherwise
+      // this is unresolved ambiguity, never a creation trigger (there is
+      // no reliable evidence to support "this is genuinely a new
+      // identity" versus "our text just didn't match").
+      const resolved = narrowBySecondaryEvidence(matches);
+      if (resolved) return resolved;
+      throw new AmbiguousCatalogCardError(setId, candidateNumber, matches.length);
     }
 
-    const links = await listCardPlayers(existing.id, client);
-    if (links.length === 0 || links.some((l) => l.player_id === playerId)) {
-      return existing;
+    const linkedness = await Promise.all(
+      matches.map(async (c) => {
+        const links = await listCardPlayers(c.id, client);
+        return { card: c, linkedToPlayer: links.some(matchesPlayer), unclaimed: links.length === 0 };
+      }),
+    );
+
+    const linked = linkedness.filter((l) => l.linkedToPlayer).map((l) => l.card);
+    if (linked.length === 1) {
+      // Unique canonical, FK-backed player match -- reuse directly. Title/
+      // rookie agreement is deliberately NOT required: they are free-text/
+      // OCR-derived and must never override an exact card_players
+      // relationship.
+      return linked[0];
+    }
+    if (linked.length > 1) {
+      // More than one of THIS player's own cards share this number (e.g.
+      // distinct insert types) -- title/rookie narrow within their cards
+      // only, never expanding back to the full ambiguous set.
+      const resolved = narrowBySecondaryEvidence(linked);
+      if (resolved) return resolved;
+      throw new AmbiguousCatalogCardError(setId, candidateNumber, linked.length);
     }
 
-    attempt += 1;
-    candidateNumber = `${cardNumber}~${attempt}`;
+    // linked.length === 0: this player isn't linked to any candidate at
+    // this number yet. That does NOT prove the card doesn't exist -- check
+    // for a legitimately unclaimed row before ever creating.
+    const unclaimed = linkedness.filter((l) => l.unclaimed).map((l) => l.card);
+    if (unclaimed.length === 1) {
+      // Single unclaimed slot -- reuse/link it, exactly like the legacy
+      // single-candidate rule (which never required title agreement for
+      // an unclaimed reuse either).
+      return unclaimed[0];
+    }
+    if (unclaimed.length > 1) {
+      const resolved = narrowBySecondaryEvidence(unclaimed);
+      if (resolved) return resolved;
+      throw new AmbiguousCatalogCardError(setId, candidateNumber, unclaimed.length);
+    }
+
+    // unclaimed.length === 0: every existing candidate at this number
+    // already belongs to a different player, and none are free. No
+    // reliable evidence was discarded to reach this conclusion (there was
+    // no player-linked or unclaimed row to override) -- this genuinely is
+    // a new identity for this player, so create it here, at the real
+    // number, with the caller-supplied title. This is exactly the
+    // legitimate multi-row identity that dropping the old uniqueness
+    // constraint was meant to allow -- NOT a synthetic "~2" number.
+    return createCard({ set_id: setId, card_number: candidateNumber, ...cardFields }, client);
   }
 }
 
