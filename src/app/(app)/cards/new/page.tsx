@@ -198,6 +198,43 @@ export function shouldAutoApplyTopCandidate(ctx: CandidateAutoApplyContext): boo
   return true;
 }
 
+// Add Card Catalog Match canonical-identity fix: pure decision for how
+// selectCatalogMatch must establish the Set -> Section -> Card hierarchy
+// (catalogPreselectTargetRef/catalogPreselectStageRef, shared with the
+// ?catalogCardId= bootstrap's own Stages 1/2) for a given target, given the
+// CURRENT hierarchy state at the moment of selection. Exported and
+// side-effect-free (reads nothing but its arguments) so it can be
+// exercised by a throwaway verification script without rendering React,
+// matching buildSearchCycleKey/shouldAutoSelectCandidate's pattern above --
+// this is deliberately kept separate from the actual setState calls
+// (selectCatalogMatch itself) precisely because getting this branch wrong
+// is exactly how a canonical selection silently fails to establish.
+//
+// Three outcomes:
+//   "set-change": the target set isn't current yet -- selectedSetId must
+//     change first; the existing Stage 1 effect will apply the section
+//     (and, for a sectionless target, the card) once that change lands.
+//   "section-change": the set is already current but the target's section
+//     differs -- selectedSection must change; the existing Stage 2 effect
+//     (or, for a sectionless target, the new Stage 2b effect below) will
+//     apply the card once THAT change lands.
+//   "apply-immediately": both the set and the section already match the
+//     target, so setting them again is a no-op neither
+//     useChecklistSectionLookup's nor useCatalogCardLookup's own
+//     render-time reset will react to -- safe to set the card in the same
+//     synchronous call instead of waiting on an effect whose dependency
+//     will never actually change.
+export type CatalogMatchPreselectPlan = "set-change" | "section-change" | "apply-immediately";
+
+export function planCatalogMatchPreselect(
+  target: { setId: number; sectionId: number | null },
+  current: { selectedSetId: number | null; selectedSectionId: number | null },
+): CatalogMatchPreselectPlan {
+  if (current.selectedSetId !== target.setId) return "set-change";
+  if (current.selectedSectionId !== target.sectionId) return "section-change";
+  return "apply-immediately";
+}
+
 // Vision Engine V3, Phase V3.1B: resolves the visual-analysis result (if
 // any) that is safe to persist for one side at save time. Exported,
 // side-effect-free (never touches component state directly) so it can be
@@ -470,13 +507,20 @@ function NewCardPageInner() {
   const [showCatalogResults, setShowCatalogResults] = useState(false);
   const [catalogResults, setCatalogResults] = useState<CardWithContext[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  // Selecting a result (manually or via auto-select) rewrites catalogQuery
-  // to display what was picked, which would otherwise retrigger this same
-  // debounced search and unconditionally reopen a dropdown the user (or
-  // auto-select's own field-fill) just intentionally closed/left alone.
-  // Set right before that rewrite so the one resulting search cycle skips
-  // reopening the dropdown and re-running auto-select.
-  const suppressNextDropdownOpenRef = useRef(false);
+  // Add Card Catalog Match canonical-identity fix: holds the exact display
+  // label selectCatalogMatch writes into catalogQuery for the currently
+  // selected exact match, or null when no exact selection is active.
+  // Refined from a one-shot "suppress the next dropdown reveal" boolean
+  // (which only hid the dropdown for one cycle but still let the debounced
+  // search effect re-search that generated label text and silently
+  // overwrite catalogResults, often to empty -- the root cause of "No
+  // cards found" appearing under a still-valid selection) into this
+  // explicit label comparison: the search effect below skips searching
+  // entirely, indefinitely, for as long as catalogQuery still equals this
+  // exact label, rather than for one timing-based cycle. The box's own
+  // onChange clears it (and the selection) the instant the user actually
+  // edits away from that label, so normal searching resumes immediately.
+  const selectedCatalogMatchLabelRef = useRef<string | null>(null);
 
   // useCallback with an empty dependency array: every setter this touches
   // is a plain useState setter (guaranteed stable), and the function reads
@@ -514,8 +558,25 @@ function NewCardPageInner() {
   useEffect(() => {
     let active = true;
     const trimmed = debouncedCatalogQuery.trim();
-    const suppressOpen = suppressNextDropdownOpenRef.current;
-    suppressNextDropdownOpenRef.current = false;
+
+    // Add Card Catalog Match canonical-identity fix: once an exact Catalog
+    // Match has been selected, catalogQuery holds a generated display
+    // label, not a fresh user query -- re-searching that label text is
+    // what used to silently overwrite catalogResults (often to empty) and
+    // produced a misleading "No cards found" the next time the box
+    // regained focus, even though the user had already selected a valid
+    // exact card. Skip the search entirely -- no fetch, no catalogResults/
+    // catalogLoading change at all -- while the box still shows exactly
+    // that label; the input's own onChange clears
+    // selectedCatalogMatchLabelRef (and the selection) the instant the
+    // user actually edits away from it, so normal searching resumes
+    // immediately once that happens.
+    if (
+      selectedCatalogMatchLabelRef.current !== null &&
+      debouncedCatalogQuery === selectedCatalogMatchLabelRef.current
+    ) {
+      return;
+    }
 
     if (!trimmed) {
       setCatalogResults([]);
@@ -542,7 +603,7 @@ function NewCardPageInner() {
         // Deliberately does NOT gate the input's own onFocus/onChange
         // handlers below -- the user can still deliberately click into this
         // box and search it manually at any time, candidate or not.
-        if (!suppressOpen && !selectedCandidate) {
+        if (!selectedCandidate) {
           // Reveal the dropdown once a search actually completes, not just
           // on manual focus/typing -- otherwise a programmatically-set
           // query (e.g. from OCR) fetches/ranks results correctly but
@@ -569,7 +630,7 @@ function NewCardPageInner() {
       .catch(() => {
         if (!active) return;
         setCatalogResults([]);
-        if (!suppressOpen && !selectedCandidate) setShowCatalogResults(true);
+        if (!selectedCandidate) setShowCatalogResults(true);
       })
       .finally(() => {
         if (active) setCatalogLoading(false);
@@ -589,15 +650,73 @@ function NewCardPageInner() {
   function selectCatalogMatch(result: CardWithContext) {
     // Identity-ownership fix (Phase B): an explicit legacy free-text pick is
     // itself a fresh exact-identity choice (same principle as the manual
-    // Set/Section/Card dropdown) -- demote any active scan candidate or
-    // manual card selection first, so buildCard()'s Phase A precedence
-    // can't keep pointing at a stale exact id while these text fields now
-    // show a different match.
+    // Set/Section/Card dropdown) -- demote any active scan candidate first,
+    // so buildCard()'s Phase A precedence can't keep pointing at a stale
+    // scan-candidate id while these text fields now show a different
+    // match.
     clearSelectedCandidate();
-    setSelectedCard(null);
+
+    // Add Card Catalog Match canonical-identity fix: result already names
+    // the exact cards.id (result.id) -- previously discarded entirely
+    // (setSelectedCard(null)), which is why an explicit, exact Catalog
+    // Match pick still fell through to the free-text fallback resolver at
+    // Save. Establish it as the canonical selectedCard instead, using the
+    // SAME CardSummary mapping ({id, card_number, title}) the
+    // ?catalogCardId= bootstrap already uses for this exact purpose, and
+    // the same Set -> Section -> Card hierarchy state
+    // (catalogPreselectTargetRef/catalogPreselectStageRef, consumed by
+    // Stages 1/2 above) -- so both mechanisms leave the page in the
+    // identical, already-proven-coherent state, with no second identity
+    // mechanism invented and no extra network fetch (result already
+    // carries setId/checklistSection/id/cardNumber/title in full; Stage
+    // 0's async getCardWithContext lookup is not needed here).
+    //
+    // Staging is required, not optional, when selectedSetId/selectedSection
+    // is actually about to change: useChecklistSectionLookup/
+    // useCatalogCardLookup each reset their OWN selection the moment their
+    // controlling id (selectedSetId / selectedSection?.id) changes, in the
+    // same render pass that change is read -- setting a later stage's
+    // state in the same tick as an earlier id change would be immediately
+    // clobbered by that reset (exactly the race Stage 1/Stage 2's own
+    // comments describe). planCatalogMatchPreselect (defined near the top
+    // of this file, pure/exported for its own focused test coverage)
+    // decides which of the three cases applies; when the relevant ids
+    // ALREADY equal the target -- the common case here, since Catalog
+    // Match is typically used mid-session rather than on a fresh mount
+    // like the URL bootstrap -- there is no id change for a hook to react
+    // to, so applying immediately below is correct, not merely convenient:
+    // Stage 1/Stage 2's effects would never fire at all in that case,
+    // since their dependencies genuinely would not change.
+    const cardSummary: CardSummary = { id: result.id, card_number: result.cardNumber, title: result.title };
+    const target: CatalogPreselectTarget = {
+      setId: result.setId,
+      sectionRow: result.checklistSection,
+      cardSummary,
+    };
+    catalogPreselectTargetRef.current = target;
+
+    const plan = planCatalogMatchPreselect(
+      { setId: target.setId, sectionId: target.sectionRow?.id ?? null },
+      { selectedSetId, selectedSectionId: selectedSection?.id ?? null },
+    );
+
+    if (plan === "set-change") {
+      catalogPreselectStageRef.current = "pending-section";
+      setSelectedSetId(target.setId);
+    } else if (plan === "section-change") {
+      setSelectedSection(target.sectionRow);
+      catalogPreselectStageRef.current = "pending-card";
+    } else {
+      setSelectedSection(target.sectionRow);
+      setSelectedCard(target.cardSummary);
+      catalogPreselectStageRef.current = "done";
+    }
+
     fillFieldsFromCatalogMatch(result);
-    suppressNextDropdownOpenRef.current = true;
-    setCatalogQuery(`${result.cardNumber} ${result.playerNames.join(" / ")}`.trim());
+
+    const label = `${result.cardNumber} ${result.playerNames.join(" / ")}`.trim();
+    selectedCatalogMatchLabelRef.current = label;
+    setCatalogQuery(label);
     setShowCatalogResults(false);
   }
 
@@ -720,6 +839,31 @@ function NewCardPageInner() {
     if (catalogPreselectStageRef.current !== "pending-card") return;
     if (!target.sectionRow) return;
     if (selectedSection?.id !== target.sectionRow.id) return;
+
+    setSelectedCard(target.cardSummary);
+    catalogPreselectStageRef.current = "done";
+  }, [selectedSection, setSelectedCard]);
+
+  // Stage 2b (Add Card Catalog Match canonical-identity fix): symmetric to
+  // Stage 2 above, but for a SECTIONLESS target (target.sectionRow ===
+  // null) reached via a genuine selectedSection change. Stage 2
+  // deliberately never applies a null-sectionRow target (see its own "if
+  // (!target.sectionRow) return" guard) -- safe for the ?catalogCardId=
+  // bootstrap, because that flow's own Stage 1 always resolves a
+  // sectionless target immediately (selectedSection starts null before any
+  // bootstrap runs, so Stage 1's "apply now" branch already covers it and
+  // "pending-card" is never reached for a null target there).
+  // selectCatalogMatch's synchronous reuse of this same staged mechanism
+  // can reach this exact case mid-session -- switching from a selection
+  // that DID have a section to a Catalog Match result that has none -- so
+  // this effect closes that one remaining gap, without touching Stage 1's
+  // or Stage 2's own proven bootstrap behavior at all.
+  useEffect(() => {
+    const target = catalogPreselectTargetRef.current;
+    if (!target) return;
+    if (catalogPreselectStageRef.current !== "pending-card") return;
+    if (target.sectionRow !== null) return;
+    if (selectedSection !== null) return;
 
     setSelectedCard(target.cardSummary);
     catalogPreselectStageRef.current = "done";
@@ -1548,6 +1692,23 @@ function NewCardPageInner() {
     setSelectedCandidate(null);
   }
 
+  // Add Card identity-state lifecycle fix, refined for the Catalog Match
+  // canonical-identity fix: the shared "a canonical selection may no
+  // longer be trusted" primitive, factored out of handleIdentityFieldEdit
+  // below so the Catalog Match query box's own edit handler (further down)
+  // can reuse the exact same invalidation instead of duplicating it. Clears
+  // every canonical-id-bearing selection state at once (scan candidate,
+  // manual/Catalog-Match-established selectedCard, and the checklist
+  // section it may have carried) and marks the interaction so stale
+  // auto-selection can't immediately overwrite it.
+  function invalidateCanonicalSelection() {
+    hasManualCandidateInteractionRef.current = true;
+    setCandidateAutoSelected(false);
+    setSelectedCandidate(null);
+    setSelectedCard(null);
+    setSelectedSection(null);
+  }
+
   // Add Card identity-state lifecycle fix: the ONE place a genuine USER
   // keystroke into an identity field (Player/Year/Set/Card #/Insert) is
   // funneled through -- distinct from every programmatic writer of the same
@@ -1574,20 +1735,16 @@ function NewCardPageInner() {
   ) {
     setter(value);
 
-    hasManualCandidateInteractionRef.current = true;
-    setCandidateAutoSelected(false);
-    setSelectedCandidate(null);
-
-    // The manual Set/Section/Card lookup's own exact pick is a second,
-    // independent source of a trusted catalogCardId (buildCard()'s
-    // selectedCard?.id fallback). Set/Year edits already cascade-clear it
-    // via useChecklistSectionLookup/useCatalogCardLookup's own id-keyed
+    // Covers both selectedCandidate and selectedCard/selectedSection (the
+    // manual Set/Section/Card lookup's -- and now Catalog Match's -- own
+    // exact pick, a second independent source of a trusted catalogCardId).
+    // Set/Year edits already cascade-clear selectedCard via
+    // useChecklistSectionLookup/useCatalogCardLookup's own id-keyed
     // render-time reset, but Player/Card #/Insert do not (they aren't part
-    // of that Set -> Section -> Card hierarchy) -- cleared unconditionally
-    // here so every identity edit is handled the same way rather than only
-    // the fields that happen to cascade.
-    setSelectedCard(null);
-    setSelectedSection(null);
+    // of that Set -> Section -> Card hierarchy) -- invalidateCanonicalSelection
+    // clears it unconditionally so every identity edit is handled the same
+    // way rather than only the fields that happen to cascade.
+    invalidateCanonicalSelection();
 
     pendingIdentityOverridesRef.current[evidenceField] = value;
     if (identityEditDebounceRef.current) clearTimeout(identityEditDebounceRef.current);
@@ -2695,7 +2852,20 @@ function NewCardPageInner() {
             <input
               value={catalogQuery}
               onChange={(e) => {
-                setCatalogQuery(e.target.value);
+                const value = e.target.value;
+                // Add Card Catalog Match canonical-identity fix: distinguish
+                // an actual edit from merely focusing/reflowing a field that
+                // already shows a selected exact match's generated label.
+                // Only an actual text change here demotes the established
+                // selection -- focusing alone (onFocus below) never does.
+                if (
+                  selectedCatalogMatchLabelRef.current !== null &&
+                  value !== selectedCatalogMatchLabelRef.current
+                ) {
+                  selectedCatalogMatchLabelRef.current = null;
+                  invalidateCanonicalSelection();
+                }
+                setCatalogQuery(value);
                 setShowCatalogResults(true);
               }}
               onFocus={() => setShowCatalogResults(true)}
