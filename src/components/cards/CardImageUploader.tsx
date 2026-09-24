@@ -76,40 +76,66 @@ export function CardImageUploader({
   fingerprint,
   onFileSelected,
 }: CardImageUploaderProps) {
+  // Add Card mobile UX, Compact Photos phase: hideCommunity/previewSrc were
+  // pulled out of the old inline IIFE (unchanged formula) so both the
+  // preview box AND the layout-size decision below can read them, instead
+  // of only the box's own render branch. previewSrc is exactly the old
+  // `display` value (imageUrl, or a non-hidden shared-image dataUrl) --
+  // whenever there's nothing real to preview, the uploader renders the new
+  // compact empty state instead of a full card-aspect-ratio box; the
+  // moment there's something to show, it renders the exact same
+  // aspect-[2.5/3.5] preview layout this component already had. This
+  // component has exactly one caller (cards/new/page.tsx, front + back),
+  // so this default-behavior change needs no new prop to stay scoped.
+  const hideCommunity =
+    reportInfo && (reportInfo.status === "blocked" || reportInfo.reports >= REPORT_HIDE_THRESHOLD);
+  const previewSrc = imageUrl || (!hideCommunity ? sharedImage?.dataUrl : undefined);
+  // "An image exists" for the purposes of side/slab classification and the
+  // photo-confirmation checkbox means the user's OWN selected image
+  // (imageUrl), not merely a community-reference suggestion being
+  // previewed for consideration -- classifying/confirming a photo that
+  // isn't actually theirs yet wouldn't mean anything. cardPhotoConfirm's
+  // role in canSave (cards/new/page.tsx) is completely unchanged by this --
+  // only where this checkbox is allowed to render changed.
+  const hasOwnImage = !!imageUrl;
+  const sideWord = side === "front" ? "front" : "back";
+  const uploadLabel = hasOwnImage ? "Retake photo" : `Add ${sideWord} photo`;
+
   return (
     <div className="sm:col-span-2">
-      <div className="text-sm font-medium text-zinc-900">{label ?? "Card image"}</div>
-      <div className="mt-2 grid gap-3 sm:grid-cols-[140px_1fr]">
-        <div className="relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden">
-          {(() => {
-            const hideCommunity =
-              reportInfo &&
-              (reportInfo.status === "blocked" ||
-                reportInfo.reports >= REPORT_HIDE_THRESHOLD);
-            const display = imageUrl || (!hideCommunity ? sharedImage?.dataUrl : "");
-            if (display) {
-              return (
-                // display is either imageUrl (a signed Supabase Storage URL
-                // or local data URL) or a community-shared image's data URL;
-                // next/image is intentionally not used here.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={display}
-                  alt="Card"
-                  className="h-full w-full object-contain"
-                />
-              );
-            }
-            if (hideCommunity) {
-              return (
-                <div className="text-[11px] text-zinc-500 text-center px-2">
-                  Image hidden (reported)
-                </div>
-              );
-            }
-            return <div className="text-[11px] text-zinc-500 text-center px-2">No image</div>;
-          })()}
-          <div className="pointer-events-none absolute inset-2 rounded-sm border border-dashed border-zinc-300/70" />
+      <div className="flex items-baseline gap-2">
+        <div className="text-sm font-medium text-zinc-900">{label ?? "Card image"}</div>
+        {side === "back" ? <div className="text-xs text-zinc-500">Optional</div> : null}
+      </div>
+
+      <div
+        className={
+          previewSrc
+            ? "mt-2 grid gap-3 sm:grid-cols-[140px_1fr]"
+            : "mt-2 flex items-center gap-3"
+        }
+      >
+        <div
+          className={
+            previewSrc
+              ? "relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden"
+              : "relative h-12 w-12 flex-none rounded-md border border-dashed border-zinc-300 bg-zinc-50 overflow-hidden"
+          }
+        >
+          {previewSrc ? (
+            // previewSrc is either imageUrl (a signed Supabase Storage URL
+            // or local data URL) or a community-shared image's data URL;
+            // next/image is intentionally not used here.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={previewSrc} alt="Card" className="h-full w-full object-contain" />
+          ) : hideCommunity ? (
+            <div className="absolute inset-0 flex items-center justify-center text-[9px] text-zinc-500 text-center px-1">
+              Hidden
+            </div>
+          ) : null}
+          {previewSrc ? (
+            <div className="pointer-events-none absolute inset-2 rounded-sm border border-dashed border-zinc-300/70" />
+          ) : null}
         </div>
 
         {/* Button-system Phase 3: these three compact media controls
@@ -119,10 +145,10 @@ export function CardImageUploader({
             kept at their existing compact text-xs size rather than full
             px-4/py-2 geometry (per the task's guidance for small media
             controls). Upload/remove/community-image behavior unchanged. */}
-        <div className="space-y-2">
+        <div className={previewSrc ? "space-y-2" : "min-w-0 flex-1 space-y-2"}>
           <div className="flex flex-wrap gap-2">
             <label className="btn-secondary text-xs cursor-pointer">
-              Upload card photo (front/back)
+              {uploadLabel}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
@@ -132,13 +158,7 @@ export function CardImageUploader({
               />
             </label>
 
-            {sharedImage?.dataUrl &&
-            !imageUrl &&
-            !(
-              reportInfo &&
-              (reportInfo.status === "blocked" ||
-                reportInfo.reports >= REPORT_HIDE_THRESHOLD)
-            ) ? (
+            {sharedImage?.dataUrl && !imageUrl && !hideCommunity ? (
               <button
                 type="button"
                 onClick={() => {
@@ -167,73 +187,89 @@ export function CardImageUploader({
             ) : null}
           </div>
 
-          <div className="grid gap-2 text-xs text-zinc-600 sm:grid-cols-2">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                name={`imageType-${side}`}
-                value="front"
-                checked={imageType === "front"}
-                onChange={() => {
-                  setImageType("front");
-                  setImageIsFront(true);
-                  setImageIsSlabbed(false);
-                }}
-              />
-              Front of card
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                name={`imageType-${side}`}
-                value="back"
-                checked={imageType === "back"}
-                onChange={() => {
-                  setImageType("back");
-                  setImageIsFront(false);
-                  setImageIsSlabbed(false);
-                }}
-              />
-              Back of card
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                name={`imageType-${side}`}
-                value="slab_front"
-                checked={imageType === "slab_front"}
-                onChange={() => {
-                  setImageType("slab_front");
-                  setImageIsFront(true);
-                  setImageIsSlabbed(true);
-                }}
-              />
-              Slab front
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                name={`imageType-${side}`}
-                value="slab_back"
-                checked={imageType === "slab_back"}
-                onChange={() => {
-                  setImageType("slab_back");
-                  setImageIsFront(false);
-                  setImageIsSlabbed(true);
-                }}
-              />
-              Slab back
-            </label>
-          </div>
+          {/* Add Card mobile UX, Compact Photos phase: side/slab
+              classification and the photo-confirmation checkbox now only
+              render once the user has an actual image of their own
+              (hasOwnImage) -- there is nothing to classify or confirm
+              before that, and showing them in the empty state was exactly
+              the "several technical-looking controls before they're
+              useful" problem this phase targets. Defaults
+              (imageType="front"/imageIsFront=true/imageIsSlabbed=false,
+              see useCardImageSlot.ts) are completely unchanged -- a user
+              who never touches these still gets the exact same values at
+              save time as before; this only changes when the controls are
+              visible, never what they default to or how they behave. */}
+          {hasOwnImage ? (
+            <>
+              <div className="grid gap-2 text-xs text-zinc-600 sm:grid-cols-2">
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`imageType-${side}`}
+                    value="front"
+                    checked={imageType === "front"}
+                    onChange={() => {
+                      setImageType("front");
+                      setImageIsFront(true);
+                      setImageIsSlabbed(false);
+                    }}
+                  />
+                  Front of card
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`imageType-${side}`}
+                    value="back"
+                    checked={imageType === "back"}
+                    onChange={() => {
+                      setImageType("back");
+                      setImageIsFront(false);
+                      setImageIsSlabbed(false);
+                    }}
+                  />
+                  Back of card
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`imageType-${side}`}
+                    value="slab_front"
+                    checked={imageType === "slab_front"}
+                    onChange={() => {
+                      setImageType("slab_front");
+                      setImageIsFront(true);
+                      setImageIsSlabbed(true);
+                    }}
+                  />
+                  Slab front
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`imageType-${side}`}
+                    value="slab_back"
+                    checked={imageType === "slab_back"}
+                    onChange={() => {
+                      setImageType("slab_back");
+                      setImageIsFront(false);
+                      setImageIsSlabbed(true);
+                    }}
+                  />
+                  Slab back
+                </label>
+              </div>
 
-          <label className="inline-flex items-center gap-2 text-xs text-zinc-600">
-            <input
-              type="checkbox"
-              checked={cardPhotoConfirm}
-              onChange={(e) => setCardPhotoConfirm(e.target.checked)}
-            />
-            I confirm this is a photo of the card (or slab).
-          </label>
+              <label className="inline-flex items-center gap-2 text-xs text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={cardPhotoConfirm}
+                  onChange={(e) => setCardPhotoConfirm(e.target.checked)}
+                />
+                I confirm this is a photo of the card (or slab).
+              </label>
+            </>
+          ) : null}
 
           {imageError ? (
             <div className="text-xs text-red-600">{imageError}</div>
