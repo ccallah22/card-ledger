@@ -2803,7 +2803,15 @@ function NewCardPageInner() {
             <div className="sm:col-span-2">
               <div className="text-base font-semibold text-zinc-900">Photos</div>
             </div>
-            <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
+            {/* Add Card mobile UX, side-by-side Photos phase: grid-cols-2
+                is now unconditional (was sm:grid-cols-2) so Front and Back
+                sit side-by-side starting at the mobile breakpoint too, not
+                only at sm: and up -- the compact empty/uploaded-state
+                layouts CardImageUploader now renders (see that component)
+                were sized specifically to fit a half-width column like
+                this. gap-3 on mobile (vs gap-4 at sm:+) reclaims a little
+                extra per-column width on narrow phones. */}
+            <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:gap-4">
               <div>
                 <CardImageUploader
                   label="Front Image"

@@ -112,7 +112,7 @@ export function CardImageUploader({
         className={
           previewSrc
             ? "mt-2 grid gap-3 sm:grid-cols-[140px_1fr]"
-            : "mt-2 flex items-center gap-3"
+            : "mt-2 flex flex-wrap items-center gap-2"
         }
       >
         <div
@@ -145,7 +145,7 @@ export function CardImageUploader({
             kept at their existing compact text-xs size rather than full
             px-4/py-2 geometry (per the task's guidance for small media
             controls). Upload/remove/community-image behavior unchanged. */}
-        <div className={previewSrc ? "space-y-2" : "min-w-0 flex-1 space-y-2"}>
+        <div className={previewSrc ? "min-w-0 space-y-2" : "min-w-0 flex-1 space-y-2"}>
           <div className="flex flex-wrap gap-2">
             <label className="btn-secondary text-xs cursor-pointer">
               {uploadLabel}
@@ -260,11 +260,12 @@ export function CardImageUploader({
                 </label>
               </div>
 
-              <label className="inline-flex items-center gap-2 text-xs text-zinc-600">
+              <label className="inline-flex items-start gap-2 text-xs text-zinc-600">
                 <input
                   type="checkbox"
                   checked={cardPhotoConfirm}
                   onChange={(e) => setCardPhotoConfirm(e.target.checked)}
+                  className="mt-0.5"
                 />
                 I confirm this is a photo of the card (or slab).
               </label>
