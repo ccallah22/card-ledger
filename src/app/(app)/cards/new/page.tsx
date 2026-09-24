@@ -2792,519 +2792,100 @@ function NewCardPageInner() {
           "gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2 sm:grid"
         }
       >
-        <div className="sm:col-span-2">
-          <label className="block text-xs font-semibold text-zinc-900">Set lookup</label>
-          <div className="relative">
-            <input
-              value={setQuery}
-              onChange={(e) => {
-                setSetQuery(e.target.value);
-                setShowSetResults(true);
-              }}
-              onFocus={() => setShowSetResults(true)}
-              onBlur={() => {
-                window.setTimeout(() => setShowSetResults(false), 120);
-              }}
-              placeholder="Search sets (e.g., 2018 Prizm, Topps Chrome)"
-              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
-            />
-            {showSetResults && setResults.length ? (
-              <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
-                {setResults.map((s) => (
-                  <button
-                    key={`${s.year}-${s.name}-${s.brand ?? ""}-${s.sport ?? ""}`}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      selectSet(s);
-                      if (s.checklistKey) {
-                        setChecklistQuery("");
-                        setChecklistSection("ALL");
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-                  >
-                    <div className="font-medium text-zinc-900">
-                      {formatSetLabel(s)}
-                    </div>
-                    <div className="text-xs text-zinc-900">
-                      {[s.brand, s.sport, s.checklistKey ? "Checklist" : ""]
-                        .filter(Boolean)
-                        .join(" • ")}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <p className="mt-1 text-xs text-zinc-900">
-            Pick a set to auto-fill <span className="font-medium">Year</span> and{" "}
-            <span className="font-medium">Set</span>.
-          </p>
-        </div>
-
-        <div className="sm:col-span-2">
-          <label className="block text-xs font-semibold text-zinc-900">Catalog match</label>
-          {frontOcrStatus === "running" ? (
-            <div className="mt-1 text-xs text-zinc-500">Reading card…</div>
-          ) : null}
-          <div className="relative">
-            <input
-              value={catalogQuery}
-              onChange={(e) => {
-                const value = e.target.value;
-                // Add Card Catalog Match canonical-identity fix: distinguish
-                // an actual edit from merely focusing/reflowing a field that
-                // already shows a selected exact match's generated label.
-                // Only an actual text change here demotes the established
-                // selection -- focusing alone (onFocus below) never does.
-                if (
-                  selectedCatalogMatchLabelRef.current !== null &&
-                  value !== selectedCatalogMatchLabelRef.current
-                ) {
-                  selectedCatalogMatchLabelRef.current = null;
-                  invalidateCanonicalSelection();
-                }
-                setCatalogQuery(value);
-                setShowCatalogResults(true);
-              }}
-              onFocus={() => setShowCatalogResults(true)}
-              onBlur={() => {
-                window.setTimeout(() => setShowCatalogResults(false), 120);
-              }}
-              placeholder="Search player, set, year, card #..."
-              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
-            />
-            {showCatalogResults && debouncedCatalogQuery.trim() ? (
-              <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
-                {catalogLoading ? (
-                  <div className="px-3 py-2 text-sm text-zinc-600">Searching…</div>
-                ) : catalogResults.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-zinc-600">No cards found.</div>
-                ) : (
-                  catalogResults.map((result) => (
-                    <button
-                      key={result.id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        selectCatalogMatch(result);
-                      }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-                    >
-                      <div className="font-medium text-zinc-900">
-                        {result.playerNames.join(" / ") || result.title || `Card #${result.cardNumber}`}
-                      </div>
-                      <div className="text-xs text-zinc-900">
-                        {[
-                          result.releaseYear,
-                          result.setName,
-                          result.cardNumber ? `#${result.cardNumber}` : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" • ")}
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            ) : null}
-          </div>
-          <p className="mt-1 text-xs text-zinc-900">
-            Selecting a catalog card fills{" "}
-            <span className="font-medium">Player</span>, <span className="font-medium">Year</span>,{" "}
-            <span className="font-medium">Set</span>, <span className="font-medium">Card #</span>, and
-            the rookie/autograph/patch flags. You can still edit any field afterward.
-          </p>
-        </div>
-
-        {checklistLoading ? (
-          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
-            Loading checklist…
-          </div>
-        ) : activeChecklist.length ? (
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-zinc-900">Checklist search</label>
-            <div className="relative">
-              <input
-                value={checklistQuery}
-                onChange={(e) => {
-                  setChecklistQuery(e.target.value);
-                  setShowChecklistResults(true);
-                }}
-                onFocus={() => setShowChecklistResults(true)}
-                onBlur={() => {
-                  window.setTimeout(() => setShowChecklistResults(false), 120);
-                }}
-                placeholder="Search name, number, team..."
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
-              />
-              {showChecklistResults && checklistResults.length ? (
-                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
-                  {checklistResults.map((c: ChecklistEntry) => (
-                    <button
-                      key={`${c.section}-${c.number}-${c.name}`}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        // Add Card identity-state lifecycle fix: this
-                        // checklist-search pick is an explicit, exact
-                        // identity choice writing Player/Card #/Insert
-                        // directly, same category as selectCatalogMatch/the
-                        // manual Card Lookup pick below -- clear any active
-                        // scan candidate or manual catalog-card selection
-                        // first so a stale canonical id can't survive
-                        // alongside these now-different field values.
-                        clearSelectedCandidate();
-                        setSelectedCard(null);
-                        setSelectedSection(null);
-                        setCardNumber(c.number);
-                        setPlayerName(c.name);
-                        if (c.team) setTeam(c.team);
-                        if (typeof c.section === "string") {
-                          if (c.section === "Anniversary Rookies") {
-                            setInsert("Anniversary Rookies");
-                            setParallel("");
-                            setSerialTotal("");
-                          }
-                          applySectionAutoFill(c.section, setParallel, setSerialTotal, setInsert);
-                          const flags = inferFlagsFromSection(c.section);
-                          setIsRookie(flags.isRookie);
-                          setIsAutograph(flags.isAutograph);
-                          setIsPatch(flags.isMemorabilia);
-                        }
-                        setChecklistQuery(`${c.number} ${c.name}`);
-                        setShowChecklistResults(false);
-                      }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-                    >
-                      <div className="font-medium text-zinc-900">
-                        #{c.number} {c.name}
-                      </div>
-                      <div className="text-xs text-zinc-900">
-                        {[c.team, c.section].filter(Boolean).join(" • ")}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <p className="mt-1 text-xs text-zinc-900">
-              Selecting a card fills <span className="font-medium">Player</span>,{" "}
-              <span className="font-medium">Card #</span>, and{" "}
-              <span className="font-medium">Team</span>.
-            </p>
-
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
-              <button
-                type="button"
-                onClick={() => setChecklistSection("ALL")}
-                className={
-                  "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
-                  (checklistSection === "ALL"
-                    ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
-                    : "border-zinc-400 bg-white text-zinc-900 hover:bg-zinc-50")
-                }
-              >
-                <div className="text-[11px] uppercase tracking-wide opacity-80 truncate">All</div>
-                <div className="text-base font-semibold">{activeChecklist.length}</div>
-              </button>
-
-              {checklistGroups.map((g) => (
-                <button
-                  key={g.label}
-                  type="button"
-                  onClick={() => setChecklistSection(g.label)}
-                className={
-                  "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
-                  (checklistSection === g.label
-                    ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
-                    : "border-zinc-400 bg-white text-zinc-900 hover:bg-zinc-50")
-                }
-              >
-                  <div className="text-[11px] uppercase tracking-wide opacity-80 truncate">
-                    {g.label}
-                  </div>
-                  <div className="text-base font-semibold">{g.count}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : setName.trim() && year.trim() ? (
-          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
-            Checklist is only available after selecting a set with a checklist.
-          </div>
-        ) : null}
-
-        {catalogPreselectStatus === "loading" ? (
-          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
-            Loading catalog card…
-          </div>
-        ) : catalogPreselectStatus === "error" ? (
-          <div className="sm:col-span-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            We couldn&apos;t load that catalog card. You can still select a card manually.
-          </div>
-        ) : null}
-
-        {checklistSectionsLoading ? (
-          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
-            Loading sections…
-          </div>
-        ) : checklistSectionOptions.length > 0 ? (
-          <div className="sm:col-span-2">
-            <Select
-              label="Section (optional)"
-              value={selectedSection ? String(selectedSection.id) : ""}
-              onChange={(v) => {
-                const section = checklistSectionOptions.find((s) => String(s.id) === v) ?? null;
-                setSelectedSection(section);
-              }}
-              options={[
-                ["", "None"],
-                ...checklistSectionOptions.map(
-                  (s) => [String(s.id), s.name] as [string, string]
-                ),
-              ]}
-            />
-          </div>
-        ) : null}
-
-        {selectedSection ? (
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-zinc-900">Card (optional)</label>
-            {catalogCardsLoading ? (
-              <div className="mt-1 text-xs text-zinc-500">Loading cards…</div>
-            ) : null}
-            <div className="relative">
-              <input
-                value={catalogCardQuery}
-                onChange={(e) => {
-                  setCatalogCardQuery(e.target.value);
-                  setShowCatalogCardResults(true);
-                }}
-                onFocus={() => setShowCatalogCardResults(true)}
-                onBlur={() => {
-                  window.setTimeout(() => setShowCatalogCardResults(false), 120);
-                }}
-                placeholder="Search card number or title..."
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
-              />
-              {showCatalogCardResults && catalogCardOptions.length ? (
-                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
-                  {catalogCardOptions.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        // Save-identity precedence fix (Phase A): an
-                        // explicit manual card pick is a more recent,
-                        // equally-exact identity choice than any earlier
-                        // scan candidate -- clear it (same helper the
-                        // candidate panel's own "Clear selection" button
-                        // uses) so buildCard()'s precedence correctly falls
-                        // through to this selection instead of continuing
-                        // to save a stale candidate's cardId.
-                        clearSelectedCandidate();
-                        setSelectedCard(c);
-                        // Identity-ownership fix (Phase B): c (CardSummary)
-                        // carries only id/card_number/title -- no player/
-                        // year/set -- so those three can't be corrected
-                        // here (left exactly as the user already typed them
-                        // to reach this section/card). card_number IS
-                        // trustworthy exact data this handler wasn't
-                        // previously applying at all. parallel/autograph/
-                        // patch are reset to a clean baseline for the same
-                        // reason applyCandidateSelection resets them: a
-                        // previously selected variant's flags belong to
-                        // whatever card was active before and must not
-                        // silently carry over onto this different exact
-                        // card.
-                        setCardNumber(c.card_number);
-                        setParallel("");
-                        setIsAutograph(false);
-                        setIsPatch(false);
-                        setCatalogCardQuery(`#${c.card_number}${c.title ? ` - ${c.title}` : ""}`);
-                        setShowCatalogCardResults(false);
-                      }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-                    >
-                      <div className="font-medium text-zinc-900">
-                        #{c.card_number}
-                        {c.title ? ` - ${c.title}` : ""}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
-        {/* Add Card scan UX simplification, Phase D: unchanged manual
-            lookup box, but now also gated on !selectedCandidate -- an
-            earlier manual Card pick that's since been superseded by an
-            explicitly chosen scan candidate (selectedCandidate now
-            authoritative per Phase A/B) leaves selectedCard set to a
-            stale card; without this it would keep showing this box
-            underneath an unrelated "Card identified" candidate. */}
-        {selectedCard && !selectedCandidate ? (
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-zinc-900">
-              Parallel / Variant (optional)
-            </label>
-            {catalogVariantsLoading ? (
-              <div className="mt-1 text-xs text-zinc-500">Loading variants…</div>
-            ) : null}
-            <div className="relative">
-              <input
-                value={catalogVariantQuery}
-                onChange={(e) => {
-                  setCatalogVariantQuery(e.target.value);
-                  setShowCatalogVariantResults(true);
-                }}
-                onFocus={() => setShowCatalogVariantResults(true)}
-                onBlur={() => {
-                  window.setTimeout(() => setShowCatalogVariantResults(false), 120);
-                }}
-                placeholder="Search parallel, print run, or descriptor..."
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
-              />
-              {showCatalogVariantResults && catalogVariantOptions.length ? (
-                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
-                  {catalogVariantOptions.map((v) => {
-                    const label = [
-                      v.parallelName ?? "Base",
-                      v.printRun ? `/${v.printRun}` : "",
-                      v.swatchDescriptor ?? "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
-                    const flags = [v.hasAutograph ? "AU" : "", v.hasMemorabilia ? "MEM" : ""]
-                      .filter(Boolean)
-                      .join(" • ");
-                    return (
-                      <button
-                        key={v.id}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setSelectedVariant(v);
-                          setCatalogVariantQuery(label);
-                          setShowCatalogVariantResults(false);
-                          // Fills the existing Parallel field and
-                          // autograph/memorabilia checkboxes -- these
-                          // already flow into buildCard()/save exactly as
-                          // when filled by catalog match or checklist
-                          // selection, so no save-logic change is needed.
-                          // (Phase D: now via the shared applyVariantSelection
-                          // primitive, reused by the new candidate-flow
-                          // variant refinement below -- same fields, same
-                          // effect, no duplicated assignment logic.)
-                          applyVariantSelection(v);
-                        }}
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-                      >
-                        <div className="font-medium text-zinc-900">{label}</div>
-                        {flags ? <div className="text-xs text-zinc-900">{flags}</div> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-            <p className="mt-1 text-xs text-zinc-900">
-              Selecting a variant fills <span className="font-medium">Parallel</span> and the{" "}
-              <span className="font-medium">Autograph</span>/
-              <span className="font-medium">Patch/Relic</span> checkboxes. You can still edit them
-              afterward.
-            </p>
-          </div>
-        ) : null}
-
+        {/* Add Card UX cleanup, Phase 1 (reorder only -- no logic change):
+            Photos now render first, so the page's first ask of the user is
+            "show TheBinder your card," matching the product direction. Every
+            control below is the exact same JSX that used to render higher
+            up the page, moved as intact blocks -- no handler, effect, ref,
+            or state declaration was touched to do this. */}
         {!isWishlistCard ? (
-          <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
-            <div>
-              <CardImageUploader
-                label="Front Image"
-                side={frontImage.side}
-                imageUrl={frontImage.imageUrl}
-                setImageUrl={frontImage.setImageUrl}
-                imageType={frontImage.imageType}
-                setImageType={frontImage.setImageType}
-                setImageIsFront={frontImage.setImageIsFront}
-                setImageIsSlabbed={frontImage.setImageIsSlabbed}
-                cardPhotoConfirm={frontImage.cardPhotoConfirm}
-                setCardPhotoConfirm={frontImage.setCardPhotoConfirm}
-                setImageOwnerConfirm={frontImage.setImageOwnerConfirm}
-                setImageShare={frontImage.setImageShare}
-                imageError={frontImage.imageError}
-                imageCheckStatus={frontImage.imageCheckStatus}
-                sharedImage={sharedImage}
-                reportInfo={reportInfo}
-                fingerprint={fingerprint}
-                onFileSelected={frontImage.handleImageFile}
-              />
-              {ocrStatusLabel("front", frontOcrStatus) ? (
-                <div className="mt-1 text-xs text-zinc-500">
-                  {ocrStatusLabel("front", frontOcrStatus)}
-                </div>
-              ) : null}
-              {frontOcrError ? (
-                <div className="mt-1 text-xs text-red-600">{frontOcrError}</div>
-              ) : null}
-              {/* Add Card scan UX simplification, Phase E: the ONE
-                  concise, actionable line shown when this side's photo
-                  genuinely prevents a reliable scan -- see
-                  getImageRetakeGuidance's own doc comment for exactly what
-                  does/doesn't trigger it. Independent of the back side's
-                  own message below; never affects OCR/candidate/save. */}
-              {frontVisionResult && getImageRetakeGuidance("front", frontVisionResult) ? (
-                <div className="mt-1 text-xs text-amber-700">
-                  {getImageRetakeGuidance("front", frontVisionResult)}
-                </div>
-              ) : null}
+          <>
+            <div className="sm:col-span-2">
+              <div className="text-base font-semibold text-zinc-900">Photos</div>
             </div>
+            <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
+              <div>
+                <CardImageUploader
+                  label="Front Image"
+                  side={frontImage.side}
+                  imageUrl={frontImage.imageUrl}
+                  setImageUrl={frontImage.setImageUrl}
+                  imageType={frontImage.imageType}
+                  setImageType={frontImage.setImageType}
+                  setImageIsFront={frontImage.setImageIsFront}
+                  setImageIsSlabbed={frontImage.setImageIsSlabbed}
+                  cardPhotoConfirm={frontImage.cardPhotoConfirm}
+                  setCardPhotoConfirm={frontImage.setCardPhotoConfirm}
+                  setImageOwnerConfirm={frontImage.setImageOwnerConfirm}
+                  setImageShare={frontImage.setImageShare}
+                  imageError={frontImage.imageError}
+                  imageCheckStatus={frontImage.imageCheckStatus}
+                  sharedImage={sharedImage}
+                  reportInfo={reportInfo}
+                  fingerprint={fingerprint}
+                  onFileSelected={frontImage.handleImageFile}
+                />
+                {ocrStatusLabel("front", frontOcrStatus) ? (
+                  <div className="mt-1 text-xs text-zinc-500">
+                    {ocrStatusLabel("front", frontOcrStatus)}
+                  </div>
+                ) : null}
+                {frontOcrError ? (
+                  <div className="mt-1 text-xs text-red-600">{frontOcrError}</div>
+                ) : null}
+                {/* Add Card scan UX simplification, Phase E: the ONE
+                    concise, actionable line shown when this side's photo
+                    genuinely prevents a reliable scan -- see
+                    getImageRetakeGuidance's own doc comment for exactly what
+                    does/doesn't trigger it. Independent of the back side's
+                    own message below; never affects OCR/candidate/save. */}
+                {frontVisionResult && getImageRetakeGuidance("front", frontVisionResult) ? (
+                  <div className="mt-1 text-xs text-amber-700">
+                    {getImageRetakeGuidance("front", frontVisionResult)}
+                  </div>
+                ) : null}
+              </div>
 
-            {/* Back Image: independent slot. No community-image lookup
-                exists for a back photo yet, since the shared-image feature
-                is keyed by a single card-identity fingerprint today. */}
-            <div>
-              <CardImageUploader
-                label="Back Image"
-                side={backImage.side}
-                imageUrl={backImage.imageUrl}
-                setImageUrl={backImage.setImageUrl}
-                imageType={backImage.imageType}
-                setImageType={backImage.setImageType}
-                setImageIsFront={backImage.setImageIsFront}
-                setImageIsSlabbed={backImage.setImageIsSlabbed}
-                cardPhotoConfirm={backImage.cardPhotoConfirm}
-                setCardPhotoConfirm={backImage.setCardPhotoConfirm}
-                setImageOwnerConfirm={backImage.setImageOwnerConfirm}
-                setImageShare={backImage.setImageShare}
-                imageError={backImage.imageError}
-                imageCheckStatus={backImage.imageCheckStatus}
-                sharedImage={null}
-                reportInfo={null}
-                fingerprint=""
-                onFileSelected={backImage.handleImageFile}
-              />
-              {ocrStatusLabel("back", backOcrStatus) ? (
-                <div className="mt-1 text-xs text-zinc-500">
-                  {ocrStatusLabel("back", backOcrStatus)}
-                </div>
-              ) : null}
-              {backOcrError ? (
-                <div className="mt-1 text-xs text-red-600">{backOcrError}</div>
-              ) : null}
-              {backVisionResult && getImageRetakeGuidance("back", backVisionResult) ? (
-                <div className="mt-1 text-xs text-amber-700">
-                  {getImageRetakeGuidance("back", backVisionResult)}
-                </div>
-              ) : null}
+              {/* Back Image: independent slot. No community-image lookup
+                  exists for a back photo yet, since the shared-image feature
+                  is keyed by a single card-identity fingerprint today. */}
+              <div>
+                <CardImageUploader
+                  label="Back Image"
+                  side={backImage.side}
+                  imageUrl={backImage.imageUrl}
+                  setImageUrl={backImage.setImageUrl}
+                  imageType={backImage.imageType}
+                  setImageType={backImage.setImageType}
+                  setImageIsFront={backImage.setImageIsFront}
+                  setImageIsSlabbed={backImage.setImageIsSlabbed}
+                  cardPhotoConfirm={backImage.cardPhotoConfirm}
+                  setCardPhotoConfirm={backImage.setCardPhotoConfirm}
+                  setImageOwnerConfirm={backImage.setImageOwnerConfirm}
+                  setImageShare={backImage.setImageShare}
+                  imageError={backImage.imageError}
+                  imageCheckStatus={backImage.imageCheckStatus}
+                  sharedImage={null}
+                  reportInfo={null}
+                  fingerprint=""
+                  onFileSelected={backImage.handleImageFile}
+                />
+                {ocrStatusLabel("back", backOcrStatus) ? (
+                  <div className="mt-1 text-xs text-zinc-500">
+                    {ocrStatusLabel("back", backOcrStatus)}
+                  </div>
+                ) : null}
+                {backOcrError ? (
+                  <div className="mt-1 text-xs text-red-600">{backOcrError}</div>
+                ) : null}
+                {backVisionResult && getImageRetakeGuidance("back", backVisionResult) ? (
+                  <div className="mt-1 text-xs text-amber-700">
+                    {getImageRetakeGuidance("back", backVisionResult)}
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
+          </>
         ) : null}
 
         {/* Add Card scan UX simplification, Phase F: the routine
@@ -3640,6 +3221,81 @@ function NewCardPageInner() {
           </div>
         ) : null}
 
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-semibold text-zinc-900">Search the catalog</label>
+          {frontOcrStatus === "running" ? (
+            <div className="mt-1 text-xs text-zinc-500">Reading card…</div>
+          ) : null}
+          <div className="relative">
+            <input
+              value={catalogQuery}
+              onChange={(e) => {
+                const value = e.target.value;
+                // Add Card Catalog Match canonical-identity fix: distinguish
+                // an actual edit from merely focusing/reflowing a field that
+                // already shows a selected exact match's generated label.
+                // Only an actual text change here demotes the established
+                // selection -- focusing alone (onFocus below) never does.
+                if (
+                  selectedCatalogMatchLabelRef.current !== null &&
+                  value !== selectedCatalogMatchLabelRef.current
+                ) {
+                  selectedCatalogMatchLabelRef.current = null;
+                  invalidateCanonicalSelection();
+                }
+                setCatalogQuery(value);
+                setShowCatalogResults(true);
+              }}
+              onFocus={() => setShowCatalogResults(true)}
+              onBlur={() => {
+                window.setTimeout(() => setShowCatalogResults(false), 120);
+              }}
+              placeholder="Search player, set, year, card #..."
+              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
+            />
+            {showCatalogResults && debouncedCatalogQuery.trim() ? (
+              <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                {catalogLoading ? (
+                  <div className="px-3 py-2 text-sm text-zinc-600">Searching…</div>
+                ) : catalogResults.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-zinc-600">No cards found.</div>
+                ) : (
+                  catalogResults.map((result) => (
+                    <button
+                      key={result.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectCatalogMatch(result);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                    >
+                      <div className="font-medium text-zinc-900">
+                        {result.playerNames.join(" / ") || result.title || `Card #${result.cardNumber}`}
+                      </div>
+                      <div className="text-xs text-zinc-900">
+                        {[
+                          result.releaseYear,
+                          result.setName,
+                          result.cardNumber ? `#${result.cardNumber}` : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-zinc-900">
+            Selecting a catalog card fills{" "}
+            <span className="font-medium">Player</span>, <span className="font-medium">Year</span>,{" "}
+            <span className="font-medium">Set</span>, <span className="font-medium">Card #</span>, and
+            the rookie/autograph/patch flags. You can still edit any field afterward.
+          </p>
+        </div>
+
         <Field
           label="Player"
           value={playerName}
@@ -3666,6 +3322,290 @@ function NewCardPageInner() {
           placeholder="123"
         />
         <Field label="Team" value={team} onChange={setTeam} placeholder="Browns" />
+
+        {/* Add Card UX cleanup, Phase 1 (reorder only): the advanced/manual
+            lookup mechanisms (Set lookup, Checklist search, Section/Card
+            dropdowns, the ?catalogCardId= bootstrap's status text) now
+            render as an explicit fallback group after the normal identity
+            fields, instead of ahead of Photos/Identification. Every
+            condition/handler below is unchanged from before this move. */}
+        <div className="sm:col-span-2">
+          <div className="text-sm font-medium text-zinc-900">Manual lookup</div>
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-semibold text-zinc-900">Set lookup</label>
+          <div className="relative">
+            <input
+              value={setQuery}
+              onChange={(e) => {
+                setSetQuery(e.target.value);
+                setShowSetResults(true);
+              }}
+              onFocus={() => setShowSetResults(true)}
+              onBlur={() => {
+                window.setTimeout(() => setShowSetResults(false), 120);
+              }}
+              placeholder="Search sets (e.g., 2018 Prizm, Topps Chrome)"
+              className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
+            />
+            {showSetResults && setResults.length ? (
+              <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                {setResults.map((s) => (
+                  <button
+                    key={`${s.year}-${s.name}-${s.brand ?? ""}-${s.sport ?? ""}`}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectSet(s);
+                      if (s.checklistKey) {
+                        setChecklistQuery("");
+                        setChecklistSection("ALL");
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                  >
+                    <div className="font-medium text-zinc-900">
+                      {formatSetLabel(s)}
+                    </div>
+                    <div className="text-xs text-zinc-900">
+                      {[s.brand, s.sport, s.checklistKey ? "Checklist" : ""]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-zinc-900">
+            Pick a set to auto-fill <span className="font-medium">Year</span> and{" "}
+            <span className="font-medium">Set</span>.
+          </p>
+        </div>
+
+        {checklistLoading ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            Loading checklist…
+          </div>
+        ) : activeChecklist.length ? (
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-zinc-900">Checklist search</label>
+            <div className="relative">
+              <input
+                value={checklistQuery}
+                onChange={(e) => {
+                  setChecklistQuery(e.target.value);
+                  setShowChecklistResults(true);
+                }}
+                onFocus={() => setShowChecklistResults(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setShowChecklistResults(false), 120);
+                }}
+                placeholder="Search name, number, team..."
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
+              />
+              {showChecklistResults && checklistResults.length ? (
+                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                  {checklistResults.map((c: ChecklistEntry) => (
+                    <button
+                      key={`${c.section}-${c.number}-${c.name}`}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        // Add Card identity-state lifecycle fix: this
+                        // checklist-search pick is an explicit, exact
+                        // identity choice writing Player/Card #/Insert
+                        // directly, same category as selectCatalogMatch/the
+                        // manual Card Lookup pick below -- clear any active
+                        // scan candidate or manual catalog-card selection
+                        // first so a stale canonical id can't survive
+                        // alongside these now-different field values.
+                        clearSelectedCandidate();
+                        setSelectedCard(null);
+                        setSelectedSection(null);
+                        setCardNumber(c.number);
+                        setPlayerName(c.name);
+                        if (c.team) setTeam(c.team);
+                        if (typeof c.section === "string") {
+                          if (c.section === "Anniversary Rookies") {
+                            setInsert("Anniversary Rookies");
+                            setParallel("");
+                            setSerialTotal("");
+                          }
+                          applySectionAutoFill(c.section, setParallel, setSerialTotal, setInsert);
+                          const flags = inferFlagsFromSection(c.section);
+                          setIsRookie(flags.isRookie);
+                          setIsAutograph(flags.isAutograph);
+                          setIsPatch(flags.isMemorabilia);
+                        }
+                        setChecklistQuery(`${c.number} ${c.name}`);
+                        setShowChecklistResults(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                    >
+                      <div className="font-medium text-zinc-900">
+                        #{c.number} {c.name}
+                      </div>
+                      <div className="text-xs text-zinc-900">
+                        {[c.team, c.section].filter(Boolean).join(" • ")}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-zinc-900">
+              Selecting a card fills <span className="font-medium">Player</span>,{" "}
+              <span className="font-medium">Card #</span>, and{" "}
+              <span className="font-medium">Team</span>.
+            </p>
+
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
+              <button
+                type="button"
+                onClick={() => setChecklistSection("ALL")}
+                className={
+                  "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
+                  (checklistSection === "ALL"
+                    ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
+                    : "border-zinc-400 bg-white text-zinc-900 hover:bg-zinc-50")
+                }
+              >
+                <div className="text-[11px] uppercase tracking-wide opacity-80 truncate">All</div>
+                <div className="text-base font-semibold">{activeChecklist.length}</div>
+              </button>
+
+              {checklistGroups.map((g) => (
+                <button
+                  key={g.label}
+                  type="button"
+                  onClick={() => setChecklistSection(g.label)}
+                className={
+                  "min-h-[56px] rounded-lg border px-4 py-3 text-left text-sm transition " +
+                  (checklistSection === g.label
+                    ? "border-zinc-900 bg-[var(--brand-primary)] text-white"
+                    : "border-zinc-400 bg-white text-zinc-900 hover:bg-zinc-50")
+                }
+              >
+                  <div className="text-[11px] uppercase tracking-wide opacity-80 truncate">
+                    {g.label}
+                  </div>
+                  <div className="text-base font-semibold">{g.count}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : setName.trim() && year.trim() ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            Checklist is only available after selecting a set with a checklist.
+          </div>
+        ) : null}
+
+        {catalogPreselectStatus === "loading" ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            Loading catalog card…
+          </div>
+        ) : catalogPreselectStatus === "error" ? (
+          <div className="sm:col-span-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            We couldn&apos;t load that catalog card. You can still select a card manually.
+          </div>
+        ) : null}
+
+        {checklistSectionsLoading ? (
+          <div className="sm:col-span-2 rounded-md border bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            Loading sections…
+          </div>
+        ) : checklistSectionOptions.length > 0 ? (
+          <div className="sm:col-span-2">
+            <Select
+              label="Section (optional)"
+              value={selectedSection ? String(selectedSection.id) : ""}
+              onChange={(v) => {
+                const section = checklistSectionOptions.find((s) => String(s.id) === v) ?? null;
+                setSelectedSection(section);
+              }}
+              options={[
+                ["", "None"],
+                ...checklistSectionOptions.map(
+                  (s) => [String(s.id), s.name] as [string, string]
+                ),
+              ]}
+            />
+          </div>
+        ) : null}
+
+        {selectedSection ? (
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-zinc-900">Card (optional)</label>
+            {catalogCardsLoading ? (
+              <div className="mt-1 text-xs text-zinc-500">Loading cards…</div>
+            ) : null}
+            <div className="relative">
+              <input
+                value={catalogCardQuery}
+                onChange={(e) => {
+                  setCatalogCardQuery(e.target.value);
+                  setShowCatalogCardResults(true);
+                }}
+                onFocus={() => setShowCatalogCardResults(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setShowCatalogCardResults(false), 120);
+                }}
+                placeholder="Search card number or title..."
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
+              />
+              {showCatalogCardResults && catalogCardOptions.length ? (
+                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                  {catalogCardOptions.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        // Save-identity precedence fix (Phase A): an
+                        // explicit manual card pick is a more recent,
+                        // equally-exact identity choice than any earlier
+                        // scan candidate -- clear it (same helper the
+                        // candidate panel's own "Clear selection" button
+                        // uses) so buildCard()'s precedence correctly falls
+                        // through to this selection instead of continuing
+                        // to save a stale candidate's cardId.
+                        clearSelectedCandidate();
+                        setSelectedCard(c);
+                        // Identity-ownership fix (Phase B): c (CardSummary)
+                        // carries only id/card_number/title -- no player/
+                        // year/set -- so those three can't be corrected
+                        // here (left exactly as the user already typed them
+                        // to reach this section/card). card_number IS
+                        // trustworthy exact data this handler wasn't
+                        // previously applying at all. parallel/autograph/
+                        // patch are reset to a clean baseline for the same
+                        // reason applyCandidateSelection resets them: a
+                        // previously selected variant's flags belong to
+                        // whatever card was active before and must not
+                        // silently carry over onto this different exact
+                        // card.
+                        setCardNumber(c.card_number);
+                        setParallel("");
+                        setIsAutograph(false);
+                        setIsPatch(false);
+                        setCatalogCardQuery(`#${c.card_number}${c.title ? ` - ${c.title}` : ""}`);
+                        setShowCatalogCardResults(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                    >
+                      <div className="font-medium text-zinc-900">
+                        #{c.card_number}
+                        {c.title ? ` - ${c.title}` : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {!isWishlistCard ? (
           <div>
@@ -3728,6 +3668,92 @@ function NewCardPageInner() {
             />
             <Field label="Purchase date" value={purchaseDate} onChange={setPurchaseDate} type="date" />
           </>
+        ) : null}
+
+        {/* Add Card UX cleanup, Phase 1 (reorder only): this manual
+            variant/parallel lookup now renders alongside the rest of the
+            remaining collection/variant controls instead of directly
+            before Photos. Condition/handlers unchanged from before this
+            move. */}
+        {/* Add Card scan UX simplification, Phase D: unchanged manual
+            lookup box, but now also gated on !selectedCandidate -- an
+            earlier manual Card pick that's since been superseded by an
+            explicitly chosen scan candidate (selectedCandidate now
+            authoritative per Phase A/B) leaves selectedCard set to a
+            stale card; without this it would keep showing this box
+            underneath an unrelated "Card identified" candidate. */}
+        {selectedCard && !selectedCandidate ? (
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-zinc-900">
+              Parallel / Variant (optional)
+            </label>
+            {catalogVariantsLoading ? (
+              <div className="mt-1 text-xs text-zinc-500">Loading variants…</div>
+            ) : null}
+            <div className="relative">
+              <input
+                value={catalogVariantQuery}
+                onChange={(e) => {
+                  setCatalogVariantQuery(e.target.value);
+                  setShowCatalogVariantResults(true);
+                }}
+                onFocus={() => setShowCatalogVariantResults(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setShowCatalogVariantResults(false), 120);
+                }}
+                placeholder="Search parallel, print run, or descriptor..."
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-base sm:text-sm text-zinc-900 placeholder:text-zinc-400"
+              />
+              {showCatalogVariantResults && catalogVariantOptions.length ? (
+                <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border bg-white shadow-lg">
+                  {catalogVariantOptions.map((v) => {
+                    const label = [
+                      v.parallelName ?? "Base",
+                      v.printRun ? `/${v.printRun}` : "",
+                      v.swatchDescriptor ?? "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ");
+                    const flags = [v.hasAutograph ? "AU" : "", v.hasMemorabilia ? "MEM" : ""]
+                      .filter(Boolean)
+                      .join(" • ");
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSelectedVariant(v);
+                          setCatalogVariantQuery(label);
+                          setShowCatalogVariantResults(false);
+                          // Fills the existing Parallel field and
+                          // autograph/memorabilia checkboxes -- these
+                          // already flow into buildCard()/save exactly as
+                          // when filled by catalog match or checklist
+                          // selection, so no save-logic change is needed.
+                          // (Phase D: now via the shared applyVariantSelection
+                          // primitive, reused by the new candidate-flow
+                          // variant refinement below -- same fields, same
+                          // effect, no duplicated assignment logic.)
+                          applyVariantSelection(v);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                      >
+                        <div className="font-medium text-zinc-900">{label}</div>
+                        {flags ? <div className="text-xs text-zinc-900">{flags}</div> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-zinc-900">
+              Selecting a variant fills <span className="font-medium">Parallel</span> and the{" "}
+              <span className="font-medium">Autograph</span>/
+              <span className="font-medium">Patch/Relic</span> checkboxes. You can still edit them
+              afterward.
+            </p>
+          </div>
         ) : null}
 
         <div className="sm:col-span-2 mt-2 border-t pt-4">
