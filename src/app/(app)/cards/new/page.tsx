@@ -2011,10 +2011,37 @@ function NewCardPageInner() {
 
   // Save eligibility remains gated on the FRONT slot only -- the back slot
   // is not required and does not block saving in this phase.
+  //
+  // Add Card Photos cleanup, confirmation phase (revised, community-image
+  // trust follow-up): manual confirmation used to be required for ANY
+  // front image regardless of imageCheckStatus, including "accept" -- the
+  // audit found this asked the collector to re-verify something the
+  // system had already established with high confidence (image-check's
+  // own "card" classification at >=0.75, moderation passed).
+  //
+  // This is now an explicit three-way split, not a generic fall-through:
+  // deliberately NOT "if not checking and not review, trust it" -- that
+  // shape is exactly what silently (and incorrectly) treated a front
+  // image selected via "Use community image" as accepted merely because
+  // imageCheckStatus happened to still read "idle" there (it never ran a
+  // fresh image-check). "Use community image" now explicitly sets
+  // imageCheckStatus to "accept" itself (see CardImageUploader.tsx's own
+  // comment on that handler for the exact trust chain justifying it), so
+  // "accept" is the ONE recognized way to skip confirmation, checked here
+  // by name -- not inferred from the absence of "checking"/"review".
+  // Every other real-image status (review, or any status not explicitly
+  // "accept") requires confirmation; there is no silent "else, trust it"
+  // path. "checking" still blocks Save outright (unchanged). "block" is
+  // unaffected: runImageCheck always nulls imageUrl in the same call that
+  // sets status to "block", so that case is already handled by the
+  // `!frontImage.imageUrl` branch above, exactly as before. This
+  // condition must be kept in exact sync with CardImageUploader.tsx's own
+  // showFrontConfirmation -- see that file's matching comment.
   const canSave = useMemo(() => {
     const baseOk = Boolean(playerName.trim() && year.trim() && setName.trim());
     if (!frontImage.imageUrl) return baseOk;
     if (frontImage.imageCheckStatus === "checking") return false;
+    if (frontImage.imageCheckStatus === "accept") return baseOk;
     return baseOk && frontImage.cardPhotoConfirm;
   }, [
     playerName,
@@ -2829,6 +2856,7 @@ function NewCardPageInner() {
                   setImageShare={frontImage.setImageShare}
                   imageError={frontImage.imageError}
                   imageCheckStatus={frontImage.imageCheckStatus}
+                  setImageCheckStatus={frontImage.setImageCheckStatus}
                   sharedImage={sharedImage}
                   reportInfo={reportInfo}
                   fingerprint={fingerprint}
@@ -2875,6 +2903,7 @@ function NewCardPageInner() {
                   setImageShare={backImage.setImageShare}
                   imageError={backImage.imageError}
                   imageCheckStatus={backImage.imageCheckStatus}
+                  setImageCheckStatus={backImage.setImageCheckStatus}
                   sharedImage={null}
                   reportInfo={null}
                   fingerprint=""

@@ -39,6 +39,13 @@ export type CardImageUploaderProps = {
   setImageShare: (v: boolean) => void;
   imageError: string;
   imageCheckStatus: "idle" | "checking" | "accept" | "review" | "block";
+  // Add Card Photos cleanup, community-image trust phase: needed so
+  // "Use community image" below can explicitly mark the selection as
+  // verified (see that handler's own comment for the exact trust chain
+  // this relies on) instead of leaving imageCheckStatus at whatever it
+  // already was ("idle" on a fresh page) -- an implicit, easily-broken
+  // "idle silently behaves like accept" is exactly what this phase closes.
+  setImageCheckStatus: (v: "idle" | "checking" | "accept" | "review" | "block") => void;
   sharedImage: {
     fingerprint: string;
     dataUrl: string;
@@ -66,6 +73,7 @@ export function CardImageUploader({
   setImageShare,
   imageError,
   imageCheckStatus,
+  setImageCheckStatus,
   sharedImage,
   reportInfo,
   // Add Card scan UX simplification: the debug "Fingerprint: <value>" line
@@ -101,6 +109,19 @@ export function CardImageUploader({
   const sideWord = side === "front" ? "front" : "back";
   const uploadLabel = hasOwnImage ? "Retake photo" : `Add ${sideWord} photo`;
   const showSecondaryActions = (sharedImage?.dataUrl && !imageUrl && !hideCommunity) || !!imageUrl;
+  // Add Card Photos cleanup, community-image trust phase: the ONE explicit
+  // rule for when Front needs manual confirmation, kept in exact sync with
+  // canSave's own logic in cards/new/page.tsx (which must never diverge
+  // from this render condition -- see that file's own matching comment).
+  // "checking" is excluded so the checkbox never appears prematurely, and
+  // "accept" is excluded because that's the one status -- reached either
+  // via a genuine image-check pass, or explicitly set by "Use community
+  // image" below -- that means no further confirmation is owed. Every
+  // OTHER real-image status (review, or any status this component doesn't
+  // otherwise expect) requires confirmation; there is deliberately no
+  // silent "else, trust it" branch.
+  const showFrontConfirmation =
+    side === "front" && hasOwnImage && imageCheckStatus !== "checking" && imageCheckStatus !== "accept";
 
   return (
     <div className="sm:col-span-2">
@@ -165,6 +186,23 @@ export function CardImageUploader({
                   setImageUrl(sharedImage.dataUrl);
                   setImageOwnerConfirm(false);
                   setImageShare(false);
+                  // Add Card Photos cleanup, community-image trust phase:
+                  // explicitly mark this as verified rather than leaving
+                  // imageCheckStatus at whatever it already was (typically
+                  // "idle" on a fresh page) -- a real Front image sitting
+                  // at an untouched, non-terminal status must never be
+                  // treated as accepted by accident. Trusting it here IS
+                  // justified, not a loophole: this button is only ever
+                  // offered at all when !hideCommunity (a reported/blocked
+                  // community image never reaches this button, see above),
+                  // and the image itself can only have entered the
+                  // community pool via saveSharedImage in cards/new/
+                  // page.tsx's runSaveCycle, which only ever runs after
+                  // ITS OWN uploader's canSave was already satisfied --
+                  // i.e. that original photo already passed either a
+                  // genuine image-check "accept" or a manually confirmed
+                  // "review" before it could ever become selectable here.
+                  setImageCheckStatus("accept");
                 }}
                 className="btn-secondary text-xs"
               >
@@ -232,15 +270,34 @@ export function CardImageUploader({
                 Slabbed
               </label>
 
-              <label className="inline-flex items-start gap-2 text-xs text-zinc-600">
-                <input
-                  type="checkbox"
-                  checked={cardPhotoConfirm}
-                  onChange={(e) => setCardPhotoConfirm(e.target.checked)}
-                  className="mt-0.5"
-                />
-                I confirm this is a photo of the card (or slab).
-              </label>
+              {/* Add Card Photos cleanup, confirmation phase: previously
+                  shown for every uploaded image regardless of
+                  imageCheckStatus (including "accept", where image-check
+                  had already classified it as "card" with >=0.75
+                  confidence and moderation had already passed -- asking
+                  the collector to re-verify what the system was already
+                  confident about). Now shown only when showFrontConfirmation
+                  is true (see its own comment above) -- kept in exact sync
+                  with canSave's matching condition in cards/new/page.tsx,
+                  so it is never possible for Save to require confirmation
+                  with no visible control, or for a visible checkbox to have
+                  no effect on Save. Front-only: canSave has never read
+                  backImage.cardPhotoConfirm, so rendering an interactive
+                  checkbox for Back that silently did nothing would be
+                  misleading. Back still gets the exact same "Please
+                  confirm..." guidance text below (unchanged, both sides),
+                  just without a checkbox that implies it gates Save. */}
+              {showFrontConfirmation ? (
+                <label className="inline-flex items-start gap-2 text-xs text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={cardPhotoConfirm}
+                    onChange={(e) => setCardPhotoConfirm(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  I confirm this is a card photo.
+                </label>
+              ) : null}
             </>
           ) : null}
 
