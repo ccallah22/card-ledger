@@ -1937,6 +1937,72 @@ function NewCardPageInner() {
   // manual pick uses, on candidateResults[0] (the engine's own top-ranked
   // result, untouched by this phase).
   useEffect(() => {
+    const topAssessment = confidenceAssessments[0];
+
+    // TEMPORARY diagnostic logging -- production Add Card auto-select
+    // investigation. Read-only: never influences `eligible` or any other
+    // behavior below, only observes the exact same values that decision
+    // already reads (topAssessment/ctx). Safe to delete once the
+    // diagnosis is done; does not log image data, signed URLs, or auth
+    // info -- only catalog/candidate/evidence text fields.
+    if (topAssessment) {
+      const findField = (name: string) => topAssessment.fieldAssessments.find((f) => f.field === name);
+      const second = confidenceAssessments[1];
+      console.log("[AddCard AutoSelect Diagnostic]", {
+        topCandidate: {
+          cardId: topAssessment.candidate.cardId,
+          player: topAssessment.candidate.playerName,
+          cardNumber: topAssessment.candidate.cardNumber,
+          set: topAssessment.candidate.setName,
+          year: topAssessment.candidate.year,
+          rankingScore: topAssessment.candidate.score,
+          confidence: topAssessment.confidence,
+          evidenceCoverage: topAssessment.evidenceCoverage,
+          scoreGapToNext: topAssessment.scoreGapToNext,
+          recommendation: topAssessment.recommendation,
+          safeToPreselect: topAssessment.safeToPreselect,
+          reasons: topAssessment.candidate.reasons,
+          fieldAssessments: topAssessment.fieldAssessments,
+          fieldAssessment: {
+            player: findField("player"),
+            cardNumber: findField("cardNumber"),
+            set: findField("set"),
+            year: findField("year"),
+          },
+        },
+        evidenceUsed: {
+          player: displayEvidence.playerName.value,
+          cardNumber: displayEvidence.cardNumber.value,
+          set: displayEvidence.setName.value,
+          year: displayEvidence.year.value,
+          brand: displayEvidence.brand.value,
+          manufacturer: displayEvidence.manufacturer.value,
+        },
+        gates: {
+          isWishlistCard,
+          hasSelectedCandidate: selectedCandidate !== null,
+          hasManualInteraction: hasManualCandidateInteractionRef.current,
+          alreadyAutoSelectedThisCycle: autoSelectedCandidateCycleKeyRef.current === searchCycleKey,
+          candidatesResolvedForCurrentCycle: resolvedCandidateCycleKey === searchCycleKey,
+          recommendationIsSafeToPreselect: topAssessment.recommendation === "safe_to_preselect",
+          playerNotMissing: findField("player")?.quality !== "missing",
+          cardNumberNotMissing: findField("cardNumber")?.quality !== "missing",
+        },
+        secondCandidate: second
+          ? {
+              cardId: second.candidate.cardId,
+              player: second.candidate.playerName,
+              cardNumber: second.candidate.cardNumber,
+              set: second.candidate.setName,
+              year: second.candidate.year,
+              rankingScore: second.candidate.score,
+              confidence: second.confidence,
+              recommendation: second.recommendation,
+            }
+          : null,
+      });
+    }
+
     const eligible = shouldAutoSelectCandidate({
       isWishlistCard,
       hasSelectedCandidate: selectedCandidate !== null,
@@ -1957,6 +2023,11 @@ function NewCardPageInner() {
     searchCycleKey,
     candidateResults,
     confidenceAssessments,
+    // TEMPORARY diagnostic logging above now also reads displayEvidence --
+    // added so the log always reflects the current evidence, exactly like
+    // every other value it reports. Remove this dependency along with the
+    // diagnostic block once the investigation is done.
+    displayEvidence,
   ]);
 
   // frontImage/backImage are fresh objects returned by useCardImageSlot on
