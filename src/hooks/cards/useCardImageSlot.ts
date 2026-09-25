@@ -38,13 +38,22 @@ const CROP_ROTATION_FINE_MAX = 10;
  */
 export function useCardImageSlot(side: CardImageSlotSide) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageIsFront, setImageIsFront] = useState(true);
+  // Add Card Photos cleanup, classification phase: these two used to
+  // default to "front"/true unconditionally, regardless of which slot
+  // (`side`) this hook instance was actually created for -- the direct
+  // cause of the production bug where a fresh Back Image uploader showed
+  // "Front of card" selected. Both now seed from `side` itself, so a raw
+  // back-slot image starts as ("back", false) and a raw front-slot image
+  // starts as ("front", true), matching what CardImageUploader.tsx's
+  // single "Slabbed" checkbox (and every downstream reader of these two
+  // values) already expects.
+  const [imageIsFront, setImageIsFront] = useState(side === "front");
   const [imageIsSlabbed, setImageIsSlabbed] = useState(false);
   const [imageShare, setImageShare] = useState(false);
   const [imageOwnerConfirm, setImageOwnerConfirm] = useState(false);
   const [imageType, setImageType] = useState<
     "front" | "back" | "slab_front" | "slab_back"
-  >("front");
+  >(side);
   const [imageError, setImageError] = useState<string>("");
   const [imageCheckStatus, setImageCheckStatus] = useState<
     "idle" | "checking" | "accept" | "review" | "block"
@@ -101,6 +110,19 @@ export function useCardImageSlot(side: CardImageSlotSide) {
   // what was last rendered.
   const cropOffset = cropData ? clampCropOffset(rawCropOffset, cropData) : rawCropOffset;
 
+  // Add Card Photos cleanup, classification phase: a fresh/replacement
+  // image (a brand new upload, a retake, or an image the automated check
+  // just rejected outright) always represents a NEW physical photo -- any
+  // slab classification made about the PREVIOUS photo in this slot must
+  // not silently carry over onto it. Resets to this slot's own raw
+  // defaults (never the other slot's), same formula the initial useState
+  // values above use.
+  function resetClassificationToRawDefaults() {
+    setImageType(side);
+    setImageIsFront(side === "front");
+    setImageIsSlabbed(false);
+  }
+
   async function runImageCheck(dataUrl: string) {
     const res = await fetch("/api/image-check", {
       method: "POST",
@@ -115,6 +137,7 @@ export function useCardImageSlot(side: CardImageSlotSide) {
     if (data.decision === "block") {
       setImageCheckStatus("block");
       setImageUrl(null);
+      resetClassificationToRawDefaults();
       setImageError(
         "This doesn’t look like a card photo. Please upload a picture of the card."
       );
@@ -146,6 +169,7 @@ export function useCardImageSlot(side: CardImageSlotSide) {
     setImageOwnerConfirm(false);
     setImageShare(false);
     setCardPhotoConfirm(false);
+    resetClassificationToRawDefaults();
     setShowCrop(false);
     setCropData(null);
     setImageCheckStatus("checking");

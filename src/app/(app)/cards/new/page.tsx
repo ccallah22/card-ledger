@@ -2821,6 +2821,7 @@ function NewCardPageInner() {
                   imageType={frontImage.imageType}
                   setImageType={frontImage.setImageType}
                   setImageIsFront={frontImage.setImageIsFront}
+                  imageIsSlabbed={frontImage.imageIsSlabbed}
                   setImageIsSlabbed={frontImage.setImageIsSlabbed}
                   cardPhotoConfirm={frontImage.cardPhotoConfirm}
                   setCardPhotoConfirm={frontImage.setCardPhotoConfirm}
@@ -2866,6 +2867,7 @@ function NewCardPageInner() {
                   imageType={backImage.imageType}
                   setImageType={backImage.setImageType}
                   setImageIsFront={backImage.setImageIsFront}
+                  imageIsSlabbed={backImage.imageIsSlabbed}
                   setImageIsSlabbed={backImage.setImageIsSlabbed}
                   cardPhotoConfirm={backImage.cardPhotoConfirm}
                   setCardPhotoConfirm={backImage.setCardPhotoConfirm}

@@ -4,21 +4,26 @@ import { REPORT_HIDE_THRESHOLD } from "@/lib/reporting";
 
 export type CardImageUploaderProps = {
   label?: string;
-  // Radio-group identity only -- this component is rendered once per image
-  // slot (front/back), each with its own independent imageType state, but
-  // HTML radio grouping is name-scoped across the whole DOM, not per
-  // component instance. Without a per-instance name, both instances' radio
-  // inputs shared the literal name="imageType" and were treated as ONE
-  // native radio group, so selecting an option on one instance could
-  // visibly un-select the other's. `side` (already returned by
-  // useCardImageSlot, e.g. frontImage.side/backImage.side) makes the
-  // group name unique per instance without inventing new identity state.
+  // Identifies which slot this instance is -- also still used to derive
+  // this slot's canonical raw imageType/imageIsFront values below (see the
+  // Slabbed checkbox and the Remove-image handler), now that side/back
+  // identity is no longer user-selectable. `side` is always authoritative:
+  // Front Image always means front, Back Image always means back.
   side: "front" | "back";
   imageUrl: string | null;
   setImageUrl: (v: string | null) => void;
+  // Add Card Photos cleanup, classification phase: imageType is still
+  // accepted (page.tsx still passes it -- the front slot's value still
+  // feeds the legacy user_cards.image_type column) but is no longer read
+  // for rendering here; only its setter is used, to keep it in sync
+  // ("front"/"back"/"slab_front"/"slab_back") whenever the Slabbed
+  // checkbox or Remove image changes imageIsSlabbed. imageIsSlabbed itself
+  // is now read directly (previously only its setter was needed, since the
+  // four radios derived their `checked` state from imageType instead).
   imageType: "front" | "back" | "slab_front" | "slab_back";
   setImageType: (v: "front" | "back" | "slab_front" | "slab_back") => void;
   setImageIsFront: (v: boolean) => void;
+  imageIsSlabbed: boolean;
   setImageIsSlabbed: (v: boolean) => void;
   cardPhotoConfirm: boolean;
   setCardPhotoConfirm: (v: boolean) => void;
@@ -51,9 +56,9 @@ export function CardImageUploader({
   side,
   imageUrl,
   setImageUrl,
-  imageType,
   setImageType,
   setImageIsFront,
+  imageIsSlabbed,
   setImageIsSlabbed,
   cardPhotoConfirm,
   setCardPhotoConfirm,
@@ -174,6 +179,15 @@ export function CardImageUploader({
                   setImageUrl(null);
                   setImageOwnerConfirm(false);
                   setImageShare(false);
+                  // Add Card Photos cleanup, classification phase: a
+                  // removed image's slab classification must not silently
+                  // carry over onto whatever photo is uploaded into this
+                  // slot next -- reset to this slot's own raw defaults,
+                  // mirroring useCardImageSlot.ts's confirmCrop/block-path
+                  // resets for the exact same reason.
+                  setImageType(side);
+                  setImageIsFront(side === "front");
+                  setImageIsSlabbed(false);
                 }}
                 className="btn-secondary text-xs"
               >
@@ -183,78 +197,40 @@ export function CardImageUploader({
           </div>
         ) : null}
 
-        {/* Add Card mobile UX, Compact Photos phase: side/slab
-              classification and the photo-confirmation checkbox now only
-              render once the user has an actual image of their own
-              (hasOwnImage) -- there is nothing to classify or confirm
-              before that, and showing them in the empty state was exactly
-              the "several technical-looking controls before they're
-              useful" problem this phase targets. Defaults
-              (imageType="front"/imageIsFront=true/imageIsSlabbed=false,
-              see useCardImageSlot.ts) are completely unchanged -- a user
-              who never touches these still gets the exact same values at
-              save time as before; this only changes when the controls are
-              visible, never what they default to or how they behave. */}
+        {/* Add Card Photos cleanup, classification phase: the previous
+              four-option radio group (Front of card/Back of card/Slab
+              front/Slab back) let a user classify Front Image's own photo
+              as "back", or vice versa -- a choice nothing downstream ever
+              honored (OCR/Vision/card_media.side are all driven
+              exclusively by the `side` prop, hardcoded per call site in
+              cards/new/page.tsx) and which produced exactly the
+              production bug this phase fixes (a fresh Back Image slot
+              showing "Front of card" selected, from
+              useCardImageSlot.ts's old side-blind defaults). Side is no
+              longer user-choosable at all -- Front Image always means
+              front, Back Image always means back -- so the only
+              genuinely independent, downstream-meaningful fact left to
+              classify is whether THIS photo shows a slab. Toggling it
+              re-derives imageType from (side, checked) so the legacy
+              user_cards.image_type/shared_images fields this same state
+              still feeds stay correct, but imageIsFront is always
+              re-pinned to `side === "front"` -- it can never be flipped
+              by this control, unlike before. */}
           {hasOwnImage ? (
             <>
-              <div className="grid gap-2 text-xs text-zinc-600 sm:grid-cols-2">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`imageType-${side}`}
-                    value="front"
-                    checked={imageType === "front"}
-                    onChange={() => {
-                      setImageType("front");
-                      setImageIsFront(true);
-                      setImageIsSlabbed(false);
-                    }}
-                  />
-                  Front of card
-                </label>
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`imageType-${side}`}
-                    value="back"
-                    checked={imageType === "back"}
-                    onChange={() => {
-                      setImageType("back");
-                      setImageIsFront(false);
-                      setImageIsSlabbed(false);
-                    }}
-                  />
-                  Back of card
-                </label>
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`imageType-${side}`}
-                    value="slab_front"
-                    checked={imageType === "slab_front"}
-                    onChange={() => {
-                      setImageType("slab_front");
-                      setImageIsFront(true);
-                      setImageIsSlabbed(true);
-                    }}
-                  />
-                  Slab front
-                </label>
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`imageType-${side}`}
-                    value="slab_back"
-                    checked={imageType === "slab_back"}
-                    onChange={() => {
-                      setImageType("slab_back");
-                      setImageIsFront(false);
-                      setImageIsSlabbed(true);
-                    }}
-                  />
-                  Slab back
-                </label>
-              </div>
+              <label className="inline-flex items-center gap-2 text-xs text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={imageIsSlabbed}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setImageIsSlabbed(checked);
+                    setImageType(checked ? (side === "front" ? "slab_front" : "slab_back") : side);
+                    setImageIsFront(side === "front");
+                  }}
+                />
+                Slabbed
+              </label>
 
               <label className="inline-flex items-start gap-2 text-xs text-zinc-600">
                 <input
