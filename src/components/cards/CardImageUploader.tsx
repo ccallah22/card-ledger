@@ -76,17 +76,12 @@ export function CardImageUploader({
   fingerprint,
   onFileSelected,
 }: CardImageUploaderProps) {
-  // Add Card mobile UX, Compact Photos phase: hideCommunity/previewSrc were
-  // pulled out of the old inline IIFE (unchanged formula) so both the
-  // preview box AND the layout-size decision below can read them, instead
-  // of only the box's own render branch. previewSrc is exactly the old
-  // `display` value (imageUrl, or a non-hidden shared-image dataUrl) --
-  // whenever there's nothing real to preview, the uploader renders the new
-  // compact empty state instead of a full card-aspect-ratio box; the
-  // moment there's something to show, it renders the exact same
-  // aspect-[2.5/3.5] preview layout this component already had. This
-  // component has exactly one caller (cards/new/page.tsx, front + back),
-  // so this default-behavior change needs no new prop to stay scoped.
+  // Add Card mobile UX, Compact Photos phase: hideCommunity/previewSrc
+  // (unchanged formula) decide what the card-shaped box actually displays.
+  // previewSrc is exactly the old `display` value (imageUrl, or a
+  // non-hidden shared-image dataUrl). This component has exactly one
+  // caller (cards/new/page.tsx, front + back), so behavior changes here
+  // need no new prop to stay scoped.
   const hideCommunity =
     reportInfo && (reportInfo.status === "blocked" || reportInfo.reports >= REPORT_HIDE_THRESHOLD);
   const previewSrc = imageUrl || (!hideCommunity ? sharedImage?.dataUrl : undefined);
@@ -100,6 +95,7 @@ export function CardImageUploader({
   const hasOwnImage = !!imageUrl;
   const sideWord = side === "front" ? "front" : "back";
   const uploadLabel = hasOwnImage ? "Retake photo" : `Add ${sideWord} photo`;
+  const showSecondaryActions = (sharedImage?.dataUrl && !imageUrl && !hideCommunity) || !!imageUrl;
 
   return (
     <div className="sm:col-span-2">
@@ -108,56 +104,55 @@ export function CardImageUploader({
         {side === "back" ? <div className="text-xs text-zinc-500">Optional</div> : null}
       </div>
 
-      <div
-        className={
-          previewSrc
-            ? "mt-2 grid gap-3 sm:grid-cols-[140px_1fr]"
-            : "mt-2 flex flex-wrap items-center gap-2"
-        }
-      >
-        <div
-          className={
-            previewSrc
-              ? "relative aspect-[2.5/3.5] rounded-md border bg-zinc-50 p-1 flex items-center justify-center overflow-hidden"
-              : "relative h-12 w-12 flex-none rounded-md border border-dashed border-zinc-300 bg-zinc-50 overflow-hidden"
-          }
-        >
-          {previewSrc ? (
-            // previewSrc is either imageUrl (a signed Supabase Storage URL
-            // or local data URL) or a community-shared image's data URL;
-            // next/image is intentionally not used here.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={previewSrc} alt="Card" className="h-full w-full object-contain" />
-          ) : hideCommunity ? (
-            <div className="absolute inset-0 flex items-center justify-center text-[9px] text-zinc-500 text-center px-1">
-              Hidden
-            </div>
-          ) : null}
-          {previewSrc ? (
-            <div className="pointer-events-none absolute inset-2 rounded-sm border border-dashed border-zinc-300/70" />
-          ) : null}
-        </div>
+      {/* Add Card mobile UX, card-shaped preview phase: the preview is now
+          the dominant element in each half-column -- w-full (never a fixed
+          140px) so it scales with whatever width the outer two-column
+          Photos grid (page.tsx, from 33b424a) actually gives this slot,
+          same footprint whether empty or holding a real image (so
+          selecting a photo doesn't jump the layout), and the same
+          aspect-[2.5/3.5] Front and Back always share, so their sizes
+          always match. The upload/retake action now renders BELOW this
+          box instead of beside it -- see the button below. */}
+      <div className="relative mt-2 w-full aspect-[2.5/3.5] rounded-md border bg-zinc-50 flex items-center justify-center overflow-hidden">
+        {previewSrc ? (
+          // previewSrc is either imageUrl (a signed Supabase Storage URL or
+          // local data URL) or a community-shared image's data URL;
+          // next/image is intentionally not used here.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={previewSrc} alt="Card" className="h-full w-full object-contain p-1" />
+        ) : hideCommunity ? (
+          <div className="px-2 text-center text-[11px] text-zinc-500">Image hidden (reported)</div>
+        ) : (
+          <div className="pointer-events-none absolute inset-2 rounded-sm border border-dashed border-zinc-300" />
+        )}
+      </div>
 
+      <div className="mt-2 space-y-2">
         {/* Button-system Phase 3: these three compact media controls
             (Upload/Use community image/Remove image) are optional/
             utility actions -- none of them save or commit anything, they
             only change what's staged in this form -- so .btn-secondary,
             kept at their existing compact text-xs size rather than full
             px-4/py-2 geometry (per the task's guidance for small media
-            controls). Upload/remove/community-image behavior unchanged. */}
-        <div className={previewSrc ? "min-w-0 space-y-2" : "min-w-0 flex-1 space-y-2"}>
-          <div className="flex flex-wrap gap-2">
-            <label className="btn-secondary text-xs cursor-pointer">
-              {uploadLabel}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)}
-              />
-            </label>
+            controls). Upload/remove/community-image behavior unchanged.
+            The upload/retake action is now the visually primary control
+            for this slot (w-full, directly under the preview it acts on)
+            -- Use community image / Remove image are secondary, and wrap
+            onto their own row if they don't fit the half-column beside
+            each other. */}
+        <label className="btn-secondary text-xs cursor-pointer w-full">
+          {uploadLabel}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)}
+          />
+        </label>
 
+        {showSecondaryActions ? (
+          <div className="flex flex-wrap gap-2">
             {sharedImage?.dataUrl && !imageUrl && !hideCommunity ? (
               <button
                 type="button"
@@ -186,8 +181,9 @@ export function CardImageUploader({
               </button>
             ) : null}
           </div>
+        ) : null}
 
-          {/* Add Card mobile UX, Compact Photos phase: side/slab
+        {/* Add Card mobile UX, Compact Photos phase: side/slab
               classification and the photo-confirmation checkbox now only
               render once the user has an actual image of their own
               (hasOwnImage) -- there is nothing to classify or confirm
@@ -284,7 +280,6 @@ export function CardImageUploader({
               Please confirm this is a clear photo of the card.
             </div>
           ) : null}
-        </div>
       </div>
     </div>
   );
